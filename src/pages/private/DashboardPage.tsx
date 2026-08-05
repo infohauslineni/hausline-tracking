@@ -63,8 +63,8 @@ export function DashboardPage() {
 
     {term ? <SearchResults resultados={resultados} /> : <>
       <section className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <HeroMetric icon={CircleDollarSign} label="Ventas del mes" value={`USD ${summary.ventas.toFixed(2)}`} />
-        <HeroMetric icon={Wallet} label="Saldo de caja" value={`USD ${Number(saldoMes).toFixed(2)}`} />
+        <HeroMetric icon={CircleDollarSign} label="Ventas del mes" value={`USD ${summary.ventas.toFixed(2)}`} tone="blue" />
+        <HeroMetric icon={Wallet} label="Saldo de caja" value={`USD ${Number(saldoMes).toFixed(2)}`} tone="emerald" />
         <HeroMetric icon={ReceiptText} label="Por cobrar" value={`USD ${summary.por_cobrar.toFixed(2)}`} tone="warning" />
         <HeroMetric icon={CheckCircle2} label="Pedidos activos" value={String(activos.length)} tone="accent" />
       </section>
@@ -89,8 +89,8 @@ export function DashboardPage() {
       <section className="mt-6 grid gap-5 xl:grid-cols-[1.4fr_1fr]">
         <SalesChart data={chartDays} />
         <div className="grid gap-3 sm:grid-cols-2">
-          <HeroMetric icon={TrendingUp} label="Ganancia estimada del mes" value={`USD ${(summary.ventas - summary.gastos - costosSinGasto).toFixed(2)}`} tone="accent" />
-          <HeroMetric icon={ReceiptText} label="Gastos del mes" value={`USD ${summary.gastos.toFixed(2)}`} />
+          <HeroMetric icon={TrendingUp} label="Ganancia estimada del mes" value={`USD ${(summary.ventas - summary.gastos - costosSinGasto).toFixed(2)}`} tone={summary.ventas - summary.gastos - costosSinGasto >= 0 ? 'emerald' : 'danger'} />
+          <HeroMetric icon={ReceiptText} label="Gastos del mes" value={`USD ${summary.gastos.toFixed(2)}`} tone="danger" />
         </div>
       </section>
       <section className="mt-5"><CashFlowChart data={chartDays} /></section>
@@ -108,9 +108,12 @@ function QuickActions() {
   return <section className="mt-6 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">{acciones.map(({ to, label, icon: Icon }) => <Link key={to} to={to} className="flex items-center gap-3 rounded-2xl border border-line bg-white/[0.02] px-4 py-3.5 transition hover:border-accent/50 hover:bg-accent/[0.04]"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-accent/10 text-accent"><Icon size={18} /></span><span className="text-sm font-semibold">{label}</span><Plus size={15} className="ml-auto text-muted" /></Link>)}</section>
 }
 
-function HeroMetric({ icon: Icon, label, value, tone }: { icon: typeof Wallet; label: string; value: string; tone?: 'accent' | 'warning' }) {
-  const color = tone === 'accent' ? 'text-accent' : tone === 'warning' ? 'text-amber-300' : 'text-white'
-  return <article className="metric-card"><div className="flex items-center justify-between"><Icon size={22} className={tone === 'accent' ? 'text-accent' : tone === 'warning' ? 'text-amber-300' : 'text-muted'} /></div><p className="mt-5 text-sm text-muted">{label}</p><strong className={`mt-1.5 block text-3xl font-bold tracking-tight sm:text-[2.1rem] ${color}`}>{value}</strong></article>
+type MetricTone = 'accent' | 'warning' | 'blue' | 'emerald' | 'danger'
+const METRIC_PALETTE: Record<MetricTone, string> = { accent: 'text-accent', warning: 'text-amber-300', blue: 'text-sky-300', emerald: 'text-emerald-300', danger: 'text-red-300' }
+function HeroMetric({ icon: Icon, label, value, tone }: { icon: typeof Wallet; label: string; value: string; tone?: MetricTone }) {
+  const color = tone ? METRIC_PALETTE[tone] : 'text-white'
+  const iconColor = tone ? METRIC_PALETTE[tone] : 'text-muted'
+  return <article className="metric-card"><div className="flex items-center justify-between"><Icon size={22} className={iconColor} /></div><p className="mt-5 text-sm text-muted">{label}</p><strong className={`mt-1.5 block text-3xl font-bold tracking-tight sm:text-[2.1rem] ${color}`}>{value}</strong></article>
 }
 
 function ProximasEntregas({ pedidos }: { pedidos: Pedido[] }) {
@@ -212,7 +215,27 @@ function StatusChart({ pedidos }: { pedidos: Pedido[] }) {
 
 function CashFlowChart({ data }: { data: ChartDay[] }) {
   const max = Math.max(1, ...data.flatMap((item) => [item.entradas, item.salidas]))
-  return <article className="panel-card"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2>Flujo de dinero</h2><p className="mt-1 text-xs text-muted">Pagos recibidos frente a gastos registrados</p></div><div className="flex gap-4 text-[10px] text-muted"><span className="flex items-center gap-1.5"><i className="size-2 rounded-full bg-green-400" /> Entradas</span><span className="flex items-center gap-1.5"><i className="size-2 rounded-full bg-red-400" /> Salidas</span></div></div><div className="mt-6 flex h-40 items-end gap-3">{data.map((item) => <div className="flex h-full min-w-0 flex-1 flex-col justify-end" key={item.date}><div className="flex h-full items-end justify-center gap-1"><div title={`Entradas: USD ${item.entradas.toFixed(2)}`} className="w-2.5 rounded-t bg-green-400/80 sm:w-5" style={{ height: `${Math.max(2, item.entradas / max * 100)}%` }} /><div title={`Salidas: USD ${item.salidas.toFixed(2)}`} className="w-2.5 rounded-t bg-red-400/80 sm:w-5" style={{ height: `${Math.max(2, item.salidas / max * 100)}%` }} /></div><span className="mt-2 text-center text-[10px] capitalize text-muted">{item.label}</span></div>)}</div></article>
+  const totalEntradas = data.reduce((sum, item) => sum + item.entradas, 0)
+  const totalSalidas = data.reduce((sum, item) => sum + item.salidas, 0)
+  const neto = totalEntradas - totalSalidas
+  const [selected, setSelected] = useState<number | null>(null)
+  const activo = selected != null ? data[selected] : null
+  return <article className="panel-card">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div><h2>Flujo de dinero</h2><p className="mt-1 text-xs text-muted">Pagos recibidos frente a gastos (últimos 7 días)</p></div>
+      <div className="flex gap-2">
+        <div className="rounded-xl border border-green-400/20 bg-green-400/[.06] px-3 py-2"><span className="flex items-center gap-1.5 text-[10px] text-muted"><i className="size-2 rounded-full bg-green-400" /> Entradas</span><strong className="mt-0.5 block text-sm text-green-300">USD {totalEntradas.toFixed(2)}</strong></div>
+        <div className="rounded-xl border border-red-400/20 bg-red-400/[.06] px-3 py-2"><span className="flex items-center gap-1.5 text-[10px] text-muted"><i className="size-2 rounded-full bg-red-400" /> Salidas</span><strong className="mt-0.5 block text-sm text-red-300">USD {totalSalidas.toFixed(2)}</strong></div>
+      </div>
+    </div>
+    <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-line bg-white/[.02] px-4 py-2.5 text-xs">
+      <span className="capitalize text-muted">{activo ? new Intl.DateTimeFormat('es-NI', { weekday: 'long', day: 'numeric', month: 'short' }).format(new Date(`${activo.date}T12:00:00`)) : 'Balance neto de la semana'}</span>
+      {activo
+        ? <span className="flex shrink-0 gap-3 font-semibold"><b className="text-green-300">+{activo.entradas.toFixed(2)}</b><b className="text-red-300">−{activo.salidas.toFixed(2)}</b></span>
+        : <strong className={`shrink-0 ${neto >= 0 ? 'text-green-300' : 'text-red-300'}`}>{neto >= 0 ? '+' : '−'} USD {Math.abs(neto).toFixed(2)}</strong>}
+    </div>
+    <div className="mt-5 flex h-40 items-end gap-1 sm:gap-3">{data.map((item, index) => <button type="button" key={item.date} onMouseEnter={() => setSelected(index)} onMouseLeave={() => setSelected(null)} onFocus={() => setSelected(index)} onBlur={() => setSelected(null)} onClick={() => setSelected((current) => current === index ? null : index)} className={`flex h-full min-w-0 flex-1 flex-col justify-end rounded-lg px-0.5 pt-2 transition ${selected === index ? 'bg-white/[.05]' : 'hover:bg-white/[.025]'}`} aria-label={`${item.label}: entradas USD ${item.entradas.toFixed(2)}, salidas USD ${item.salidas.toFixed(2)}`}><div className="flex h-full items-end justify-center gap-1"><div className="w-2.5 rounded-t bg-green-400/80 transition-all sm:w-5" style={{ height: `${Math.max(2, item.entradas / max * 100)}%` }} /><div className="w-2.5 rounded-t bg-red-400/80 transition-all sm:w-5" style={{ height: `${Math.max(2, item.salidas / max * 100)}%` }} /></div><span className={`mt-2 text-center text-[10px] capitalize ${selected === index ? 'font-semibold text-white' : 'text-muted'}`}>{item.label}</span></button>)}</div>
+  </article>
 }
 
 function lastDays(total: number) { return Array.from({ length: total }, (_, index) => { const date = new Date(); date.setHours(12, 0, 0, 0); date.setDate(date.getDate() - (total - index - 1)); return date.toISOString().slice(0, 10) }) }

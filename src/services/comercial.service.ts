@@ -90,17 +90,42 @@ export async function registrarPago(input: Omit<Pago, 'id' | 'created_at' | 'ped
 }
 
 export async function listarGastos() { const { data, error } = await client().from('gastos').select('*, pedidos(codigo), inversiones(producto,codigo), proveedores(nombre)').order('fecha', { ascending: false }).limit(300); if (error) throw error; return data as unknown as Gasto[] }
+// Un gasto de categoría "Deuda" es un pago de deuda hecho directamente desde Gastos:
+// baja el saldo de caja (como cualquier gasto) y además consume ganancia disponible.
+const esDeuda = (categoria: string) => categoria.trim().toLowerCase() === 'deuda'
 export async function registrarGasto(input: Omit<Gasto, 'id' | 'created_at' | 'pedidos' | 'proveedores'>) {
   const { data, error } = await client().from('gastos').insert(input).select('*, pedidos(codigo), inversiones(producto,codigo), proveedores(nombre)').single(); if (error) throw error
   await client().from('movimientos_cuenta').insert({ fecha: `${input.fecha}T12:00:00`, tipo: input.categoria.toLowerCase().includes('proveedor') ? 'pago_proveedor' : 'gasto', descripcion: input.descripcion, monto: input.monto, moneda: input.moneda ?? 'USD', monto_original: input.monto_original ?? input.monto, tipo_cambio: input.tipo_cambio ?? null, metodo: input.metodo_pago, pedido_id: input.pedido_id, inversion_id: input.inversion_id, gasto_id: data.id, observaciones: input.observaciones })
+  // Deuda: además de bajar el saldo, descuenta la misma cantidad de la ganancia disponible.
+  // Se enlaza con gasto_id para revertirla sola al eliminar el gasto (ON DELETE CASCADE).
+  if (esDeuda(input.categoria)) {
+    const { error: allocationError } = await client().from('asignaciones_ganancia').insert({ fecha: input.fecha, tipo: 'pago_deuda', monto: input.monto, descripcion: `Deuda pagada · ${input.descripcion}`, gasto_id: data.id })
+    if (allocationError) { await client().from('gastos').delete().eq('id', data.id); throw allocationError }
+  }
   // El costo del envío se refleja dentro del pedido (Costo real del pedido y Ventas),
   // no en el catálogo maestro de Productos.
   invalidateCache('pedidos')
   return data as unknown as Gasto
 }
 
+// Edita un gasto ya registrado y mantiene todo sincronizado: el movimiento de caja ligado
+// (monto/fecha/método) y, si es de categoría "Deuda", la asignación de ganancia.
+export async function actualizarGasto(id: string, input: Omit<Gasto, 'id' | 'created_at' | 'pedidos' | 'proveedores'>) {
+  const { data, error } = await client().from('gastos').update(input).eq('id', id).select('*, pedidos(codigo), inversiones(producto,codigo), proveedores(nombre)').single(); if (error) throw error
+  await client().from('movimientos_cuenta').update({ fecha: `${input.fecha}T12:00:00`, tipo: input.categoria.toLowerCase().includes('proveedor') ? 'pago_proveedor' : 'gasto', descripcion: input.descripcion, monto: input.monto, moneda: input.moneda ?? 'USD', monto_original: input.monto_original ?? input.monto, tipo_cambio: input.tipo_cambio ?? null, metodo: input.metodo_pago, pedido_id: input.pedido_id, inversion_id: input.inversion_id, observaciones: input.observaciones }).eq('gasto_id', id)
+  // Rehace la asignación de ganancia según la categoría actual (deuda o no).
+  await client().from('asignaciones_ganancia').delete().eq('gasto_id', id)
+  if (esDeuda(input.categoria)) {
+    const { error: allocationError } = await client().from('asignaciones_ganancia').insert({ fecha: input.fecha, tipo: 'pago_deuda', monto: input.monto, descripcion: `Deuda pagada · ${input.descripcion}`, gasto_id: id })
+    if (allocationError) throw allocationError
+  }
+  invalidateCache('inversiones'); invalidateCache('pedidos')
+  return data as unknown as Gasto
+}
+
 // Elimina un gasto y revierte el saldo: borra primero el movimiento de cuenta ligado
 // (gasto_id es on delete set null, así que hay que quitarlo a mano para devolver el monto).
+// La asignación de ganancia de una deuda se borra sola por ON DELETE CASCADE en gasto_id.
 export async function eliminarGasto(id: string) {
   const { error: movError } = await client().from('movimientos_cuenta').delete().eq('gasto_id', id)
   if (movError) throw movError

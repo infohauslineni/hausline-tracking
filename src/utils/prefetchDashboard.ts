@@ -9,7 +9,6 @@ const routeLoaders: Record<string, () => Promise<unknown>> = {
   '/pagos': () => import('../pages/private/PagosPage'),
   '/gastos': () => import('../pages/private/GastosPage'),
   '/cuenta': () => import('../pages/private/CuentaPage'),
-  '/deudas': () => import('../pages/private/DeudasPage'),
   '/metas': () => import('../pages/private/MetasPage'),
   '/contenido': () => import('../pages/private/ContenidoPage'),
   '/reportes': () => import('../pages/private/ReportesPage'),

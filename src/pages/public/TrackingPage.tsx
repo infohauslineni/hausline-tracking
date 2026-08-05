@@ -1,7 +1,8 @@
-import { AlertCircle, ArrowLeft, ArrowRight, CalendarDays, Check, Clock3, Images, MapPin, MessageCircle, Package, PackageCheck, PackageSearch, PartyPopper, Plane, Search, ShieldCheck, Truck } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight, CalendarDays, Check, Clock3, Images, MapPin, MessageCircle, Package, PackageCheck, PartyPopper, Plane, Search, ShieldCheck, Truck } from 'lucide-react'
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Brand } from '../../components/ui/Brand'
+import { HauslineLogo } from '../../components/ui/HauslineLogo'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { buscarPedidoPublico } from '../../services/publicTracking.service'
 import type { EstadoPedido } from '../../types/domain'
@@ -52,7 +53,7 @@ export function TrackingPage() {
 }
 
 function Landing({ input, setInput, submit, notFound }: SearchProps & { notFound: boolean }) {
-  return <section className="relative mx-auto flex min-h-[calc(100vh-170px)] w-full max-w-2xl flex-col items-center justify-center px-5 py-16 text-center"><span className="grid size-14 place-items-center rounded-2xl border border-accent/20 bg-accent/10 text-accent"><PackageSearch size={27} /></span><p className="eyebrow mt-7">Seguimiento de pedidos</p><h1 className="mt-4 text-4xl font-semibold tracking-[-0.04em] sm:text-6xl">¿Dónde está tu pedido?</h1><p className="mt-5 max-w-lg text-sm leading-6 text-muted sm:text-base">Ingresa el código Hausline que recibiste al confirmar tu compra.</p><TrackingSearch input={input} setInput={setInput} submit={submit} />{notFound && <NotFound />}<p className="mt-5 text-xs text-muted">Tu código comienza con HS y contiene 6 números.</p></section>
+  return <section className="relative mx-auto flex min-h-[calc(100vh-170px)] w-full max-w-2xl flex-col items-center justify-center px-5 py-16 text-center"><HauslineLogo size={72} glow className="rounded-2xl shadow-accent" /><p className="eyebrow mt-7">Seguimiento de pedidos</p><h1 className="mt-4 text-4xl font-semibold tracking-[-0.04em] sm:text-6xl">¿Dónde está tu pedido?</h1><p className="mt-5 max-w-lg text-sm leading-6 text-muted sm:text-base">Ingresa el código Hausline que recibiste al confirmar tu compra.</p><TrackingSearch input={input} setInput={setInput} submit={submit} />{notFound && <NotFound />}<p className="mt-5 text-xs text-muted">Tu código comienza con HS y contiene 6 números.</p></section>
 }
 
 function ResultArea({ order, loading, input, setInput, submit, notFound }: SearchProps & { order: PublicOrder | null; loading: boolean; notFound: boolean }) {
@@ -61,6 +62,9 @@ function ResultArea({ order, loading, input, setInput, submit, notFound }: Searc
   const statusCode = aliases[order.estado_codigo] ?? order.estado_codigo
   const stepIndex = STEPS.findIndex((step) => step.code === statusCode)
   const currentIndex = Math.max(0, stepIndex)
+  // La cuenta regresiva ("faltan X días") solo aparece cuando el pedido ya fue despachado.
+  // Antes de eso mostramos solo la fecha estimada para no asustar al cliente con "faltan muchos días".
+  const mostrarCuenta = stepIndex >= STEPS.findIndex((step) => step.code === 'despachado')
   const isDelivered = order.estado_codigo === 'entregado'
   const isIssue = order.estado_codigo === 'incidencia' || order.estado_codigo === 'cancelado'
   // Tope del historial: nunca mostramos una etapa más avanzada que la actual.
@@ -69,6 +73,8 @@ function ResultArea({ order, loading, input, setInput, submit, notFound }: Searc
   const progress = isDelivered ? 100 : isIssue ? Math.max(8, currentIndex * (100 / (STEPS.length - 1))) : (currentIndex / (STEPS.length - 1)) * 100
   const whatsapp = import.meta.env.VITE_WHATSAPP_NUMBER
   const llegadaPais = [...order.historial].reverse().find((entry) => entry.estado === 'País de destino')
+  // Momento en que el pedido quedó disponible para entrega (para la política de bodega).
+  const disponibleDesde = order.historial.find((entry) => entry.estado === 'Disponible para entrega')?.fecha ?? order.ultima_actualizacion
   // Despacho = primer registro de "Despachado"; si no existe, el primer "En tránsito internacional".
   const despachoEntry = order.historial.find((entry) => entry.estado === 'Despachado') ?? order.historial.find((entry) => entry.estado === 'En tránsito internacional')
   // Días en tránsito visibles para el cliente: del despacho a la llegada al país (o hasta hoy si sigue en camino).
@@ -93,11 +99,11 @@ function ResultArea({ order, loading, input, setInput, submit, notFound }: Searc
   return <section key={order.codigo} className="tracking-result relative mx-auto min-h-[calc(100vh-170px)] w-full max-w-6xl px-5 py-7 sm:px-8 sm:py-12">
     <div className="reveal-up flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between" style={{ animationDelay: '0ms' }}><div><Link to="/tracking" className="inline-flex items-center gap-2 text-xs text-muted hover:text-white"><ArrowLeft size={15} /> Consultar otro pedido</Link><p className="eyebrow mt-6">Pedido {order.codigo}</p><div className="mt-2 flex flex-wrap items-center gap-3"><h1 className="text-2xl font-semibold tracking-tight sm:text-4xl">{order.estado}</h1>{order.estado_codigo === 'incidencia' && <span className="status-badge status-danger"><AlertCircle size={13} /> Requiere atención</span>}</div><p className="mt-2 flex items-center gap-2 text-xs text-muted sm:text-sm"><Clock3 size={15} /> Actualizado {formatDateTime(order.ultima_actualizacion)}</p></div><div className="w-full max-w-sm"><TrackingSearch input={input} setInput={setInput} submit={submit} compact /></div></div>
 
-    <div className="reveal-up" style={{ animationDelay: '90ms' }}><ProgressCard steps={STEPS} currentIndex={currentIndex} progress={progress} isDelivered={isDelivered} estimacion={estimacion} /></div>
+    <div className="reveal-up" style={{ animationDelay: '90ms' }}><ProgressCard steps={STEPS} currentIndex={currentIndex} progress={progress} isDelivered={isDelivered} estimacion={estimacion} mostrarCuenta={mostrarCuenta} /></div>
 
     <div className="mt-5 grid gap-5 lg:grid-cols-[1.45fr_.75fr]">
       <div className="reveal-up space-y-5" style={{ animationDelay: '180ms' }}><Products order={order} /><OrderImages order={order} type="producto" title="Fotos del producto" description="Imágenes de los artículos confirmados para tu pedido." fallback={order.productos.filter((product) => product.imagen).map((product, index) => ({ url: product.imagen as string, storage_path: `catalogo-${index}` }))} /><OrderImages order={order} type="control_calidad" title="Control de calidad" description="Fotos de revisión y preparación de tu pedido." /><OrderImages order={order} type="recepcion_miami" title="Recibido en bodega Miami" description="Foto del paquete al llegar a la bodega de nuestra agencia." /><OrderImages order={order} type="recibido_local" title="Recibido por Hausline" description="Confirmación de que recibimos tu paquete físicamente." /><Timeline order={order} capIndex={capIndex} /><Journeys order={order} /></div>
-      <aside className="reveal-up space-y-5 lg:sticky lg:top-6 lg:self-start" style={{ animationDelay: '270ms' }}>{order.estado_codigo === 'disponible_entrega' && <DeliveryCard codigo={order.codigo} whatsapp={whatsapp} />}<section className="public-card"><h2 className="flex items-center gap-2 text-sm font-semibold"><CalendarDays size={17} className="text-accent" /> Fechas importantes</h2>{transitoDias != null && <div className="mt-4 flex items-center gap-3 rounded-xl border border-accent/25 bg-accent/[0.06] p-3"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-accent/15 text-accent"><Plane size={17} /></span><div><strong className="block text-lg leading-none text-white">{transitoDias} {transitoDias === 1 ? 'día' : 'días'} en tránsito</strong><span className="mt-1 block text-[11px] text-muted">{llegadaPais ? 'Desde el despacho hasta que llegó al país' : 'Desde el despacho, tu pedido sigue en camino'}</span></div></div>}<div className="mt-5 space-y-4"><DateRow label="Pedido realizado" value={formatDate(order.fecha_pedido)} />{llegadaPais && <DateRow label="Llegó al país" value={formatDate(llegadaPais.fecha)} />}<DateRow label={estimacion.label} value={estimacion.value} highlight /><DateRow label="Última actualización" value={formatDate(order.ultima_actualizacion)} /></div></section>{order.notas_publicas && <section className="public-card"><h2 className="text-sm font-semibold">Nota sobre tu pedido</h2><p className="mt-3 text-sm leading-6 text-muted">{order.notas_publicas}</p></section>}<section className="public-card"><ShieldCheck size={20} className="text-accent" /><h2 className="mt-3 text-sm font-semibold">Información segura</h2><p className="mt-2 text-xs leading-5 text-muted">Esta página solo muestra información pública de tu pedido. Las fechas son estimadas y pueden variar por la logística internacional.</p>{whatsapp && <a href={whatsappUrl(whatsapp, `Hola, necesito ayuda con mi pedido ${order.codigo}.`)} target="_blank" rel="noopener noreferrer" className="primary-button mt-5 w-full"><MessageCircle size={17} /> Contactar por WhatsApp</a>}</section></aside>
+      <aside className="reveal-up space-y-5 lg:sticky lg:top-6 lg:self-start" style={{ animationDelay: '270ms' }}>{order.estado_codigo === 'disponible_entrega' && <DeliveryCard codigo={order.codigo} whatsapp={whatsapp} disponibleDesde={disponibleDesde} />}<section className="public-card"><h2 className="flex items-center gap-2 text-sm font-semibold"><CalendarDays size={17} className="text-accent" /> Fechas importantes</h2>{transitoDias != null && <div className="mt-4 flex items-center gap-3 rounded-xl border border-accent/25 bg-accent/[0.06] p-3"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-accent/15 text-accent"><Plane size={17} /></span><div><strong className="block text-lg leading-none text-white">{transitoDias} {transitoDias === 1 ? 'día' : 'días'} en tránsito</strong><span className="mt-1 block text-[11px] text-muted">{llegadaPais ? 'Desde el despacho hasta que llegó al país' : 'Desde el despacho, tu pedido sigue en camino'}</span></div></div>}<div className="mt-5 space-y-4"><DateRow label="Pedido realizado" value={formatDate(order.fecha_pedido)} />{llegadaPais && <DateRow label="Llegó al país" value={formatDate(llegadaPais.fecha)} />}<DateRow label={estimacion.label} value={estimacion.value} highlight /><DateRow label="Última actualización" value={formatDate(order.ultima_actualizacion)} /></div></section>{order.notas_publicas && <section className="public-card"><h2 className="text-sm font-semibold">Nota sobre tu pedido</h2><p className="mt-3 text-sm leading-6 text-muted">{order.notas_publicas}</p></section>}<section className="public-card"><ShieldCheck size={20} className="text-accent" /><h2 className="mt-3 text-sm font-semibold">Información segura</h2><p className="mt-2 text-xs leading-5 text-muted">Esta página solo muestra información pública de tu pedido. Las fechas son estimadas y pueden variar por la logística internacional.</p>{whatsapp && <a href={whatsappUrl(whatsapp, `Hola, necesito ayuda con mi pedido ${order.codigo}.`)} target="_blank" rel="noopener noreferrer" className="primary-button mt-5 w-full"><MessageCircle size={17} /> Contactar por WhatsApp</a>}</section></aside>
     </div>
   </section>
 }
@@ -112,8 +118,9 @@ function diasRestantes(dateStr: string) {
   return Math.round((target.getTime() - hoy.getTime()) / 86_400_000)
 }
 
-function EtaHero({ estimacion }: { estimacion: Estimacion }) {
-  const dias = !estimacion.delivered && estimacion.date ? diasRestantes(estimacion.date) : null
+function EtaHero({ estimacion, mostrarCuenta = true }: { estimacion: Estimacion; mostrarCuenta?: boolean }) {
+  // Antes del despacho solo mostramos la fecha estimada, sin cuenta regresiva de días.
+  const dias = mostrarCuenta && !estimacion.delivered && estimacion.date ? diasRestantes(estimacion.date) : null
   const cuenta = dias == null ? null : dias > 1 ? { big: String(dias), small: 'días' } : dias === 1 ? { big: '1', small: 'día' } : dias === 0 ? { big: 'Hoy', small: '¡llega!' } : { big: 'Ya', small: 'muy pronto' }
   const subtitulo = dias == null ? null : dias > 1 ? `Faltan ${dias} días` : dias === 1 ? 'Llega mañana' : dias === 0 ? 'Llega hoy' : 'En camino, muy pronto'
   return <div className={`eta-hero mt-4 flex items-center justify-between gap-4 rounded-2xl border p-4 sm:p-5 ${estimacion.delivered ? 'border-[#62eaa0]/30 bg-[#62eaa0]/[0.08]' : 'border-accent/30 bg-accent/[0.08]'}`}>
@@ -128,14 +135,14 @@ function EtaHero({ estimacion }: { estimacion: Estimacion }) {
   </div>
 }
 
-function ProgressCard({ steps, currentIndex, progress, isDelivered, estimacion }: { steps: typeof STEPS; currentIndex: number; progress: number; isDelivered: boolean; estimacion: Estimacion }) {
+function ProgressCard({ steps, currentIndex, progress, isDelivered, estimacion, mostrarCuenta }: { steps: typeof STEPS; currentIndex: number; progress: number; isDelivered: boolean; estimacion: Estimacion; mostrarCuenta: boolean }) {
   return <section className={`public-card mt-6 sm:mt-8 ${isDelivered ? 'border-[#62eaa0]/25' : ''}`}>
     <div className="flex items-center justify-between gap-3">
       <div><p className="text-xs font-semibold">Progreso del pedido</p><p className="mt-1 text-[11px] text-muted">{Math.round(progress)}% completado</p></div>
       <span className={`relative grid size-10 shrink-0 place-items-center rounded-xl ${isDelivered ? 'bg-[#62eaa0]/12 text-[#7af0ae]' : 'bg-accent/10 text-accent'}`}>{isDelivered ? <PartyPopper size={19} /> : <PackageCheck size={19} />}{isDelivered && <Confetti />}</span>
     </div>
     {isDelivered && <div className="delivered-banner mt-4 flex items-center gap-3 rounded-xl border border-[#62eaa0]/25 bg-[#62eaa0]/[0.07] p-3.5"><span className="step-dot step-done step-delivered size-9"><Check size={18} /></span><div><strong className="block text-sm text-[#7af0ae]">¡Tu pedido fue entregado!</strong><span className="text-[11px] text-muted">Gracias por comprar con Hausline.</span></div></div>}
-    <EtaHero estimacion={estimacion} />
+    <EtaHero estimacion={estimacion} mostrarCuenta={mostrarCuenta} />
     <div className="mt-5">
       <div className="progress-track"><div className={`progress-fill ${isDelivered ? 'is-complete' : ''}`} style={{ width: `${progress}%` }} /></div>
     </div>
@@ -188,7 +195,26 @@ function historialLimpio(historial: PublicOrder['historial'], capIndex: number) 
 function Timeline({ order, capIndex }: { order: PublicOrder; capIndex: number }) { const entries = [...historialLimpio(order.historial, capIndex)].reverse(); return <section className="public-card"><h2 className="flex items-center gap-2 text-sm font-semibold"><Clock3 size={17} className="text-accent" /> Historial</h2><div className="relative mt-5 space-y-5 before:absolute before:bottom-3 before:left-[13px] before:top-3 before:w-px before:bg-line">{entries.map((entry, index) => <div className="relative flex gap-3" key={`${entry.fecha}-${index}`}><span className={`relative z-10 mt-0.5 size-7 shrink-0 rounded-full border-4 border-panel ${index === 0 ? 'bg-accent shadow-accent' : 'bg-[#48504b]'}`} /><div><strong className="block text-xs">{entry.estado}</strong>{entry.nota && <p className="mt-1 text-xs leading-5 text-muted">{entry.nota}</p>}<p className="mt-1 text-[10px] text-muted">{entry.ubicacion ? `${entry.ubicacion} · ` : ''}{formatDateTime(entry.fecha)}</p></div></div>)}</div></section> }
 function Journeys({ order }: { order: PublicOrder }) { if (!order.trayectos.length) return null; return <section className="public-card"><h2 className="flex items-center gap-2 text-sm font-semibold"><Truck size={17} className="text-accent" /> Trayectos visibles</h2><div className="mt-4 grid gap-3 sm:grid-cols-2">{order.trayectos.map((route, index) => <article className="rounded-xl border border-line bg-black/10 p-4" key={`${route.tracking}-${index}`}><span className="text-[10px] font-semibold uppercase tracking-wider text-accent">Trayecto {index + 1}</span><strong className="mt-2 block text-sm">{route.tipo}</strong><p className="mt-1 text-xs text-muted">{[route.origen, route.destino].filter(Boolean).join(' → ')}</p>{route.ultima_ubicacion && <p className="mt-3 flex items-center gap-1.5 text-xs text-muted"><MapPin size={13} /> {route.ultima_ubicacion}</p>}<p className="mt-2 text-[11px] text-muted">{route.ultimo_evento}</p></article>)}</div></section> }
 
-function DeliveryCard({ codigo, whatsapp }: { codigo: string; whatsapp?: string }) {
+// Política de bodega: 2 días para confirmar o cancelar sin costo; después, USD 5 por cada día.
+const CARGO_BODEGA_DIARIO = 5
+const DIAS_GRACIA_BODEGA = 2
+function StoragePolicy({ disponibleDesde }: { disponibleDesde: string }) {
+  const inicio = new Date(disponibleDesde)
+  const dias = Math.max(0, Math.floor((new Date().getTime() - inicio.getTime()) / 86_400_000))
+  const diasCobrados = Math.max(0, dias - DIAS_GRACIA_BODEGA)
+  const cargo = diasCobrados * CARGO_BODEGA_DIARIO
+  const limite = new Date(inicio.getTime() + DIAS_GRACIA_BODEGA * 86_400_000)
+  if (diasCobrados > 0) return <div className="mt-4 rounded-xl border border-red-400/30 bg-red-400/[0.06] p-3.5">
+    <strong className="flex items-center gap-1.5 text-xs text-red-200"><AlertCircle size={14} /> Cargo por bodega activo</strong>
+    <p className="mt-1.5 text-[11px] leading-5 text-red-100/80">Pasaron {dias} días desde que tu pedido quedó disponible. Se aplica un cargo de USD {CARGO_BODEGA_DIARIO} por día después de los primeros {DIAS_GRACIA_BODEGA} días.</p>
+    <p className="mt-2 text-[11px] text-muted">Acumulado: <strong className="text-red-200">USD {cargo.toFixed(2)}</strong> ({diasCobrados} {diasCobrados === 1 ? 'día' : 'días'} × USD {CARGO_BODEGA_DIARIO})</p>
+  </div>
+  return <div className="mt-4 rounded-xl border border-amber-300/25 bg-amber-300/[0.06] p-3.5">
+    <strong className="flex items-center gap-1.5 text-xs text-amber-200"><CalendarDays size={14} /> Tienes {DIAS_GRACIA_BODEGA} días para confirmar</strong>
+    <p className="mt-1.5 text-[11px] leading-5 text-amber-100/80">Puedes confirmar o cancelar sin costo hasta el <strong>{formatDate(limite.toISOString())}</strong>. Después se cobran USD {CARGO_BODEGA_DIARIO} por cada día que el pedido siga en bodega.</p>
+  </div>
+}
+function DeliveryCard({ codigo, whatsapp, disponibleDesde }: { codigo: string; whatsapp?: string; disponibleDesde: string }) {
   const mensaje = `Hola, mi pedido ${codigo} ya está disponible para entrega. Quiero coordinar el envío y el pago. Mi dirección es: `
   return <section className="public-card border-accent/25 bg-accent/[0.04]">
     <h2 className="flex items-center gap-2 text-sm font-semibold text-accent"><Truck size={17} /> Coordina tu entrega</h2>
@@ -196,6 +222,7 @@ function DeliveryCard({ codigo, whatsapp }: { codigo: string; whatsapp?: string 
     <div className="mt-4 space-y-2.5">
       {DELIVERY_OPCIONES.map((opcion) => <div key={opcion.nombre} className="flex items-start justify-between gap-3 rounded-xl border border-line bg-black/10 p-3"><div><strong className="block text-xs">{opcion.nombre}</strong><span className="text-[11px] text-muted">{opcion.detalle}</span></div><strong className="shrink-0 text-xs text-accent">{opcion.costo}</strong></div>)}
     </div>
+    <StoragePolicy disponibleDesde={disponibleDesde} />
     <p className="mt-3 text-[11px] leading-5 text-muted">Escribinos por WhatsApp con tu dirección: te confirmamos tu saldo pendiente y te enviamos los números de cuenta para el pago.</p>
     {whatsapp && <a href={whatsappUrl(whatsapp, mensaje)} target="_blank" rel="noopener noreferrer" className="primary-button mt-4 w-full"><MessageCircle size={17} /> Coordinar por WhatsApp</a>}
   </section>

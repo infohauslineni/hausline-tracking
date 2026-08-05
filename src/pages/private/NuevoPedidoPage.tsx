@@ -1,15 +1,17 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { ArrowLeft, CircleDollarSign, PackagePlus, Plus, Save, Trash2, UserPlus } from 'lucide-react'
+import { ArrowLeft, CircleDollarSign, Download, FileText, MessageCircle, PackagePlus, Plus, Save, Trash2, UserPlus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useFieldArray, useForm, useWatch } from 'react-hook-form'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { z } from 'zod'
+import { Modal } from '../../components/ui/Modal'
 import { ESTADOS_PEDIDO } from '../../constants/orders'
 import { DEMO_CLIENTES } from '../../data/demo'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { guardarCliente, listarClientes } from '../../services/clientes.service'
 import { listarProductos } from '../../services/comercial.service'
+import { descargarFacturaPdf, enviarFacturaWhatsApp, type FacturaData } from '../../services/factura.service'
 import { crearPedido } from '../../services/pedidos.service'
 import type { Cliente, EstadoPedido, Producto } from '../../types/domain'
 
@@ -24,6 +26,7 @@ export function NuevoPedidoPage() {
   const [productos, setProductos] = useState<Producto[]>([])
   const [quickOpen, setQuickOpen] = useState(false)
   const [quick, setQuick] = useState({ nombre: '', whatsapp: '' })
+  const [factura, setFactura] = useState<FacturaData | null>(null)
   const { register, control, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { cliente_id: '', estado: 'pedido_confirmado', fecha_pedido: new Date().toISOString().slice(0, 10), fecha_estimada: '', abono: 0, metodo_pago: 'Transferencia', notas_internas: '', notas_publicas: '', items: [blankItem] } })
   const { fields, append, remove } = useFieldArray({ control, name: 'items' })
   const items = useWatch({ control, name: 'items' })
@@ -64,9 +67,21 @@ export function NuevoPedidoPage() {
   const submit = async (values: FormValues) => {
     try {
       const normalizedItems = values.items.map((item) => ({ ...item, producto: item.producto || item.codigo_producto, cantidad: 1, color: '', envio_internacional: 0, costo_delivery: 0, otros_gastos: 0, notas: '', imagen: productos.find((product) => product.id === item.producto_id)?.imagen ?? null }))
-      if (isSupabaseConfigured) await crearPedido({ cliente_id: values.cliente_id, estado: values.estado as EstadoPedido, fecha_pedido: values.fecha_pedido, fecha_estimada: values.fecha_estimada || null, abono: values.abono, metodo_pago: values.metodo_pago || null, notas_internas: values.notas_internas || null, notas_publicas: values.notas_publicas || null, items: normalizedItems })
-      toast.success(isSupabaseConfigured ? 'Pedido creado correctamente.' : 'Pedido validado en la vista previa.')
-      navigate('/pedidos')
+      if (!isSupabaseConfigured) { toast.success('Pedido validado en la vista previa.'); navigate('/pedidos'); return }
+      const created = await crearPedido({ cliente_id: values.cliente_id, estado: values.estado as EstadoPedido, fecha_pedido: values.fecha_pedido, fecha_estimada: values.fecha_estimada || null, abono: values.abono, metodo_pago: values.metodo_pago || null, notas_internas: values.notas_internas || null, notas_publicas: values.notas_publicas || null, items: normalizedItems })
+      toast.success('Pedido creado correctamente.')
+      const cliente = clientes.find((client) => client.id === values.cliente_id)
+      const ventaTotal = normalizedItems.reduce((sum, item) => sum + Number(item.precio_unitario || 0), 0)
+      setFactura({
+        codigo: created.codigo,
+        cliente: cliente?.nombre ?? 'Cliente',
+        whatsapp: cliente?.whatsapp ?? null,
+        fecha: values.fecha_pedido,
+        items: normalizedItems.map((item) => ({ producto: item.producto, detalle: [item.marca, item.talla].filter(Boolean).join(' · ') || undefined, cantidad: 1, precio: Number(item.precio_unitario || 0) })),
+        total: ventaTotal,
+        abono: Number(values.abono || 0),
+        saldo: ventaTotal - Number(values.abono || 0),
+      })
     } catch (error) { toast.error(error instanceof Error ? error.message : 'No se pudo crear el pedido.') }
   }
 
@@ -84,7 +99,30 @@ export function NuevoPedidoPage() {
       <section className="form-section"><SectionTitle number="03" title="Resumen de venta" /><div className="form-grid mt-5"><Field label="Notas internas"><textarea rows={4} {...register('notas_internas')} /></Field><Field label="Notas visibles para el cliente"><textarea rows={4} {...register('notas_publicas')} /></Field></div><div className="mt-5 grid gap-3 rounded-xl border border-line bg-white/[0.025] p-4 sm:grid-cols-5"><Money label="Venta" value={total} /><Money label="Costo" value={costo} /><Money label="Ganancia" value={total - costo} accent /><Money label="Abono" value={abono} /><Money label="Saldo" value={total - abono} /></div></section>
       <div className="sticky bottom-3 z-10 flex items-center justify-between gap-3 rounded-2xl border border-line bg-[#121512]/95 p-3 shadow-2xl backdrop-blur-xl"><div className="hidden items-center gap-2 text-xs text-muted sm:flex"><CircleDollarSign size={17} className="text-accent" /> Total: <strong className="text-white">${total.toFixed(2)}</strong></div><button type="button" className="subtle-button px-5" onClick={() => navigate('/pedidos')}>Cancelar</button><button disabled={isSubmitting} className="primary-button flex-1 px-6 sm:flex-none"><Save size={17} /> {isSubmitting ? 'Guardando…' : 'Guardar pedido'}</button></div>
     </form>
+    <FacturaModal factura={factura} onClose={() => { setFactura(null); navigate('/pedidos') }} />
   </div>
+}
+
+function FacturaModal({ factura, onClose }: { factura: FacturaData | null; onClose: () => void }) {
+  const [busy, setBusy] = useState<'wa' | 'pdf' | null>(null)
+  if (!factura) return null
+  const enviar = async () => { setBusy('wa'); try { const result = await enviarFacturaWhatsApp(factura); toast.success(result === 'shared' ? 'Factura compartida.' : result === 'cancelled' ? 'Envío cancelado.' : result === 'downloaded_no_whatsapp' ? 'Factura descargada (el cliente no tiene WhatsApp).' : 'Factura descargada y chat de WhatsApp abierto.') } catch { toast.error('No se pudo enviar la factura.') } finally { setBusy(null) } }
+  const descargar = async () => { setBusy('pdf'); try { await descargarFacturaPdf(factura); toast.success('Factura PDF descargada.') } catch { toast.error('No se pudo generar el PDF.') } finally { setBusy(null) } }
+  return <Modal open={Boolean(factura)} onClose={onClose} title="Pedido creado" description="Envía la factura al cliente junto con su código de seguimiento.">
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-accent/25 bg-accent/[.05] p-5 text-center">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted">Código de compra</p>
+        <strong className="mt-1 block text-3xl font-black tracking-tight text-accent">{factura.codigo}</strong>
+        <p className="mt-2 text-xs text-muted">{factura.cliente} · Total USD {factura.total.toFixed(2)} · Saldo USD {Math.max(0, factura.saldo).toFixed(2)}</p>
+      </div>
+      <div className="grid gap-2.5 sm:grid-cols-2">
+        <button type="button" className="primary-button" disabled={busy !== null} onClick={() => void enviar()}><MessageCircle size={17} /> {busy === 'wa' ? 'Preparando…' : 'Enviar por WhatsApp'}</button>
+        <button type="button" className="subtle-button justify-center py-3" disabled={busy !== null} onClick={() => void descargar()}><Download size={16} /> {busy === 'pdf' ? 'Generando…' : 'Descargar PDF'}</button>
+      </div>
+      <div className="flex items-center gap-2 rounded-xl border border-line bg-white/[.02] p-3 text-[11px] leading-5 text-muted"><FileText size={22} className="shrink-0 text-muted" /> La factura incluye el detalle del pedido, los totales y el código para rastrear. La imagen es ideal para WhatsApp y el PDF para archivarlo.</div>
+      <button type="button" className="subtle-button w-full justify-center py-3" onClick={onClose}>Ir a pedidos</button>
+    </div>
+  </Modal>
 }
 
 function SectionTitle({ number, title }: { number: string; title: string }) { return <div className="flex items-center gap-3"><span className="text-xs font-bold text-accent">{number}</span><h2 className="font-semibold">{title}</h2></div> }

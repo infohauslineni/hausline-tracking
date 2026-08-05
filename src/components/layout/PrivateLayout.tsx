@@ -30,7 +30,6 @@ const links = [
   { to: '/pagos', label: 'Pagos', icon: CreditCard },
   { to: '/gastos', label: 'Gastos', icon: ReceiptText },
   { to: '/cuenta', label: 'Mi cuenta', icon: Wallet },
-  { to: '/deudas', label: 'Deudas y salario', icon: HandCoins },
   { to: '/metas', label: 'Fondos para compras', icon: Target },
   { to: '/contenido', label: 'Contenido privado', icon: Clapperboard },
   { to: '/reportes', label: 'Ganancias y reportes', icon: BarChart3 },

@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { CheckCircle2, Edit3, ExternalLink, Package, Plus, Search, Trash2, Truck } from 'lucide-react'
+import { CheckCircle2, ChevronDown, ChevronUp, Edit3, ExternalLink, Package, Plus, Search, Trash2, Truck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
@@ -31,6 +31,7 @@ export function LogisticaPage() {
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<EditingTarget>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [mostrarEntregados, setMostrarEntregados] = useState(false)
 
   useEffect(() => {
     if (!isSupabaseConfigured) return
@@ -76,7 +77,7 @@ export function LogisticaPage() {
       {activeRoutes.map((route) => <RouteCard key={route.id} route={route} onEdit={() => { setEditing({ kind: 'pedido', value: route }); setModalOpen(true) }} onDelete={() => void removeRoute(route)} onDelivered={() => void deliverRoute(route)} onReopen={() => void reopenRoute(route)} />)}
       {activeStock.map((item) => <StockRouteCard key={`stock-${item.id}`} item={item} carriers={transportistas} onEdit={() => { setEditing({ kind: 'stock', value: item }); setModalOpen(true) }} onDelete={() => void removeStockTracking(item)} onDelivered={() => void deliverStock(item)} onReopen={() => void reopenStock(item)} />)}
     </div>
-    {entregados > 0 && <><h2 className="mt-10 flex items-center gap-2 text-sm font-semibold text-emerald-300"><CheckCircle2 size={17} /> Trackings entregados ({entregados})</h2><div className="mt-3 grid gap-4 xl:grid-cols-2">{deliveredRoutes.map((route) => <RouteCard key={route.id} route={route} onEdit={() => { setEditing({ kind: 'pedido', value: route }); setModalOpen(true) }} onDelete={() => void removeRoute(route)} onDelivered={() => void deliverRoute(route)} onReopen={() => void reopenRoute(route)} />)}{deliveredStock.map((item) => <StockRouteCard key={`stock-${item.id}`} item={item} carriers={transportistas} onEdit={() => { setEditing({ kind: 'stock', value: item }); setModalOpen(true) }} onDelete={() => void removeStockTracking(item)} onDelivered={() => void deliverStock(item)} onReopen={() => void reopenStock(item)} />)}</div></>}
+    {entregados > 0 && (() => { const expandido = mostrarEntregados || Boolean(search.trim()); return <><button type="button" onClick={() => setMostrarEntregados((value) => !value)} className="mt-10 flex w-full items-center gap-2 rounded-xl border border-line bg-white/[0.02] px-4 py-3 text-sm font-semibold text-emerald-300 transition hover:border-emerald-300/30 hover:bg-emerald-300/[0.04]"><CheckCircle2 size={17} /> Trackings entregados ({entregados}) <span className="ml-auto flex items-center gap-1.5 text-xs font-medium text-muted">{expandido ? 'Ocultar' : 'Ver'} {expandido ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span></button>{expandido && <div className="mt-3 grid gap-4 xl:grid-cols-2">{deliveredRoutes.map((route) => <RouteCard key={route.id} route={route} onEdit={() => { setEditing({ kind: 'pedido', value: route }); setModalOpen(true) }} onDelete={() => void removeRoute(route)} onDelivered={() => void deliverRoute(route)} onReopen={() => void reopenRoute(route)} />)}{deliveredStock.map((item) => <StockRouteCard key={`stock-${item.id}`} item={item} carriers={transportistas} onEdit={() => { setEditing({ kind: 'stock', value: item }); setModalOpen(true) }} onDelete={() => void removeStockTracking(item)} onDelivered={() => void deliverStock(item)} onReopen={() => void reopenStock(item)} />)}</div>}</> })()}
     {filteredRoutes.length + filteredStock.length === 0 && <div className="mt-6 grid min-h-64 place-items-center rounded-2xl border border-dashed border-line text-center"><div><Truck className="mx-auto text-muted" /><h2 className="mt-3 font-semibold">No hay trackings</h2><p className="mt-1 text-sm text-muted">Agrega el tracking de un pedido o producto de stock.</p></div></div>}
     <TrackingModal open={modalOpen} editing={editing} pedidos={pedidos} stock={stock} carriers={transportistas} onClose={() => { setModalOpen(false); setEditing(null) }} onRouteSaved={saveRoute} onStockSaved={saveStock} />
   </div>
