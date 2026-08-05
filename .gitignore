@@ -1,0 +1,11 @@
+node_modules
+dist
+.env
+.env.local
+.vercel
+*.log
+
+# Cachés y datos de herramientas (no forman parte del código)
+.npm-cache
+.agents
+.codex

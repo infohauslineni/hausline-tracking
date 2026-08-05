@@ -1,0 +1,102 @@
+{
+  "name": "HAUSLINE · WF3 Notificaciones de estado",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [ { "field": "minutes", "minutesInterval": 5 } ] }
+      },
+      "id": "wf3-cron",
+      "name": "Cada 5 minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/rpc/wa_pedidos_pendientes_notificacion",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{$vars.SUPABASE_SERVICE_ROLE_KEY}}" },
+            { "name": "Authorization", "value": "=Bearer {{$vars.SUPABASE_SERVICE_ROLE_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={}",
+        "options": {}
+      },
+      "id": "wf3-rpc-pend",
+      "name": "RPC pendientes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// La RPC devuelve un array JSON en el body. Lo dividimos en items y\n// construimos el mensaje por estado (réplica de mensajeWhatsAppEstado).\nconst base = ($vars.TRACKING_BASE_URL || '').replace(/\\/+$/, '');\nconst pend = $input.first().json;\nconst lista = Array.isArray(pend) ? pend : (Array.isArray(pend.data) ? pend.data : []);\n\nconst plantilla = (p) => {\n  const nombre = p.nombre ? `, ${p.nombre}` : '';\n  const url = `${base}?codigo=${p.codigo}`;\n  const saldo = Math.max(0, Number(p.saldo || 0)).toFixed(2);\n  const seg = `Consulta tu seguimiento aquí: ${url}`;\n  const m = {\n    pedido_confirmado: `Hola${nombre}. Confirmamos tu orden ${p.codigo}. Ya quedó registrada y te avisaremos cada avance. ${seg}`,\n    en_preparacion: `Hola${nombre}. Tu pedido ${p.codigo} está en preparación. ${seg}`,\n    control_calidad: `Hola${nombre}. Tu pedido ${p.codigo} está en control de calidad. ${seg}`,\n    etiqueta_creada: `Hola${nombre}. Ya fue creada la etiqueta de envío de tu pedido ${p.codigo}. ${seg}`,\n    despachado: `📦 Hola${nombre}. Tu pedido ${p.codigo} ya fue despachado y está en tránsito. ${seg}`,\n    transito_internacional: `📦 Hola${nombre}. Tu pedido ${p.codigo} está en tránsito internacional. ${seg}`,\n    recibido_estados_unidos: `Hola${nombre}. Tu pedido ${p.codigo} fue recibido en Estados Unidos y sigue hacia Nicaragua. ${seg}`,\n    transito_nicaragua: `📦 Hola${nombre}. Tu pedido ${p.codigo} ya viaja hacia Nicaragua. ${seg}`,\n    llego_nicaragua: `Hola${nombre}. Tu pedido ${p.codigo} ya llegó a Nicaragua y está siendo procesado. ${seg}`,\n    disponible_entrega: `✅ Hola${nombre}. Tu pedido HAUSLINE ${p.codigo} ya está disponible. Saldo pendiente: USD ${saldo}. ${seg}\\nEscríbenos para coordinar la entrega o retiro.`,\n    entregado: `Hola${nombre}. Tu pedido ${p.codigo} fue entregado. ¡Gracias por comprar en HAUSLINE!`,\n  };\n  return m[p.estado] || `Hola${nombre}. 📦 Actualización de tu pedido HAUSLINE ${p.codigo}: ${p.estado_label}. ${seg}`;\n};\n\nreturn lista.map((p) => ({ json: { ...p, mensaje: plantilla(p) } }));"
+      },
+      "id": "wf3-build",
+      "name": "Construir avisos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{$vars.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{$vars.WHATSAPP_TOKEN}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{$json.whatsapp}}\",\n  \"type\": \"text\",\n  \"text\": { \"body\": {{ JSON.stringify($json.mensaje) }} }\n}",
+        "options": {}
+      },
+      "id": "wf3-send",
+      "name": "Enviar WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 300],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/rpc/wa_registrar_notificacion",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{$vars.SUPABASE_SERVICE_ROLE_KEY}}" },
+            { "name": "Authorization", "value": "=Bearer {{$vars.SUPABASE_SERVICE_ROLE_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"p_pedido_id\": \"{{$('Construir avisos').item.json.pedido_id}}\",\n  \"p_estado\": \"{{$('Construir avisos').item.json.estado}}\",\n  \"p_wa_id\": \"{{$('Construir avisos').item.json.whatsapp}}\",\n  \"p_mensaje\": {{ JSON.stringify($('Construir avisos').item.json.mensaje) }},\n  \"p_message_id\": \"{{ ($json.messages && $json.messages[0] && $json.messages[0].id) || '' }}\",\n  \"p_resultado\": \"{{ ($json.error ? 'error' : 'enviado') }}\"\n}",
+        "options": {}
+      },
+      "id": "wf3-registrar",
+      "name": "Registrar notificación",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 300]
+    }
+  ],
+  "connections": {
+    "Cada 5 minutos": { "main": [[{ "node": "RPC pendientes", "type": "main", "index": 0 }]] },
+    "RPC pendientes": { "main": [[{ "node": "Construir avisos", "type": "main", "index": 0 }]] },
+    "Construir avisos": { "main": [[{ "node": "Enviar WhatsApp", "type": "main", "index": 0 }]] },
+    "Enviar WhatsApp": { "main": [[{ "node": "Registrar notificación", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

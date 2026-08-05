@@ -1,0 +1,71 @@
+{
+  "name": "HAUSLINE · WF5 Reactivar IA",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "hausline-reactivar",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wf5-webhook",
+      "name": "Webhook Reactivar",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "webhookId": "hausline-reactivar"
+    },
+    {
+      "parameters": {
+        "jsCode": "const wa = ($input.first().json.query || {}).wa_id;\nif (!wa) throw new Error('Falta wa_id');\nreturn [{ json: { wa_id: String(wa).replace(/\\D/g, '') } }];"
+      },
+      "id": "wf5-code",
+      "name": "Extraer wa_id",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.SUPABASE_URL}}/rest/v1/rpc/wa_reactivar_ia",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{$vars.SUPABASE_SERVICE_ROLE_KEY}}" },
+            { "name": "Authorization", "value": "=Bearer {{$vars.SUPABASE_SERVICE_ROLE_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"p_wa_id\": \"{{$json.wa_id}}\" }",
+        "options": {}
+      },
+      "id": "wf5-rpc",
+      "name": "RPC wa_reactivar_ia",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": true, \"wa_id\": \"{{$('Extraer wa_id').item.json.wa_id}}\" }",
+        "options": {}
+      },
+      "id": "wf5-respond",
+      "name": "Responder OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [880, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Reactivar": { "main": [[{ "node": "Extraer wa_id", "type": "main", "index": 0 }]] },
+    "Extraer wa_id": { "main": [[{ "node": "RPC wa_reactivar_ia", "type": "main", "index": 0 }]] },
+    "RPC wa_reactivar_ia": { "main": [[{ "node": "Responder OK", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

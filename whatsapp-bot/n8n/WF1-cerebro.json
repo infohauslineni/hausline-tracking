@@ -1,0 +1,354 @@
+{
+  "name": "HAUSLINE · WF1 Cerebro (recepción y respuesta)",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "GET", "path": "hausline-wa", "responseMode": "responseNode", "options": {} },
+      "id": "g1", "name": "Webhook verificación (GET)", "type": "n8n-nodes-base.webhook", "typeVersion": 2,
+      "position": [-600, -40], "webhookId": "hausline-wa-verify"
+    },
+    {
+      "parameters": { "jsCode": "const q = ($input.first().json.query)||{};\nconst ok = q['hub.verify_token'] === $vars.WHATSAPP_VERIFY_TOKEN;\nreturn [{ json: { challenge: ok ? String(q['hub.challenge']||'') : '' } }];" },
+      "id": "g2", "name": "Validar verificación", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [-380, -40]
+    },
+    {
+      "parameters": { "respondWith": "text", "responseBody": "={{$json.challenge}}", "options": {} },
+      "id": "g4", "name": "Responder challenge", "type": "n8n-nodes-base.respondToWebhook", "typeVersion": 1, "position": [-160, -40]
+    },
+
+    {
+      "parameters": { "httpMethod": "POST", "path": "hausline-wa", "responseMode": "onReceived", "options": { "responseCode": 200 } },
+      "id": "p1", "name": "Webhook mensajes (POST)", "type": "n8n-nodes-base.webhook", "typeVersion": 2,
+      "position": [-600, 260], "webhookId": "hausline-wa-msg"
+    },
+    {
+      "parameters": { "jsCode": "const root = $input.first().json;\nconst body = root.body || root;\ntry {\n  const value = body.entry && body.entry[0] && body.entry[0].changes && body.entry[0].changes[0] && body.entry[0].changes[0].value;\n  const msg = value && value.messages && value.messages[0];\n  if (!msg) return [{ json: { skip: true } }];\n  const from = msg.from;\n  const biz = ($vars.BUSINESS_PHONE_NUMBER||'').replace(/\\D/g,'');\n  if (biz && from === biz) return [{ json: { skip: true } }];\n  const nombre = value.contacts && value.contacts[0] && value.contacts[0].profile && value.contacts[0].profile.name || null;\n  const type = msg.type;\n  let text='', media_id=null, media_type=null;\n  if (type==='text') text = (msg.text&&msg.text.body)||'';\n  else if (type==='image') { media_id=msg.image&&msg.image.id; media_type='image'; text=(msg.image&&msg.image.caption)||''; }\n  else if (type==='document') { media_id=msg.document&&msg.document.id; media_type='document'; text=(msg.document&&msg.document.caption)||''; }\n  else if (type==='interactive') text = (msg.interactive&&((msg.interactive.button_reply&&msg.interactive.button_reply.title)||(msg.interactive.list_reply&&msg.interactive.list_reply.title)))||'';\n  else if (type==='button') text = (msg.button&&msg.button.text)||'';\n  return [{ json: { skip:false, wa_id:from, message_id:msg.id, type, text, media_id, media_type, nombre } }];\n} catch(e) { return [{ json: { skip:true, error:String(e) } }]; }" },
+      "id": "p2", "name": "Parsear evento", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [-380, 260]
+    },
+    {
+      "parameters": {
+        "conditions": { "options": { "version": 2, "typeValidation": "strict" }, "combinator": "and",
+          "conditions": [ { "id": "px", "leftValue": "={{$json.skip}}", "rightValue": false, "operator": { "type": "boolean", "operation": "false", "singleValue": true } } ] },
+        "options": {}
+      },
+      "id": "p3", "name": "¿Procesar?", "type": "n8n-nodes-base.if", "typeVersion": 2, "position": [-160, 260]
+    },
+    {
+      "parameters": {
+        "method": "POST", "url": "={{$vars.SUPABASE_URL}}/rest/v1/rpc/wa_marcar_mensaje",
+        "sendHeaders": true, "headerParameters": { "parameters": [
+          { "name": "apikey", "value": "={{$vars.SUPABASE_SERVICE_ROLE_KEY}}" },
+          { "name": "Authorization", "value": "=Bearer {{$vars.SUPABASE_SERVICE_ROLE_KEY}}" },
+          { "name": "Content-Type", "value": "application/json" } ] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={ \"p_message_id\": {{ JSON.stringify($json.message_id) }}, \"p_wa_id\": {{ JSON.stringify($json.wa_id) }} }",
+        "options": {}
+      },
+      "id": "p4", "name": "Dedup mensaje", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [60, 260]
+    },
+    {
+      "parameters": {
+        "conditions": { "options": { "version": 2, "typeValidation": "loose" }, "combinator": "and",
+          "conditions": [ { "id": "pn", "leftValue": "={{$json.data === true || $json === true || $json.body === true}}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } } ] },
+        "options": {}
+      },
+      "id": "p5", "name": "¿Nuevo?", "type": "n8n-nodes-base.if", "typeVersion": 2, "position": [280, 260]
+    },
+    {
+      "parameters": {
+        "method": "POST", "url": "={{$vars.SUPABASE_URL}}/rest/v1/rpc/wa_obtener_conversacion",
+        "sendHeaders": true, "headerParameters": { "parameters": [
+          { "name": "apikey", "value": "={{$vars.SUPABASE_SERVICE_ROLE_KEY}}" },
+          { "name": "Authorization", "value": "=Bearer {{$vars.SUPABASE_SERVICE_ROLE_KEY}}" },
+          { "name": "Content-Type", "value": "application/json" } ] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={ \"p_wa_id\": {{ JSON.stringify($('Parsear evento').item.json.wa_id) }} }",
+        "options": {}
+      },
+      "id": "p6", "name": "Cargar conversación", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [500, 260]
+    },
+    {
+      "parameters": {
+        "conditions": { "options": { "version": 2, "typeValidation": "loose" }, "combinator": "and",
+          "conditions": [ { "id": "ph", "leftValue": "={{ (Array.isArray($json)?$json[0]:$json).atencion_humana }}", "rightValue": true, "operator": { "type": "boolean", "operation": "false", "singleValue": true } } ] },
+        "options": {}
+      },
+      "id": "p7", "name": "¿IA activa?", "type": "n8n-nodes-base.if", "typeVersion": 2, "position": [720, 260]
+    },
+    {
+      "parameters": { "jsCode": "const conv0 = $('Cargar conversación').item.json;\nconst conv = Array.isArray(conv0)?conv0[0]:conv0;\nconst msg = $('Parsear evento').item.json;\nconst up = conv && conv.ultimo_producto ? conv.ultimo_producto : null;\nconst system = `Eres el CLASIFICADOR del vendedor virtual de HAUSLINE (ropa, zapatos y accesorios premium bajo pedido, Nicaragua). Devuelve SOLO un JSON valido, sin markdown. No inventes datos. Si ya habia un producto en contexto, reusalo y no lo vuelvas a preguntar. Nunca pidas el telefono. Intents: saludo, consulta_producto, consulta_precio, busqueda_codigo, busqueda_marca, consulta_seguimiento, intencion_compra, confirmacion_pedido, envio_comprobante, atencion_humana, otro. requires_human=true si hay reclamo, garantia, reembolso, molestia, problema de pago, cotizacion/descuento especial o mayoreo. Campos exactos: {\\\"intent\\\":\\\"\\\",\\\"requires_product_search\\\":false,\\\"search_term\\\":null,\\\"product_code\\\":null,\\\"customer_ready_to_order\\\":false,\\\"order_data\\\":{\\\"nombre\\\":null,\\\"producto\\\":null,\\\"codigo\\\":null,\\\"talla\\\":null,\\\"color\\\":null,\\\"cantidad\\\":null},\\\"missing_order_data\\\":[],\\\"requires_tracking_search\\\":false,\\\"tracking_code\\\":null,\\\"requires_human\\\":false,\\\"human_reason\\\":null,\\\"response\\\":\\\"\\\"}`;\nconst user = `Contexto (ultimo producto mostrado): ${up?JSON.stringify(up):'ninguno'}\\nNombre del contacto: ${msg.nombre||'desconocido'}\\nTipo de mensaje: ${msg.type}${msg.media_id?' (adjunto '+msg.media_type+')':''}\\nMensaje del cliente: ${JSON.stringify(msg.text||'')}`;\nreturn [{ json: { system, user, conv, msg } }];" },
+      "id": "p8prep", "name": "Preparar clasificador", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [940, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST", "url": "={{$vars.AI_API_URL}}",
+        "sendHeaders": true, "headerParameters": { "parameters": [
+          { "name": "x-api-key", "value": "={{$vars.AI_API_KEY}}" },
+          { "name": "anthropic-version", "value": "2023-06-01" },
+          { "name": "Content-Type", "value": "application/json" } ] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={ \"model\": {{ JSON.stringify($vars.AI_MODEL) }}, \"max_tokens\": 700, \"system\": {{ JSON.stringify($json.system) }}, \"messages\": [ { \"role\": \"user\", \"content\": {{ JSON.stringify($json.user) }} } ] }",
+        "options": {}
+      },
+      "id": "p8", "name": "Claude · Clasificar", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [1160, 180]
+    },
+    {
+      "parameters": { "jsCode": "const c = $input.first().json;\nlet raw = (c.content && c.content[0] && c.content[0].text) || (c.body && c.body.content && c.body.content[0] && c.body.content[0].text) || '{}';\nraw = String(raw).trim().replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();\nlet intent;\ntry { intent = JSON.parse(raw); } catch(e){ intent = { intent:'otro', response:'¿Podrías repetirlo, por favor? Con gusto te ayudo.', requires_product_search:false, requires_tracking_search:false, requires_human:false, order_data:{}, missing_order_data:[] }; }\nconst prep = $('Preparar clasificador').item.json;\nreturn [{ json: { intent, conv: prep.conv, msg: prep.msg } }];" },
+      "id": "p9", "name": "Parse intención", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [1380, 180]
+    },
+    {
+      "parameters": {
+        "method": "GET", "url": "={{$vars.CATALOG_JSON_URL}}",
+        "options": {}
+      },
+      "id": "p10", "name": "Fetch catálogo", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [1600, 180],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST", "url": "={{$vars.SUPABASE_URL}}/rest/v1/rpc/wa_consultar_pedido",
+        "sendHeaders": true, "headerParameters": { "parameters": [
+          { "name": "apikey", "value": "={{$vars.SUPABASE_SERVICE_ROLE_KEY}}" },
+          { "name": "Authorization", "value": "=Bearer {{$vars.SUPABASE_SERVICE_ROLE_KEY}}" },
+          { "name": "Content-Type", "value": "application/json" } ] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={ \"p_codigo\": {{ JSON.stringify(($('Parse intención').item.json.intent.tracking_code)||'HS000000') }}, \"p_whatsapp\": {{ JSON.stringify($('Parse intención').item.json.msg.wa_id) }} }",
+        "options": {}
+      },
+      "id": "p11", "name": "Consulta tracking", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [1820, 180],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": { "jsCode": "const P = $('Parse intención').item.json;\nconst intent = P.intent||{}; const msg = P.msg||{}; const conv = P.conv||{};\nconst catalog = (()=>{ const j=$('Fetch catálogo').item.json; if(Array.isArray(j)) return j; if(j&&Array.isArray(j.data)) return j.data; if(j&&Array.isArray(j.body)) return j.body; return []; })();\nlet tracking = (()=>{ const j=$('Consulta tracking').item.json; if(j&&j.data!==undefined) return j.data; if(j&&j.codigo) return j; if(j&&j.body) return j.body; return null; })();\n\nconst norm=s=>(s||'').toString().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/\\s+/g,' ').trim();\nconst ALIAS={'loubutin':'christian louboutin','louboutin':'christian louboutin','cl':'christian louboutin','gg':'golden goose','ppm':'philip model','ami':'ami paris','off white':'off-white','offwhite':'off-white','d&g':'dolce & gabbana','dolce gabanna':'dolce & gabbana','dolce&gabanna':'dolce & gabbana','louis vouitton':'louis vuitton'};\nconst cm=s=>{const n=norm(s);return ALIAS[n]||n;};\nconst precio=p=>{const o=Number(p.precio_oferta!=null?p.precio_oferta:(p.precioOferta||0)),v=Number(p.precio_venta!=null?p.precio_venta:(p.precioVenta!=null?p.precioVenta:(p.precio||0)));return o>0?o:v;};\nconst link=p=>`${($vars.CATALOG_URL||'https://hauslineshopni.es').replace(/\\/+$/,'')}/?producto=${encodeURIComponent(p.codigo||'')}`;\nconst normp=p=>({codigo:p.codigo||null,nombre:p.nombre||'',marca:p.marca||null,categoria:p.categoria||null,tallas:p.tallas||[],colores:p.colores||[],precio:precio(p),imagen:p.imagen||null,enlace:link(p),tiempo_estimado:'15 a 25 días hábiles'});\nfunction buscar(cat,o){o=o||{};const limit=o.limit||3;if(o.code){const c=norm(o.code);const e=cat.find(p=>norm(p.codigo)===c);if(e)return[normp(e)];}if(!o.term)return[];const q=norm(o.term),qm=cm(o.term),ws=q.split(' ').filter(Boolean);const sc=p=>{const n=norm(p.nombre),m=cm(p.marca),ca=norm(p.categoria),co=norm(p.codigo);let s=0;if(co===q)s+=100;if(m===qm)s+=40;if(n.indexOf(q)>=0)s+=30;if(ca===q)s+=20;for(const w of ws){if(n.indexOf(w)>=0)s+=6;if(m.indexOf(w)>=0)s+=5;if(ca.indexOf(w)>=0)s+=3;}if(p.activo===false||p.disponible===false)s-=1000;return s;};return cat.map(p=>({p,s:sc(p)})).filter(x=>x.s>0).sort((a,b)=>b.s-a.s).slice(0,limit).map(x=>normp(x.p));}\n\nlet productos=[];\nif (intent.requires_product_search || intent.product_code || intent.search_term) {\n  productos = buscar(catalog,{ code: intent.product_code||(intent.order_data&&intent.order_data.codigo), term: intent.search_term });\n}\nconst up = conv && conv.ultimo_producto ? conv.ultimo_producto : null;\nconst ultimo_producto = productos[0] || up || null;\n\n// Determinar ruta\nlet ruta='normal';\nif (intent.requires_human || intent.intent==='atencion_humana') ruta='humano';\nelse if (intent.intent==='envio_comprobante' || (msg.media_id && msg.type!=='text')) ruta='comprobante';\nelse if (intent.intent==='confirmacion_pedido' && intent.customer_ready_to_order && (!intent.missing_order_data || intent.missing_order_data.length===0)) ruta='confirmar';\n\n// Payload de borrador (solo si confirmar)\nlet payload=null, resumen=null;\nif (ruta==='confirmar') {\n  const od = intent.order_data||{};\n  const prod = buscar(catalog,{ code: od.codigo, term: od.producto })[0] || ultimo_producto;\n  const precioU = prod ? prod.precio : 0;\n  const cant = Math.max(1, Number(od.cantidad||1));\n  const total = Math.round(precioU*cant*100)/100;\n  const abono = Math.round(total*0.5*100)/100;\n  payload = { nombre: od.nombre||msg.nombre||conv.nombre||null, whatsapp: msg.wa_id, abono, items:[{ producto: od.producto||(prod&&prod.nombre)||'Producto', marca: prod&&prod.marca, categoria: prod&&prod.categoria, talla: od.talla, color: od.color, cantidad: cant, precio_unitario: precioU, codigo_producto: od.codigo||(prod&&prod.codigo) }] };\n  resumen = { total, abono, saldo: Math.round((total-abono)*100)/100, producto: payload.items[0].producto, codigo: payload.items[0].codigo_producto, talla: od.talla, color: od.color, cantidad: cant };\n}\n\nconst datos = { intent: intent.intent, response_borrador: intent.response||'', productos, tracking, resumen };\nreturn [{ json: { wa_id: msg.wa_id, nombre: msg.nombre||conv.nombre||null, ruta, datos, payload, ultimo_producto, intent, msg } }];" },
+      "id": "p12", "name": "Preparar datos reales", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [2040, 180]
+    },
+    {
+      "parameters": {
+        "rules": { "values": [
+          { "conditions": { "options": { "version": 2, "typeValidation": "loose" }, "combinator": "and", "conditions": [ { "id": "r1", "leftValue": "={{$json.ruta}}", "rightValue": "confirmar", "operator": { "type": "string", "operation": "equals" } } ] }, "outputKey": "confirmar" },
+          { "conditions": { "options": { "version": 2, "typeValidation": "loose" }, "combinator": "and", "conditions": [ { "id": "r2", "leftValue": "={{$json.ruta}}", "rightValue": "comprobante", "operator": { "type": "string", "operation": "equals" } } ] }, "outputKey": "comprobante" },
+          { "conditions": { "options": { "version": 2, "typeValidation": "loose" }, "combinator": "and", "conditions": [ { "id": "r3", "leftValue": "={{$json.ruta}}", "rightValue": "humano", "operator": { "type": "string", "operation": "equals" } } ] }, "outputKey": "humano" }
+        ] },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "p13", "name": "Ruta", "type": "n8n-nodes-base.switch", "typeVersion": 3, "position": [2260, 180]
+    },
+
+    {
+      "parameters": { "jsCode": "const d = $input.first().json;\nconst datos = d.datos||{};\nconst system = `Eres el vendedor virtual de HAUSLINE (ropa, zapatos y accesorios premium bajo pedido, Nicaragua). Escribes por WhatsApp en español, cálido, breve (2-5 líneas). Usa SOLO los datos reales que se te pasan (productos, precios, estado del pedido). PROHIBIDO inventar precios, tallas, colores, disponibilidad, estados o fechas. Todos los productos son bajo pedido; entrega 15 a 25 días hábiles. Pago: 50% de abono para confirmar y 50% al recibir. Nunca confirmes que un pago llegó por ver una imagen. Enlace catálogo: https://hauslineshopni.es. Termina casi siempre con UNA pregunta que avance la compra. Si no hay datos, sé honesto y ofrece el catálogo. Devuelve solo el mensaje, sin comillas.`;\nconst user = `Intención: ${datos.intent}\\nBorrador sugerido: ${datos.response_borrador||''}\\nProductos reales encontrados: ${JSON.stringify(datos.productos||[])}\\nDatos de seguimiento (si aplica): ${JSON.stringify(datos.tracking||null)}\\nEnlace de seguimiento base: ${($vars.TRACKING_BASE_URL||'')}\\nRedacta la respuesta para el cliente ahora.`;\nreturn [{ json: { system, user, wa_id: d.wa_id, nombre: d.nombre, ultimo_producto: d.ultimo_producto } }];" },
+      "id": "n0", "name": "Preparar redactor", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [2500, -40]
+    },
+    {
+      "parameters": {
+        "method": "POST", "url": "={{$vars.AI_API_URL}}",
+        "sendHeaders": true, "headerParameters": { "parameters": [
+          { "name": "x-api-key", "value": "={{$vars.AI_API_KEY}}" },
+          { "name": "anthropic-version", "value": "2023-06-01" },
+          { "name": "Content-Type", "value": "application/json" } ] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={ \"model\": {{ JSON.stringify($vars.AI_MODEL) }}, \"max_tokens\": 500, \"system\": {{ JSON.stringify($json.system) }}, \"messages\": [ { \"role\": \"user\", \"content\": {{ JSON.stringify($json.user) }} } ] }",
+        "options": {}
+      },
+      "id": "n1", "name": "Claude · Redactar", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [2720, -40]
+    },
+    {
+      "parameters": {
+        "method": "POST", "url": "=https://graph.facebook.com/v21.0/{{$vars.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "sendHeaders": true, "headerParameters": { "parameters": [
+          { "name": "Authorization", "value": "=Bearer {{$vars.WHATSAPP_TOKEN}}" },
+          { "name": "Content-Type", "value": "application/json" } ] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={ \"messaging_product\": \"whatsapp\", \"to\": {{ JSON.stringify($('Preparar redactor').item.json.wa_id) }}, \"type\": \"text\", \"text\": { \"body\": {{ JSON.stringify( ($json.content && $json.content[0] && $json.content[0].text) || 'Gracias por tu mensaje. ¿En qué puedo ayudarte?' ) }} } }",
+        "options": {}
+      },
+      "id": "n2", "name": "Enviar respuesta", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [2940, -40],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST", "url": "={{$vars.SUPABASE_URL}}/rest/v1/rpc/wa_guardar_conversacion",
+        "sendHeaders": true, "headerParameters": { "parameters": [
+          { "name": "apikey", "value": "={{$vars.SUPABASE_SERVICE_ROLE_KEY}}" },
+          { "name": "Authorization", "value": "=Bearer {{$vars.SUPABASE_SERVICE_ROLE_KEY}}" },
+          { "name": "Content-Type", "value": "application/json" } ] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={ \"p_wa_id\": {{ JSON.stringify($('Preparar redactor').item.json.wa_id) }}, \"p_nombre\": {{ JSON.stringify($('Preparar redactor').item.json.nombre) }}, \"p_ultimo_producto\": {{ JSON.stringify($('Preparar redactor').item.json.ultimo_producto) }} }",
+        "options": {}
+      },
+      "id": "n3", "name": "Guardar conversación", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [3160, -40]
+    },
+
+    {
+      "parameters": {
+        "method": "POST", "url": "={{$vars.SUPABASE_URL}}/rest/v1/rpc/wa_registrar_borrador",
+        "sendHeaders": true, "headerParameters": { "parameters": [
+          { "name": "apikey", "value": "={{$vars.SUPABASE_SERVICE_ROLE_KEY}}" },
+          { "name": "Authorization", "value": "=Bearer {{$vars.SUPABASE_SERVICE_ROLE_KEY}}" },
+          { "name": "Content-Type", "value": "application/json" } ] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={ \"p_wa_id\": {{ JSON.stringify($json.wa_id) }}, \"p_nombre\": {{ JSON.stringify($json.nombre) }}, \"payload\": {{ JSON.stringify($json.payload) }}, \"p_estado\": \"esperando_comprobante\" }",
+        "options": {}
+      },
+      "id": "c1", "name": "Registrar borrador", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [2500, 200]
+    },
+    {
+      "parameters": { "jsCode": "const src = $('Preparar datos reales').item.json;\nconst r = src.resumen||{};\nconst borrador = (()=>{ const j=$input.first().json; if(typeof j==='string') return j; if(j&&j.data) return j.data; if(j&&j.body) return j.body; return j; })();\nconst mensaje = `¡Perfecto! Confirmo tu pedido:\\nProducto: ${r.producto}\\nCódigo: ${r.codigo||'-'}  ·  Talla: ${r.talla||'-'}  ·  Color: ${r.color||'-'}  ·  Cant: ${r.cantidad}\\nTotal: USD ${Number(r.total||0).toFixed(2)}\\nAbono para reservar (50%): USD ${Number(r.abono||0).toFixed(2)}\\nTiempo estimado: 15 a 25 días hábiles\\n\\nPara reservarlo, realiza el abono y envíame el comprobante por aquí. Una persona lo revisa y te confirmo con tu código de seguimiento.`;\nconst adminLink = `${($vars.N8N_WEBHOOK_URL||'').replace(/\\/+$/,'')}/webhook/hausline-aprobar-abono?token=${encodeURIComponent($vars.ADMIN_APPROVAL_SECRET||'')}&borrador=${borrador}`;\nconst adminMsg = `🆕 Nuevo pedido por confirmar de ${src.wa_id} (${src.nombre||'sin nombre'}).\\n${r.producto} · ${r.codigo||'-'} · T:${r.talla||'-'} · ${r.cantidad}u\\nTotal USD ${Number(r.total||0).toFixed(2)} · Abono USD ${Number(r.abono||0).toFixed(2)}\\nCuando verifiques el abono, aprueba aquí:\\n${adminLink}`;\nreturn [{ json: { wa_id: src.wa_id, nombre: src.nombre, mensaje, adminMsg, ultimo_producto: src.ultimo_producto } }];" },
+      "id": "c2", "name": "Mensaje pago + admin", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [2720, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST", "url": "=https://graph.facebook.com/v21.0/{{$vars.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "sendHeaders": true, "headerParameters": { "parameters": [
+          { "name": "Authorization", "value": "=Bearer {{$vars.WHATSAPP_TOKEN}}" },
+          { "name": "Content-Type", "value": "application/json" } ] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={ \"messaging_product\": \"whatsapp\", \"to\": {{ JSON.stringify($json.wa_id) }}, \"type\": \"text\", \"text\": { \"body\": {{ JSON.stringify($json.mensaje) }} } }",
+        "options": {}
+      },
+      "id": "c3", "name": "Enviar instrucciones de pago", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [2940, 200],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST", "url": "=https://graph.facebook.com/v21.0/{{$vars.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "sendHeaders": true, "headerParameters": { "parameters": [
+          { "name": "Authorization", "value": "=Bearer {{$vars.WHATSAPP_TOKEN}}" },
+          { "name": "Content-Type", "value": "application/json" } ] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={ \"messaging_product\": \"whatsapp\", \"to\": {{ JSON.stringify($vars.ADMIN_WHATSAPP_NUMBER) }}, \"type\": \"text\", \"text\": { \"body\": {{ JSON.stringify($('Mensaje pago + admin').item.json.adminMsg) }} } }",
+        "options": {}
+      },
+      "id": "c4", "name": "Avisar admin (nuevo pedido)", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [3160, 200],
+      "onError": "continueRegularOutput"
+    },
+
+    {
+      "parameters": {
+        "method": "POST", "url": "={{$vars.SUPABASE_URL}}/rest/v1/rpc/wa_registrar_comprobante",
+        "sendHeaders": true, "headerParameters": { "parameters": [
+          { "name": "apikey", "value": "={{$vars.SUPABASE_SERVICE_ROLE_KEY}}" },
+          { "name": "Authorization", "value": "=Bearer {{$vars.SUPABASE_SERVICE_ROLE_KEY}}" },
+          { "name": "Content-Type", "value": "application/json" } ] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={ \"p_wa_id\": {{ JSON.stringify($json.wa_id) }}, \"p_comprobante_path\": {{ JSON.stringify('whatsapp-media:' + ($json.msg && $json.msg.media_id || '')) }} }",
+        "options": {}
+      },
+      "id": "k1", "name": "Registrar comprobante", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [2500, 460],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": { "jsCode": "const src = $('Preparar datos reales').item.json;\nconst borrador = (()=>{ const j=$input.first().json; if(typeof j==='string') return j; if(j&&j.data) return j.data; if(j&&j.body) return j.body; return j||''; })();\nconst adminLink = `${($vars.N8N_WEBHOOK_URL||'').replace(/\\/+$/,'')}/webhook/hausline-aprobar-abono?token=${encodeURIComponent($vars.ADMIN_APPROVAL_SECRET||'')}&borrador=${borrador}`;\nconst clienteMsg = `¡Gracias! 🧾 Recibimos tu comprobante. Una persona lo revisa y en breve te confirmo tu pedido con el código de seguimiento.`;\nconst adminMsg = `🧾 Comprobante recibido de ${src.wa_id} (${src.nombre||'sin nombre'}).\\nRevisa la imagen en el chat de WhatsApp Business. Media ID: ${src.msg&&src.msg.media_id||'-'}\\nSi el abono es correcto, aprueba el pedido aquí:\\n${adminLink}`;\nreturn [{ json: { wa_id: src.wa_id, clienteMsg, adminMsg } }];" },
+      "id": "k2", "name": "Mensajes comprobante", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [2720, 460]
+    },
+    {
+      "parameters": {
+        "method": "POST", "url": "=https://graph.facebook.com/v21.0/{{$vars.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "sendHeaders": true, "headerParameters": { "parameters": [
+          { "name": "Authorization", "value": "=Bearer {{$vars.WHATSAPP_TOKEN}}" },
+          { "name": "Content-Type", "value": "application/json" } ] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={ \"messaging_product\": \"whatsapp\", \"to\": {{ JSON.stringify($json.wa_id) }}, \"type\": \"text\", \"text\": { \"body\": {{ JSON.stringify($json.clienteMsg) }} } }",
+        "options": {}
+      },
+      "id": "k3", "name": "Ack comprobante + avisar admin", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [2940, 460],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST", "url": "=https://graph.facebook.com/v21.0/{{$vars.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "sendHeaders": true, "headerParameters": { "parameters": [
+          { "name": "Authorization", "value": "=Bearer {{$vars.WHATSAPP_TOKEN}}" },
+          { "name": "Content-Type", "value": "application/json" } ] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={ \"messaging_product\": \"whatsapp\", \"to\": {{ JSON.stringify($vars.ADMIN_WHATSAPP_NUMBER) }}, \"type\": \"text\", \"text\": { \"body\": {{ JSON.stringify($('Mensajes comprobante').item.json.adminMsg) }} } }",
+        "options": {}
+      },
+      "id": "k4", "name": "Avisar admin (comprobante)", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [3160, 460],
+      "onError": "continueRegularOutput"
+    },
+
+    {
+      "parameters": {
+        "method": "POST", "url": "={{$vars.SUPABASE_URL}}/rest/v1/rpc/wa_atencion_humana",
+        "sendHeaders": true, "headerParameters": { "parameters": [
+          { "name": "apikey", "value": "={{$vars.SUPABASE_SERVICE_ROLE_KEY}}" },
+          { "name": "Authorization", "value": "=Bearer {{$vars.SUPABASE_SERVICE_ROLE_KEY}}" },
+          { "name": "Content-Type", "value": "application/json" } ] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={ \"p_wa_id\": {{ JSON.stringify($json.wa_id) }}, \"p_motivo\": {{ JSON.stringify(($json.intent && $json.intent.human_reason) || 'Solicitud de asesor') }} }",
+        "options": {}
+      },
+      "id": "h1", "name": "Marcar atención humana", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [2500, 700],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST", "url": "=https://graph.facebook.com/v21.0/{{$vars.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "sendHeaders": true, "headerParameters": { "parameters": [
+          { "name": "Authorization", "value": "=Bearer {{$vars.WHATSAPP_TOKEN}}" },
+          { "name": "Content-Type", "value": "application/json" } ] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={ \"messaging_product\": \"whatsapp\", \"to\": {{ JSON.stringify($('Preparar datos reales').item.json.wa_id) }}, \"type\": \"text\", \"text\": { \"body\": \"Voy a transferir tu consulta a un asesor para ayudarte correctamente. En breve te escriben por aquí.\" } }",
+        "options": {}
+      },
+      "id": "h2", "name": "Responder (transferir)", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [2720, 700],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST", "url": "=https://graph.facebook.com/v21.0/{{$vars.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "sendHeaders": true, "headerParameters": { "parameters": [
+          { "name": "Authorization", "value": "=Bearer {{$vars.WHATSAPP_TOKEN}}" },
+          { "name": "Content-Type", "value": "application/json" } ] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={ \"messaging_product\": \"whatsapp\", \"to\": {{ JSON.stringify($vars.ADMIN_WHATSAPP_NUMBER) }}, \"type\": \"text\", \"text\": { \"body\": {{ JSON.stringify('🙋 Atención humana solicitada por ' + $('Preparar datos reales').item.json.wa_id + '. Motivo: ' + (($('Preparar datos reales').item.json.intent||{}).human_reason||'asesor') + '. La IA quedó en pausa para ese cliente (reactívala con WF5).') }} } }",
+        "options": {}
+      },
+      "id": "h3", "name": "Avisar admin (humano)", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [2940, 700],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Webhook verificación (GET)": { "main": [[{ "node": "Validar verificación", "type": "main", "index": 0 }]] },
+    "Validar verificación": { "main": [[{ "node": "Responder challenge", "type": "main", "index": 0 }]] },
+
+    "Webhook mensajes (POST)": { "main": [[{ "node": "Parsear evento", "type": "main", "index": 0 }]] },
+    "Parsear evento": { "main": [[{ "node": "¿Procesar?", "type": "main", "index": 0 }]] },
+    "¿Procesar?": { "main": [[{ "node": "Dedup mensaje", "type": "main", "index": 0 }], []] },
+    "Dedup mensaje": { "main": [[{ "node": "¿Nuevo?", "type": "main", "index": 0 }]] },
+    "¿Nuevo?": { "main": [[{ "node": "Cargar conversación", "type": "main", "index": 0 }], []] },
+    "Cargar conversación": { "main": [[{ "node": "¿IA activa?", "type": "main", "index": 0 }]] },
+    "¿IA activa?": { "main": [[{ "node": "Preparar clasificador", "type": "main", "index": 0 }], []] },
+    "Preparar clasificador": { "main": [[{ "node": "Claude · Clasificar", "type": "main", "index": 0 }]] },
+    "Claude · Clasificar": { "main": [[{ "node": "Parse intención", "type": "main", "index": 0 }]] },
+    "Parse intención": { "main": [[{ "node": "Fetch catálogo", "type": "main", "index": 0 }]] },
+    "Fetch catálogo": { "main": [[{ "node": "Consulta tracking", "type": "main", "index": 0 }]] },
+    "Consulta tracking": { "main": [[{ "node": "Preparar datos reales", "type": "main", "index": 0 }]] },
+    "Preparar datos reales": { "main": [[{ "node": "Ruta", "type": "main", "index": 0 }]] },
+
+    "Ruta": {
+      "main": [
+        [{ "node": "Registrar borrador", "type": "main", "index": 0 }],
+        [{ "node": "Registrar comprobante", "type": "main", "index": 0 }],
+        [{ "node": "Marcar atención humana", "type": "main", "index": 0 }],
+        [{ "node": "Preparar redactor", "type": "main", "index": 0 }]
+      ]
+    },
+
+    "Preparar redactor": { "main": [[{ "node": "Claude · Redactar", "type": "main", "index": 0 }]] },
+    "Claude · Redactar": { "main": [[{ "node": "Enviar respuesta", "type": "main", "index": 0 }]] },
+    "Enviar respuesta": { "main": [[{ "node": "Guardar conversación", "type": "main", "index": 0 }]] },
+
+    "Registrar borrador": { "main": [[{ "node": "Mensaje pago + admin", "type": "main", "index": 0 }]] },
+    "Mensaje pago + admin": { "main": [[{ "node": "Enviar instrucciones de pago", "type": "main", "index": 0 }]] },
+    "Enviar instrucciones de pago": { "main": [[{ "node": "Avisar admin (nuevo pedido)", "type": "main", "index": 0 }]] },
+
+    "Registrar comprobante": { "main": [[{ "node": "Mensajes comprobante", "type": "main", "index": 0 }]] },
+    "Mensajes comprobante": { "main": [[{ "node": "Ack comprobante + avisar admin", "type": "main", "index": 0 }]] },
+    "Ack comprobante + avisar admin": { "main": [[{ "node": "Avisar admin (comprobante)", "type": "main", "index": 0 }]] },
+
+    "Marcar atención humana": { "main": [[{ "node": "Responder (transferir)", "type": "main", "index": 0 }]] },
+    "Responder (transferir)": { "main": [[{ "node": "Avisar admin (humano)", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}
