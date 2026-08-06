@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { Modal } from '../../components/ui/Modal'
 import { MoneyField } from '../../components/ui/MoneyField'
-import { eliminarMovimiento, guardarAperturaCaja, listarMovimientos, obtenerCajaMes, obtenerResumenComercial, obtenerTipoCambio, registrarMovimiento } from '../../services/comercial.service'
+import { eliminarGasto, eliminarMovimiento, guardarAperturaCaja, listarMovimientos, obtenerCajaMes, obtenerResumenComercial, obtenerTipoCambio, registrarMovimiento } from '../../services/comercial.service'
 import type { CajaMes, Moneda, MovimientoCuenta, ResumenComercial } from '../../types/domain'
 import { aUsd, formatMoneda } from '../../utils/money'
 import { periodoDeMes } from '../../utils/periodo'
@@ -35,8 +35,14 @@ export function CuentaPage() {
 
   const reload = () => { setOpen(false); setAdjustOpen(false); setAperturaOpen(false); load() }
   const borrar = async (movement: MovimientoCuenta) => {
-    if (!window.confirm(`¿Eliminar el movimiento "${movement.descripcion}" por USD ${Number(movement.monto).toFixed(2)}? El saldo se recalculará.`)) return
-    try { await eliminarMovimiento(movement.id); toast.success('Movimiento eliminado.'); load() }
+    const esGasto = !!movement.gasto_id
+    const aviso = esGasto ? ' También se eliminará el gasto asociado.' : ''
+    if (!window.confirm(`¿Eliminar el movimiento "${movement.descripcion}" por USD ${Number(movement.monto).toFixed(2)}? El saldo se recalculará.${aviso}`)) return
+    try {
+      if (esGasto) await eliminarGasto(movement.gasto_id!)
+      else await eliminarMovimiento(movement.id)
+      toast.success(esGasto ? 'Gasto y movimiento eliminados.' : 'Movimiento eliminado.'); load()
+    }
     catch { toast.error('No se pudo eliminar el movimiento.') }
   }
   const mesActual = items.filter((movement) => { const dia = movement.fecha.slice(0, 10); return dia >= periodo.desde && dia <= periodo.hasta })
