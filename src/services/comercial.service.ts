@@ -136,6 +136,7 @@ export async function eliminarGasto(id: string) {
 
 export async function listarMovimientos() { const { data, error } = await client().from('movimientos_cuenta').select('*, pedidos(codigo)').order('fecha', { ascending: false }).limit(300); if (error) throw error; return data as unknown as MovimientoCuenta[] }
 export async function registrarMovimiento(input: Omit<MovimientoCuenta, 'id' | 'created_at' | 'pedidos'>) { const { data, error } = await client().from('movimientos_cuenta').insert(input).select('*, pedidos(codigo)').single(); if (error) throw error; return data as unknown as MovimientoCuenta }
+export async function eliminarMovimiento(id: string) { const { error } = await client().from('movimientos_cuenta').delete().eq('id', id); if (error) throw error }
 
 export async function listarInversiones() { return cachedQuery('inversiones', async () => { const { data, error } = await client().from('inversiones').select('*, productos(nombre,codigo), gastos(id,monto,categoria)').order('fecha', { ascending: false }); if (error) throw error; return data as unknown as Inversion[] }) }
 export async function registrarInversion(input: Omit<Inversion, 'id' | 'created_at' | 'productos'>, metodo: string, descontarDeCuenta = true) {

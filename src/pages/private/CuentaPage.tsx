@@ -1,9 +1,9 @@
-import { ArrowDownRight, ArrowUpRight, CalendarRange, Pencil, Sparkles, Wallet } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, CalendarRange, Pencil, Sparkles, Trash2, Wallet } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { Modal } from '../../components/ui/Modal'
 import { MoneyField } from '../../components/ui/MoneyField'
-import { guardarAperturaCaja, listarMovimientos, obtenerCajaMes, obtenerResumenComercial, obtenerTipoCambio, registrarMovimiento } from '../../services/comercial.service'
+import { eliminarMovimiento, guardarAperturaCaja, listarMovimientos, obtenerCajaMes, obtenerResumenComercial, obtenerTipoCambio, registrarMovimiento } from '../../services/comercial.service'
 import type { CajaMes, Moneda, MovimientoCuenta, ResumenComercial } from '../../types/domain'
 import { aUsd, formatMoneda } from '../../utils/money'
 import { periodoDeMes } from '../../utils/periodo'
@@ -34,6 +34,11 @@ export function CuentaPage() {
   useEffect(() => { void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined) }, [])
 
   const reload = () => { setOpen(false); setAdjustOpen(false); setAperturaOpen(false); load() }
+  const borrar = async (movement: MovimientoCuenta) => {
+    if (!window.confirm(`¿Eliminar el movimiento "${movement.descripcion}" por USD ${Number(movement.monto).toFixed(2)}? El saldo se recalculará.`)) return
+    try { await eliminarMovimiento(movement.id); toast.success('Movimiento eliminado.'); load() }
+    catch { toast.error('No se pudo eliminar el movimiento.') }
+  }
   const mesActual = items.filter((movement) => { const dia = movement.fecha.slice(0, 10); return dia >= periodo.desde && dia <= periodo.hasta })
 
   return <div>
@@ -58,7 +63,7 @@ export function CuentaPage() {
     <div className="mt-5 grid gap-3 sm:grid-cols-3"><Mini label="Entradas del mes" value={summary.cobrado} green /><Mini label="Gastos del mes" value={summary.gastos} /><Mini label="Por cobrar (total)" value={summary.por_cobrar} /></div>
 
     <p className="mt-6 mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Movimientos de {periodo.etiqueta}</p>
-    <div className="overflow-hidden rounded-2xl border border-line bg-panel">{mesActual.map((movement) => { const incoming = ['ingreso', 'ajuste_entrada'].includes(movement.tipo); return <div key={movement.id} className="flex items-center gap-3 border-b border-line px-5 py-4 last:border-0"><span className={`grid size-9 shrink-0 place-items-center rounded-xl ${incoming ? 'bg-green-400/10 text-green-300' : 'bg-red-400/10 text-red-300'}`}>{incoming ? <ArrowUpRight size={17} /> : <ArrowDownRight size={17} />}</span><div className="min-w-0 flex-1"><strong className="block truncate text-sm">{movement.descripcion}</strong><p className="text-xs text-muted">{formatDate(movement.fecha)} · {movement.metodo || 'Sin método'} {movement.pedidos?.codigo ? `· ${movement.pedidos.codigo}` : ''}</p></div><div className="text-right"><strong className={incoming ? 'text-green-300' : 'text-red-300'}>{incoming ? '+' : '−'} USD {Number(movement.monto).toFixed(2)}</strong>{movement.moneda === 'NIO' && movement.monto_original != null && <span className="block text-[10px] text-muted">{formatMoneda(Number(movement.monto_original), 'NIO')}</span>}</div></div> })}{!mesActual.length && <Empty text="No hay movimientos este mes." />}</div>
+    <div className="overflow-hidden rounded-2xl border border-line bg-panel">{mesActual.map((movement) => { const incoming = ['ingreso', 'ajuste_entrada'].includes(movement.tipo); return <div key={movement.id} className="flex items-center gap-3 border-b border-line px-5 py-4 last:border-0"><span className={`grid size-9 shrink-0 place-items-center rounded-xl ${incoming ? 'bg-green-400/10 text-green-300' : 'bg-red-400/10 text-red-300'}`}>{incoming ? <ArrowUpRight size={17} /> : <ArrowDownRight size={17} />}</span><div className="min-w-0 flex-1"><strong className="block truncate text-sm">{movement.descripcion}</strong><p className="text-xs text-muted">{formatDate(movement.fecha)} · {movement.metodo || 'Sin método'} {movement.pedidos?.codigo ? `· ${movement.pedidos.codigo}` : ''}</p></div><div className="text-right"><strong className={incoming ? 'text-green-300' : 'text-red-300'}>{incoming ? '+' : '−'} USD {Number(movement.monto).toFixed(2)}</strong>{movement.moneda === 'NIO' && movement.monto_original != null && <span className="block text-[10px] text-muted">{formatMoneda(Number(movement.monto_original), 'NIO')}</span>}</div><button type="button" onClick={() => void borrar(movement)} className="grid size-8 shrink-0 place-items-center rounded-lg text-muted transition hover:bg-red-400/10 hover:text-red-300" aria-label="Eliminar movimiento" title="Eliminar movimiento"><Trash2 size={16} /></button></div> })}{!mesActual.length && <Empty text="No hay movimientos este mes." />}</div>
 
     <MovimientoModal open={open} tipoCambio={tipoCambio} onClose={() => setOpen(false)} onSaved={reload} />
     <AjustarSaldoModal open={adjustOpen} saldoActual={caja.saldo_mes} onClose={() => setAdjustOpen(false)} onSaved={reload} />
