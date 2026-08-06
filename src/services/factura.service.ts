@@ -13,6 +13,10 @@ export type FacturaData = {
   total: number
   abono: number
   saldo: number
+  // 'compra' = factura al registrar el pedido (con saldo pendiente).
+  // 'pago'   = comprobante al entregar y cobrar el saldo (pagado, con agradecimiento).
+  variante?: 'compra' | 'pago'
+  metodoPago?: string | null
 }
 
 const encoder = new TextEncoder()
@@ -27,6 +31,7 @@ function truncar(context: CanvasRenderingContext2D, texto: string, maxAncho: num
 }
 
 async function facturaJpeg(data: FacturaData) {
+  const esPago = data.variante === 'pago'
   const canvas = document.createElement('canvas'); canvas.width = 1240; canvas.height = 1754
   const context = canvas.getContext('2d'); if (!context) throw new Error('No se pudo crear la factura.')
   context.fillStyle = '#f6f7f3'; context.fillRect(0, 0, canvas.width, canvas.height)
@@ -34,7 +39,7 @@ async function facturaJpeg(data: FacturaData) {
   // Encabezado
   context.fillStyle = '#111411'; context.fillRect(0, 0, canvas.width, 300)
   context.fillStyle = '#b7ff00'; context.font = '800 62px Arial'; context.fillText('HAUSLINE', 90, 120)
-  context.fillStyle = '#ffffff'; context.font = '600 27px Arial'; context.fillText('FACTURA DE COMPRA', 92, 180)
+  context.fillStyle = '#ffffff'; context.font = '600 27px Arial'; context.fillText(esPago ? 'COMPROBANTE DE PAGO' : 'FACTURA DE COMPRA', 92, 180)
   context.fillStyle = '#aab0aa'; context.font = '500 23px Arial'; context.fillText('hausline.ni · Rastreo de pedidos', 92, 224)
   context.textAlign = 'right'; context.fillStyle = '#b7ff00'; context.font = '700 30px Arial'; context.fillText(data.codigo, 1150, 120)
   context.fillStyle = '#aab0aa'; context.font = '500 22px Arial'; context.fillText('Código de seguimiento', 1150, 158); context.textAlign = 'left'
@@ -73,14 +78,21 @@ async function facturaJpeg(data: FacturaData) {
     context.fillStyle = strong ? color : '#343934'; context.font = `${strong ? 800 : 600} ${strong ? 38 : 32}px Arial`; context.textAlign = 'right'; context.fillText(value, 1140, yy); context.textAlign = 'left'
   }
   drawTotal('Total del pedido', `USD ${data.total.toFixed(2)}`, totalsY)
-  drawTotal('Abono recibido', `USD ${data.abono.toFixed(2)}`, totalsY + 66)
-  drawTotal('Saldo pendiente', `USD ${Math.max(0, data.saldo).toFixed(2)}`, totalsY + 148, true, data.saldo > 0.01 ? '#b26a00' : '#3f8600')
+  drawTotal(esPago ? 'Pago recibido' : 'Abono recibido', `USD ${data.abono.toFixed(2)}`, totalsY + 66)
+  if (esPago) {
+    if (data.metodoPago) drawTotal('Método de pago', data.metodoPago, totalsY + 132)
+    drawTotal('Saldo pendiente', 'PAGADO', totalsY + (data.metodoPago ? 214 : 148), true, '#3f8600')
+  } else {
+    drawTotal('Saldo pendiente', `USD ${Math.max(0, data.saldo).toFixed(2)}`, totalsY + 148, true, data.saldo > 0.01 ? '#b26a00' : '#3f8600')
+  }
 
   // Pie
-  context.fillStyle = '#edf6d8'; context.beginPath(); context.roundRect(100, totalsY + 200, 1040, 90, 18); context.fill()
+  const pieY = totalsY + (esPago && data.metodoPago ? 266 : 200)
+  context.fillStyle = '#edf6d8'; context.beginPath(); context.roundRect(100, pieY, 1040, 90, 18); context.fill()
   context.fillStyle = '#4c6500'; context.font = '600 24px Arial'; context.textAlign = 'center'
-  context.fillText(`Rastrea tu pedido con el código ${data.codigo}`, 620, totalsY + 246)
-  context.fillStyle = '#7a807a'; context.font = '500 20px Arial'; context.fillText('Gracias por comprar en Hausline · Los tiempos pueden variar por logística internacional.', 620, totalsY + 340)
+  context.fillText(esPago ? `Pago recibido · Pedido ${data.codigo} entregado` : `Rastrea tu pedido con el código ${data.codigo}`, 620, pieY + 46)
+  context.fillStyle = '#7a807a'; context.font = '500 20px Arial'
+  context.fillText(esPago ? '¡Muchas gracias por tu compra en Hausline! Esperamos verte pronto.' : 'Gracias por comprar en Hausline · Los tiempos pueden variar por logística internacional.', 620, pieY + 140)
   context.textAlign = 'left'
 
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', .92))
@@ -104,13 +116,17 @@ function imagePdf(image: Uint8Array, width: number, height: number) {
   return new Blob([join([header, ...objects, xref])], { type: 'application/pdf' })
 }
 
+function nombreArchivo(data: FacturaData, extension: string) {
+  return `Hausline-${data.codigo}-${data.variante === 'pago' ? 'comprobante' : 'factura'}.${extension}`
+}
+
 export async function crearFacturaImagenFile(data: FacturaData) {
   const image = await facturaJpeg(data)
-  return new File([image.data], `Hausline-${data.codigo}-factura.jpg`, { type: 'image/jpeg' })
+  return new File([image.data], nombreArchivo(data, 'jpg'), { type: 'image/jpeg' })
 }
 export async function crearFacturaPdf(data: FacturaData) {
   const image = await facturaJpeg(data)
-  return new File([imagePdf(image.data, image.width, image.height)], `Hausline-${data.codigo}-factura.pdf`, { type: 'application/pdf' })
+  return new File([imagePdf(image.data, image.width, image.height)], nombreArchivo(data, 'pdf'), { type: 'application/pdf' })
 }
 
 function descargarArchivo(file: File) {
@@ -126,10 +142,13 @@ export async function descargarFacturaPdf(data: FacturaData) {
 // en escritorio descarga la imagen y abre el chat del cliente con el mensaje y el código listos.
 export async function enviarFacturaWhatsApp(data: FacturaData) {
   const file = await crearFacturaImagenFile(data)
-  const mensaje = `Hola ${data.cliente}, aquí está la factura de tu pedido en Hausline. Tu código de seguimiento es ${data.codigo}. Puedes rastrearlo cuando quieras. ¡Gracias por tu compra!`.replace(/\s+/g, ' ').trim()
+  const mensaje = (data.variante === 'pago'
+    ? `Hola ${data.cliente}, confirmamos que recibimos el pago de tu pedido ${data.codigo} en Hausline. Aquí tienes tu comprobante. ¡Muchas gracias por tu compra!`
+    : `Hola ${data.cliente}, aquí está la factura de tu pedido en Hausline. Tu código de seguimiento es ${data.codigo}. Puedes rastrearlo cuando quieras. ¡Gracias por tu compra!`
+  ).replace(/\s+/g, ' ').trim()
   if (navigator.canShare?.({ files: [file] })) {
     try {
-      await navigator.share({ files: [file], title: `Factura ${data.codigo}`, text: mensaje })
+      await navigator.share({ files: [file], title: `${data.variante === 'pago' ? 'Comprobante' : 'Factura'} ${data.codigo}`, text: mensaje })
       return 'shared' as const
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return 'cancelled' as const

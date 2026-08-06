@@ -69,9 +69,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     void validateStoredSession()
 
+    // Mantiene la app siempre activa cuando la pestaña vuelve al primer plano o se
+    // recupera la conexión (segundo plano, equipo dormido). Si el token está por
+    // vencer lo renovamos en silencio para que nada falle. Si ya se había vencido
+    // —que es justo cuando quedan los paneles vacíos y hoy toca recargar a mano—
+    // recargamos la página automáticamente para que todo cargue fresco. Si ya no se
+    // puede renovar del todo, mandamos al login en vez de dejar la app colgada.
+    let revalidando = false
+    async function revalidarSesion() {
+      if (revalidando || !active || document.visibilityState !== 'visible') return
+      revalidando = true
+      try {
+        const { data: stored } = await client.auth.getSession()
+        const current = stored.session
+        if (!current) return
+        const expiraEnMs = (current.expires_at ?? 0) * 1000 - Date.now()
+        if (expiraEnMs > 60_000) return
+        const yaVencido = expiraEnMs <= 0
+        const { data: refreshed, error } = await client.auth.refreshSession()
+        if (error || !refreshed.session) {
+          await client.auth.signOut({ scope: 'local' }).catch(() => undefined)
+          if (active) setSession(null)
+          return
+        }
+        if (active) setSession(refreshed.session)
+        // El token había expirado: algunas consultas ya pudieron fallar, así que
+        // recargamos para volver a traer todos los datos sin intervención manual.
+        if (yaVencido) window.location.reload()
+      } catch {
+        // Sin conexión o error temporal: no tocamos la sesión, se reintenta al volver.
+      } finally {
+        revalidando = false
+      }
+    }
+
+    document.addEventListener('visibilitychange', revalidarSesion)
+    window.addEventListener('online', revalidarSesion)
+
     return () => {
       active = false
       data.subscription.unsubscribe()
+      document.removeEventListener('visibilitychange', revalidarSesion)
+      window.removeEventListener('online', revalidarSesion)
     }
   }, [])
 

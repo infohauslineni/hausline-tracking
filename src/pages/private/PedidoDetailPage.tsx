@@ -4,12 +4,14 @@ import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { PedidoArchivos } from '../../components/pedidos/PedidoArchivos'
 import { EditarPedidoModal } from '../../components/pedidos/EditarPedidoModal'
+import { FacturaModal } from '../../components/pedidos/FacturaModal'
 import { PedidoLogistica } from '../../components/pedidos/PedidoLogistica'
 import { Modal } from '../../components/ui/Modal'
 import { ESTADOS_PEDIDO, estadoLabel, mensajeWhatsAppEstado } from '../../constants/orders'
 import { DEMO_PEDIDOS } from '../../data/demo'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { actualizarEstadoPedido, actualizarPedidoCompleto, entregarPedidoConPago, obtenerPedido } from '../../services/pedidos.service'
+import type { FacturaData } from '../../services/factura.service'
 import { obtenerTipoCambio } from '../../services/comercial.service'
 import type { EstadoPedido, Pedido } from '../../types/domain'
 import { costoRealPedido } from '../../utils/pedidoCosto'
@@ -26,6 +28,7 @@ export function PedidoDetailPage() {
   const [paymentOpen, setPaymentOpen] = useState(false)
   const [paymentAmount, setPaymentAmount] = useState(0)
   const [paymentMethod, setPaymentMethod] = useState('Transferencia')
+  const [factura, setFactura] = useState<FacturaData | null>(null)
   const [qualityPhotosReady, setQualityPhotosReady] = useState(false)
   const [tipoCambio, setTipoCambio] = useState(37)
   useEffect(() => { if (isSupabaseConfigured) void obtenerPedido(id).then(setPedido).catch(() => toast.error('No se pudo cargar el pedido.')).finally(() => setLoading(false)) }, [id])
@@ -44,6 +47,31 @@ export function PedidoDetailPage() {
       toast.success(estadoSeleccionado === 'disponible_entrega' ? 'Pedido disponible. El mensaje de WhatsApp está listo.' : estadoSeleccionado === 'control_calidad' && qualityPhotosReady ? 'Control de calidad actualizado. El mensaje de WhatsApp está listo.' : 'Etapa del pedido actualizada.')
     } catch { toast.error('No se pudo actualizar la etapa.') }
     finally { setSavingStatus(false) }
+  }
+  const confirmarEntrega = async () => {
+    setSavingStatus(true)
+    try {
+      await entregarPedidoConPago(pedido.id, paymentAmount, paymentMethod)
+      const refreshed = await obtenerPedido(pedido.id)
+      setPedido(refreshed)
+      setEstadoSeleccionado('entregado')
+      setPaymentOpen(false)
+      toast.success('Pedido entregado y pago registrado.')
+      setFactura({
+        codigo: refreshed.codigo,
+        cliente: refreshed.clientes?.nombre ?? 'Cliente',
+        whatsapp: refreshed.clientes?.whatsapp ?? null,
+        fecha: new Date().toISOString().slice(0, 10),
+        items: (refreshed.pedido_items ?? []).map((item) => ({ producto: item.producto, detalle: [item.marca, item.talla].filter(Boolean).join(' · ') || undefined, cantidad: Number(item.cantidad || 1), precio: Number(item.precio_unitario || 0) })),
+        total: Number(refreshed.total || 0),
+        abono: Number(refreshed.abono || 0),
+        saldo: Number(refreshed.saldo || 0),
+        variante: 'pago',
+        metodoPago: paymentMethod || null,
+      })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo completar la entrega.')
+    } finally { setSavingStatus(false) }
   }
   const publicUrl = `${import.meta.env.VITE_PUBLIC_APP_URL ?? window.location.origin}/tracking/${pedido.codigo}`
   const qualityMessageReady = pedido.estado === 'control_calidad' && qualityPhotosReady
@@ -81,7 +109,8 @@ export function PedidoDetailPage() {
         throw error
       }
     }} />
-    <Modal open={paymentOpen} onClose={() => setPaymentOpen(false)} title="Confirmar entrega y pago"><div className="space-y-4"><p className="text-sm leading-6 text-muted">El saldo pendiente aparece automáticamente. Si recibiste más por delivery, escribe el total recibido; la diferencia se añadirá a la venta.</p><label className="form-field"><span>Monto recibido</span><input type="number" min="0" step=".01" value={paymentAmount} onChange={(e) => setPaymentAmount(Number(e.target.value))} /></label><label className="form-field"><span>Método de pago</span><input value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} /></label>{paymentAmount > Number(pedido.saldo) && <div className="rounded-xl border border-accent/20 bg-accent/[.05] p-3 text-xs text-accent">Incluye USD {(paymentAmount - Number(pedido.saldo)).toFixed(2)} adicionales por delivery.</div>}<div className="flex justify-end gap-2"><button className="subtle-button" onClick={() => setPaymentOpen(false)}>Cancelar</button><button className="primary-button px-5" disabled={savingStatus} onClick={async () => { setSavingStatus(true); try { await entregarPedidoConPago(pedido.id, paymentAmount, paymentMethod); const refreshed = await obtenerPedido(pedido.id); setPedido(refreshed); setEstadoSeleccionado('entregado'); setPaymentOpen(false); toast.success('Pedido entregado y pago registrado.') } catch { toast.error('No se pudo completar la entrega.') } finally { setSavingStatus(false) } }}>{savingStatus ? 'Guardando…' : 'Confirmar entrega'}</button></div></div></Modal>
+    <Modal open={paymentOpen} onClose={() => setPaymentOpen(false)} title="Confirmar entrega y pago"><div className="space-y-4"><p className="text-sm leading-6 text-muted">El saldo pendiente aparece automáticamente. Si recibiste más por delivery, escribe el total recibido; la diferencia se añadirá a la venta.</p><label className="form-field"><span>Monto recibido</span><input type="number" min="0" step=".01" value={paymentAmount} onChange={(e) => setPaymentAmount(Number(e.target.value))} /></label><label className="form-field"><span>Método de pago</span><input value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} /></label>{paymentAmount > Number(pedido.saldo) && <div className="rounded-xl border border-accent/20 bg-accent/[.05] p-3 text-xs text-accent">Incluye USD {(paymentAmount - Number(pedido.saldo)).toFixed(2)} adicionales por delivery.</div>}<div className="flex justify-end gap-2"><button className="subtle-button" onClick={() => setPaymentOpen(false)}>Cancelar</button><button className="primary-button px-5" disabled={savingStatus} onClick={() => void confirmarEntrega()}>{savingStatus ? 'Guardando…' : 'Confirmar entrega'}</button></div></div></Modal>
+    <FacturaModal factura={factura} onClose={() => setFactura(null)} title="Entrega confirmada" description="Comparte el comprobante de pago con el cliente." codeLabel="Código del pedido" note="El comprobante confirma el pago recibido e incluye el detalle del pedido. La imagen es ideal para WhatsApp y el PDF para archivarlo." closeLabel="Cerrar" />
   </div>
 }
 function EtapaTracker({ actual, seleccionado, onSelect }: { actual: EstadoPedido; seleccionado: EstadoPedido; onSelect: (estado: EstadoPedido) => void }) {

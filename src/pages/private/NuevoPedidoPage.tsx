@@ -1,17 +1,17 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { ArrowLeft, CircleDollarSign, Download, FileText, MessageCircle, PackagePlus, Plus, Save, Trash2, UserPlus } from 'lucide-react'
+import { ArrowLeft, CircleDollarSign, PackagePlus, Plus, Save, Trash2, UserPlus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useFieldArray, useForm, useWatch } from 'react-hook-form'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { Modal } from '../../components/ui/Modal'
+import { FacturaModal } from '../../components/pedidos/FacturaModal'
 import { ESTADOS_PEDIDO } from '../../constants/orders'
 import { DEMO_CLIENTES } from '../../data/demo'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { guardarCliente, listarClientes } from '../../services/clientes.service'
 import { listarProductos } from '../../services/comercial.service'
-import { descargarFacturaPdf, enviarFacturaWhatsApp, type FacturaData } from '../../services/factura.service'
+import { type FacturaData } from '../../services/factura.service'
 import { crearPedido } from '../../services/pedidos.service'
 import type { Cliente, EstadoPedido, Producto } from '../../types/domain'
 
@@ -101,28 +101,6 @@ export function NuevoPedidoPage() {
     </form>
     <FacturaModal factura={factura} onClose={() => { setFactura(null); navigate('/pedidos') }} />
   </div>
-}
-
-function FacturaModal({ factura, onClose }: { factura: FacturaData | null; onClose: () => void }) {
-  const [busy, setBusy] = useState<'wa' | 'pdf' | null>(null)
-  if (!factura) return null
-  const enviar = async () => { setBusy('wa'); try { const result = await enviarFacturaWhatsApp(factura); toast.success(result === 'shared' ? 'Factura compartida.' : result === 'cancelled' ? 'Envío cancelado.' : result === 'downloaded_no_whatsapp' ? 'Factura descargada (el cliente no tiene WhatsApp).' : 'Factura descargada y chat de WhatsApp abierto.') } catch { toast.error('No se pudo enviar la factura.') } finally { setBusy(null) } }
-  const descargar = async () => { setBusy('pdf'); try { await descargarFacturaPdf(factura); toast.success('Factura PDF descargada.') } catch { toast.error('No se pudo generar el PDF.') } finally { setBusy(null) } }
-  return <Modal open={Boolean(factura)} onClose={onClose} title="Pedido creado" description="Envía la factura al cliente junto con su código de seguimiento.">
-    <div className="space-y-4">
-      <div className="rounded-2xl border border-accent/25 bg-accent/[.05] p-5 text-center">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted">Código de compra</p>
-        <strong className="mt-1 block text-3xl font-black tracking-tight text-accent">{factura.codigo}</strong>
-        <p className="mt-2 text-xs text-muted">{factura.cliente} · Total USD {factura.total.toFixed(2)} · Saldo USD {Math.max(0, factura.saldo).toFixed(2)}</p>
-      </div>
-      <div className="grid gap-2.5 sm:grid-cols-2">
-        <button type="button" className="primary-button" disabled={busy !== null} onClick={() => void enviar()}><MessageCircle size={17} /> {busy === 'wa' ? 'Preparando…' : 'Enviar por WhatsApp'}</button>
-        <button type="button" className="subtle-button justify-center py-3" disabled={busy !== null} onClick={() => void descargar()}><Download size={16} /> {busy === 'pdf' ? 'Generando…' : 'Descargar PDF'}</button>
-      </div>
-      <div className="flex items-center gap-2 rounded-xl border border-line bg-white/[.02] p-3 text-[11px] leading-5 text-muted"><FileText size={22} className="shrink-0 text-muted" /> La factura incluye el detalle del pedido, los totales y el código para rastrear. La imagen es ideal para WhatsApp y el PDF para archivarlo.</div>
-      <button type="button" className="subtle-button w-full justify-center py-3" onClick={onClose}>Ir a pedidos</button>
-    </div>
-  </Modal>
 }
 
 function SectionTitle({ number, title }: { number: string; title: string }) { return <div className="flex items-center gap-3"><span className="text-xs font-bold text-accent">{number}</span><h2 className="font-semibold">{title}</h2></div> }
