@@ -40,7 +40,7 @@ async function facturaJpeg(data: FacturaData) {
   context.fillStyle = '#111411'; context.fillRect(0, 0, canvas.width, 300)
   context.fillStyle = '#b7ff00'; context.font = '800 62px Arial'; context.fillText('HAUSLINE', 90, 120)
   context.fillStyle = '#ffffff'; context.font = '600 27px Arial'; context.fillText(esPago ? 'COMPROBANTE DE PAGO' : 'FACTURA DE COMPRA', 92, 180)
-  context.fillStyle = '#aab0aa'; context.font = '500 23px Arial'; context.fillText('hausline.ni · Rastreo de pedidos', 92, 224)
+  context.fillStyle = '#b7ff00'; context.font = '600 23px Arial'; context.fillText('King of Shoes', 92, 224); context.fillStyle = '#aab0aa'; context.font = '500 23px Arial'; context.fillText('· hausline.ni', 92 + context.measureText('King of Shoes ').width + 34, 224)
   context.textAlign = 'right'; context.fillStyle = '#b7ff00'; context.font = '700 30px Arial'; context.fillText(data.codigo, 1150, 120)
   context.fillStyle = '#aab0aa'; context.font = '500 22px Arial'; context.fillText('Código de seguimiento', 1150, 158); context.textAlign = 'left'
 

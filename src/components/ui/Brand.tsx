@@ -7,7 +7,7 @@ export function Brand({ compact = false }: { compact?: boolean }) {
       {!compact && (
         <span>
           <strong className="block text-sm font-extrabold tracking-[0.18em] text-white">HAUSLINE</strong>
-          <span className="block text-[10px] font-semibold tracking-[0.3em] text-muted">TRACKING</span>
+          <span className="block text-[10px] font-semibold uppercase tracking-[0.22em] text-accent">King of Shoes</span>
         </span>
       )}
     </div>
