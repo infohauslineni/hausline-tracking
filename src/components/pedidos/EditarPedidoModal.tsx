@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Modal } from '../ui/Modal'
 import type { EditarPedidoInput } from '../../services/pedidos.service'
 import type { Pedido, PedidoItem } from '../../types/domain'
+import { costoRealPedido } from '../../utils/pedidoCosto'
 
 const itemVacio: PedidoItem = { producto: '', marca: '', categoria: '', talla: '', color: '', cantidad: 1, precio_unitario: 0, notas: '' }
 
@@ -15,6 +16,7 @@ export function EditarPedidoModal({ pedido, open, onClose, onSave }: {
   const [items, setItems] = useState<PedidoItem[]>([])
   const [fechaEstimada, setFechaEstimada] = useState('')
   const [abono, setAbono] = useState(0)
+  const [costoProveedor, setCostoProveedor] = useState(0)
   const [notasInternas, setNotasInternas] = useState('')
   const [notasPublicas, setNotasPublicas] = useState('')
   const [saving, setSaving] = useState(false)
@@ -25,6 +27,8 @@ export function EditarPedidoModal({ pedido, open, onClose, onSave }: {
     setItems(pedido.pedido_items?.length ? pedido.pedido_items.map((item) => ({ ...item })) : [{ ...itemVacio }])
     setFechaEstimada(pedido.fecha_estimada ?? '')
     setAbono(Number(pedido.abono))
+    const proveedor = pedido.gastos?.find((gasto) => (gasto.categoria ?? '').toLowerCase().includes('proveedor'))
+    setCostoProveedor(proveedor ? Number(proveedor.monto) : costoRealPedido(pedido))
     setNotasInternas(pedido.notas_internas ?? '')
     setNotasPublicas(pedido.notas_publicas ?? '')
     setError('')
@@ -38,12 +42,14 @@ export function EditarPedidoModal({ pedido, open, onClose, onSave }: {
     if (!items.length || items.some((item) => !item.producto.trim())) return setError('Escribe el nombre de todos los productos.')
     if (items.some((item) => Number(item.cantidad) < 1 || Number(item.precio_unitario) < 0)) return setError('Revisa la cantidad y el precio de los productos.')
     if (abono < 0) return setError('El abono no puede ser negativo.')
+    if (costoProveedor < 0) return setError('El costo real no puede ser negativo.')
     setSaving(true)
     setError('')
     try {
       await onSave({
         fecha_estimada: fechaEstimada || null,
         abono: Number(abono),
+        costo_proveedor: Number(costoProveedor),
         notas_internas: notasInternas.trim() || null,
         notas_publicas: notasPublicas.trim() || null,
         items: items.map((item) => ({ ...item, cantidad: Number(item.cantidad), precio_unitario: Number(item.precio_unitario) })),
@@ -71,10 +77,11 @@ export function EditarPedidoModal({ pedido, open, onClose, onSave }: {
       <div className="form-grid">
         <Field label="Fecha estimada"><input type="date" value={fechaEstimada} onChange={(event) => setFechaEstimada(event.target.value)} /></Field>
         <Field label="Abono"><input type="number" min="0" step="0.01" value={abono} onChange={(event) => setAbono(Number(event.target.value))} /></Field>
+        <Field label="Costo real (proveedor)"><input type="number" min="0" step="0.01" value={costoProveedor} onChange={(event) => setCostoProveedor(Number(event.target.value))} /></Field>
         <Field label="Notas internas"><textarea rows={3} value={notasInternas} onChange={(event) => setNotasInternas(event.target.value)} /></Field>
         <Field label="Nota visible para el cliente"><textarea rows={3} value={notasPublicas} onChange={(event) => setNotasPublicas(event.target.value)} /></Field>
       </div>
-      <div className="grid gap-3 rounded-xl border border-line bg-white/[0.025] p-4 sm:grid-cols-3"><Money label="Total" value={total} /><Money label="Abono" value={abono} /><Money label="Saldo" value={total - abono} accent /></div>
+      <div className="grid gap-3 rounded-xl border border-line bg-white/[0.025] p-4 sm:grid-cols-3"><Money label="Total" value={total} /><Money label="Abono" value={abono} /><Money label="Saldo" value={total - abono} accent /><Money label="Costo real" value={costoProveedor} /><Money label="Ganancia estimada" value={total - costoProveedor} /></div>
       {error && <p className="text-sm text-red-300">{error}</p>}
       <div className="flex justify-end gap-2"><button type="button" className="subtle-button px-4" onClick={onClose}>Cancelar</button><button className="primary-button px-5" disabled={saving}><Save size={16} /> {saving ? 'Guardando…' : 'Guardar cambios'}</button></div>
     </form>

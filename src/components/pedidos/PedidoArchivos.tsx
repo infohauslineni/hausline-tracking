@@ -5,17 +5,14 @@ import { isSupabaseConfigured } from '../../lib/supabase'
 import { comprimirImagen, eliminarArchivo, listarArchivos, marcaParaTipo, marcarPrincipal, subirArchivo } from '../../services/archivos.service'
 import type { ArchivoPedido, TipoArchivo } from '../../types/domain'
 
+// Solo se permite subir fotos de control de calidad. El resto de categorías quedó
+// oculto a pedido del negocio (el componente conserva toda su lógica interna).
 const CATEGORIAS: { id: TipoArchivo; label: string; description: string }[] = [
-  { id: 'producto', label: 'Producto', description: 'Fotos principales de los artículos' },
   { id: 'control_calidad', label: 'Control de calidad', description: 'Evidencia de revisión y empaque' },
-  { id: 'recepcion_miami', label: 'Bodega Miami', description: 'Foto del paquete al llegar a la bodega de la agencia' },
-  { id: 'recibido_local', label: 'Recibido Hausline', description: 'Foto de cuando recibís el paquete (lleva sello con código y fecha)' },
-  { id: 'comprobante', label: 'Comprobantes', description: 'Recibos y soportes internos' },
-  { id: 'entrega', label: 'Entrega', description: 'Evidencia de entrega al cliente' },
 ]
 
 export function PedidoArchivos({ pedidoId, codigo, onQualityReady }: { pedidoId: string; codigo?: string; onQualityReady?: (ready: boolean) => void }) {
-  const [categoria, setCategoria] = useState<TipoArchivo>('producto')
+  const [categoria, setCategoria] = useState<TipoArchivo>('control_calidad')
   const [archivos, setArchivos] = useState<ArchivoPedido[]>([])
   const [visibleCliente, setVisibleCliente] = useState(true)
   const [loading, setLoading] = useState(isSupabaseConfigured)
@@ -108,11 +105,11 @@ export function PedidoArchivos({ pedidoId, codigo, onQualityReady }: { pedidoId:
       {!isSupabaseConfigured && <span className="status-badge status-neutral mt-2 w-fit sm:mt-0">Vista previa local</span>}
     </div>
 
-    <div className="mt-5 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Categorías de imágenes">
+    {CATEGORIAS.length > 1 && <div className="mt-5 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Categorías de imágenes">
       {CATEGORIAS.map((item) => <button key={item.id} type="button" role="tab" aria-selected={categoria === item.id} onClick={() => cambiarCategoria(item.id)} className={`shrink-0 rounded-full border px-3 py-2 text-xs font-semibold transition ${categoria === item.id ? 'border-accent bg-accent text-app' : 'border-line bg-white/[0.02] text-muted hover:text-white'}`}>
         {item.label} <span className="ml-1 opacity-65">{archivos.filter((file) => file.tipo === item.id).length}</span>
       </button>)}
-    </div>
+    </div>}
 
     <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div><strong className="text-sm">{detalle.label}</strong><p className="mt-0.5 text-xs text-muted">{detalle.description}</p></div>

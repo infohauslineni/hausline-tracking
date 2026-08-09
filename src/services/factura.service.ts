@@ -144,7 +144,7 @@ export async function enviarFacturaWhatsApp(data: FacturaData) {
   const file = await crearFacturaImagenFile(data)
   const mensaje = (data.variante === 'pago'
     ? `Hola ${data.cliente}, confirmamos que recibimos el pago de tu pedido ${data.codigo} en Hausline. Aquí tienes tu comprobante. ¡Muchas gracias por tu compra!`
-    : `Hola ${data.cliente}, aquí está la factura de tu pedido en Hausline. Tu código de seguimiento es ${data.codigo}. Puedes rastrearlo cuando quieras. ¡Gracias por tu compra!`
+    : `Hola ${data.cliente}, ¡tu pedido quedó registrado en Hausline! Aquí tienes tu factura. Tu código de seguimiento es ${data.codigo}; puedes rastrearlo cuando quieras. ¡Gracias por tu compra!`
   ).replace(/\s+/g, ' ').trim()
   if (navigator.canShare?.({ files: [file] })) {
     try {

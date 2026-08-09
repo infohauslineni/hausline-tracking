@@ -8,7 +8,9 @@ export const CUENTAS_PAGO: CuentaPago[] = [
   { banco: 'BAC (Córdobas)', numero: '360322192', titular: 'Tania Vanessa Flores Rivas' },
 ]
 
-export const cuentasTexto = () => CUENTAS_PAGO.map((c) => `• ${c.banco}: ${c.numero} — ${c.titular}`).join('\n')
+// Una cuenta por bloque, con línea en blanco entre cada una para que en WhatsApp
+// no se vea todo amontonado.
+export const cuentasTexto = () => CUENTAS_PAGO.map((c) => `• ${c.banco}\n  ${c.numero} — ${c.titular}`).join('\n\n')
 
 // Opciones de envío. Cargotrans: solo los C$100 son fijos; la tarifa depende del peso y el departamento.
 export const DELIVERY_OPCIONES = [

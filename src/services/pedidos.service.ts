@@ -15,7 +15,11 @@ export type NuevoPedidoInput = {
   items: PedidoItem[]
 }
 
-export type EditarPedidoInput = Pick<NuevoPedidoInput, 'fecha_estimada' | 'abono' | 'notas_internas' | 'notas_publicas' | 'items'>
+export type EditarPedidoInput = Pick<NuevoPedidoInput, 'fecha_estimada' | 'abono' | 'notas_internas' | 'notas_publicas' | 'items'> & {
+  // Costo real / pago al proveedor. Se deja editable porque a veces al comprarle al
+  // proveedor sale más caro (o más barato) de lo estimado al crear el pedido.
+  costo_proveedor?: number | null
+}
 
 function requireSupabase() {
   if (!supabase) throw new Error('Supabase no está configurado.')
@@ -217,6 +221,37 @@ export async function actualizarPedidoCompleto(id: string, input: EditarPedidoIn
   }).eq('id', id)
   if (pedidoError) throw pedidoError
 
+  if (input.costo_proveedor != null) await ajustarCostoProveedor(client, id, Number(input.costo_proveedor))
+
   invalidateCache('pedidos')
   return obtenerPedido(id)
+}
+
+// Deja el costo real del pedido en el monto indicado, actualizando (o creando) el gasto
+// "Proveedor" y el movimiento de caja asociado para que la ganancia y la caja cuadren.
+async function ajustarCostoProveedor(client: NonNullable<typeof supabase>, pedidoId: string, monto: number) {
+  const nuevoCosto = Math.max(0, monto)
+  const { data: gasto, error: gastoError } = await client.from('gastos').select('id').eq('pedido_id', pedidoId).ilike('categoria', '%proveedor%').maybeSingle()
+  if (gastoError) throw gastoError
+
+  if (gasto) {
+    if (nuevoCosto > 0) {
+      const { error: updateError } = await client.from('gastos').update({ monto: nuevoCosto }).eq('id', gasto.id)
+      if (updateError) throw updateError
+      const { error: movError } = await client.from('movimientos_cuenta').update({ monto: nuevoCosto }).eq('gasto_id', gasto.id)
+      if (movError) throw movError
+    } else {
+      await client.from('movimientos_cuenta').delete().eq('gasto_id', gasto.id)
+      await client.from('gastos').delete().eq('id', gasto.id)
+    }
+    return
+  }
+
+  if (nuevoCosto <= 0) return
+  const { data: pedido, error: pedidoError } = await client.from('pedidos').select('codigo, fecha_pedido, metodo_pago').eq('id', pedidoId).single()
+  if (pedidoError) throw pedidoError
+  const { data: expense, error: expenseError } = await client.from('gastos').insert({ fecha: pedido.fecha_pedido, categoria: 'Proveedor', monto: nuevoCosto, metodo_pago: pedido.metodo_pago || null, pedido_id: pedidoId, descripcion: `Pago a proveedor · ${pedido.codigo}`, observaciones: 'Costo real ajustado manualmente' }).select('id').single()
+  if (expenseError) throw expenseError
+  const { error: movError } = await client.from('movimientos_cuenta').insert({ fecha: `${pedido.fecha_pedido}T12:00:00`, tipo: 'pago_proveedor', descripcion: `Pago a proveedor · ${pedido.codigo}`, monto: nuevoCosto, metodo: pedido.metodo_pago || null, pedido_id: pedidoId, gasto_id: expense.id })
+  if (movError) throw movError
 }

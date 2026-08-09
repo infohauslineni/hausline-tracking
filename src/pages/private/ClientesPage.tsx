@@ -14,10 +14,11 @@ import { whatsappUrl } from '../../utils/whatsapp'
 const schema = z.object({
   nombre: z.string().trim().min(2, 'Escribe el nombre completo.'),
   whatsapp: z.string().trim().min(7, 'Escribe un número válido.'),
+  correo: z.string().trim().email('Correo inválido.').or(z.literal('')),
   departamento: z.string(), ciudad: z.string(), referencia: z.string(), notas: z.string(),
 })
 type FormValues = z.infer<typeof schema>
-const emptyValues: FormValues = { nombre: '', whatsapp: '', departamento: '', ciudad: '', referencia: '', notas: '' }
+const emptyValues: FormValues = { nombre: '', whatsapp: '', correo: '', departamento: '', ciudad: '', referencia: '', notas: '' }
 
 export function ClientesPage() {
   const [clientes, setClientes] = useState<Cliente[]>(DEMO_CLIENTES)
@@ -66,15 +67,15 @@ export function ClientesPage() {
 
 function ClienteModal({ open, cliente, onClose, onSaved }: { open: boolean; cliente: Cliente | null; onClose: () => void; onSaved: (client: Cliente) => void }) {
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: emptyValues })
-  useEffect(() => { reset(cliente ? { nombre: cliente.nombre, whatsapp: cliente.whatsapp, departamento: cliente.departamento ?? '', ciudad: cliente.ciudad ?? '', referencia: cliente.referencia ?? '', notas: cliente.notas ?? '' } : emptyValues) }, [cliente, open, reset])
+  useEffect(() => { reset(cliente ? { nombre: cliente.nombre, whatsapp: cliente.whatsapp, correo: cliente.correo ?? '', departamento: cliente.departamento ?? '', ciudad: cliente.ciudad ?? '', referencia: cliente.referencia ?? '', notas: cliente.notas ?? '' } : emptyValues) }, [cliente, open, reset])
   const submit = async (values: FormValues) => {
-    const input: ClienteInput = { nombre: values.nombre, whatsapp: values.whatsapp, correo: null, departamento: values.departamento || null, ciudad: values.ciudad || null, direccion: null, referencia: values.referencia || null, notas: values.notas || null }
+    const input: ClienteInput = { nombre: values.nombre, whatsapp: values.whatsapp, correo: values.correo || null, departamento: values.departamento || null, ciudad: values.ciudad || null, direccion: null, referencia: values.referencia || null, notas: values.notas || null }
     try {
       const saved = isSupabaseConfigured ? await guardarCliente(input, cliente?.id) : { ...input, id: cliente?.id ?? crypto.randomUUID(), created_at: cliente?.created_at ?? new Date().toISOString() }
       onSaved(saved); toast.success(cliente ? 'Cliente actualizado.' : 'Cliente creado.')
     } catch (error) { toast.error(error instanceof Error ? error.message : 'No se pudo guardar el cliente.') }
   }
-  return <Modal open={open} onClose={onClose} title={cliente ? 'Editar cliente' : 'Nuevo cliente'} description="Datos esenciales para pedidos y contacto."><form onSubmit={handleSubmit(submit)} className="form-grid"><FormField label="Nombre completo" error={errors.nombre?.message}><input {...register('nombre')} autoFocus /></FormField><FormField label="WhatsApp" error={errors.whatsapp?.message}><input {...register('whatsapp')} placeholder="+505 8888 0000" /></FormField><FormField label="Departamento"><input {...register('departamento')} /></FormField><FormField label="Ciudad"><input {...register('ciudad')} /></FormField><FormField label="Referencia" wide><input {...register('referencia')} /></FormField><FormField label="Notas internas" wide><textarea {...register('notas')} rows={3} /></FormField><div className="col-span-full flex justify-end gap-2 pt-2"><button type="button" className="subtle-button px-4" onClick={onClose}>Cancelar</button><button className="primary-button px-5" disabled={isSubmitting}>{isSubmitting ? 'Guardando…' : 'Guardar cliente'}</button></div></form></Modal>
+  return <Modal open={open} onClose={onClose} title={cliente ? 'Editar cliente' : 'Nuevo cliente'} description="Datos esenciales para pedidos y contacto."><form onSubmit={handleSubmit(submit)} className="form-grid"><FormField label="Nombre completo" error={errors.nombre?.message}><input {...register('nombre')} autoFocus /></FormField><FormField label="WhatsApp" error={errors.whatsapp?.message}><input {...register('whatsapp')} placeholder="+505 8888 0000" /></FormField><FormField label="Correo (para avisos automáticos)" error={errors.correo?.message} wide><input {...register('correo')} type="email" placeholder="cliente@correo.com" /></FormField><FormField label="Departamento"><input {...register('departamento')} /></FormField><FormField label="Ciudad"><input {...register('ciudad')} /></FormField><FormField label="Referencia" wide><input {...register('referencia')} /></FormField><FormField label="Notas internas" wide><textarea {...register('notas')} rows={3} /></FormField><div className="col-span-full flex justify-end gap-2 pt-2"><button type="button" className="subtle-button px-4" onClick={onClose}>Cancelar</button><button className="primary-button px-5" disabled={isSubmitting}>{isSubmitting ? 'Guardando…' : 'Guardar cliente'}</button></div></form></Modal>
 }
 
 function FormField({ label, error, wide, children }: { label: string; error?: string; wide?: boolean; children: React.ReactNode }) { return <label className={`form-field ${wide ? 'sm:col-span-2' : ''}`}><span>{label}</span>{children}{error && <small>{error}</small>}</label> }
