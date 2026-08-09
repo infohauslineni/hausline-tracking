@@ -78,7 +78,7 @@ export function plantillaCorreo({ nombre, codigo, estadoLabel, nota, urlSeguimie
 export async function enviarCorreoPedido({ correo, nombre, codigo, estado, esNuevo }) {
   const estadoLabel = ESTADO_LABEL[estado]
   const nota = ESTADO_NOTA[estado] ?? 'Tu pedido fue actualizado.'
-  const appUrl = (process.env.APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
+  const appUrl = (process.env.APP_URL ?? process.env.VITE_PUBLIC_APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
   const urlSeguimiento = `${appUrl}/tracking/${codigo}`
 
   const transporter = nodemailer.createTransport({
