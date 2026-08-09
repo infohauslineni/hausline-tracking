@@ -26,6 +26,24 @@ function requireSupabase() {
   return supabase
 }
 
+// Dispara el correo "pedido registrado" al cliente en cuanto se crea el pedido. Best-effort:
+// nunca rompe ni retrasa la creación de la venta. El servidor (/api/notificar-creacion) lee el
+// correo del cliente con la service role, así que aquí solo mandamos el id y la sesión del admin.
+async function notificarPedidoCreado(pedidoId: string) {
+  try {
+    const { data } = await requireSupabase().auth.getSession()
+    const token = data.session?.access_token
+    if (!token) return
+    await fetch('/api/notificar-creacion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ pedido_id: pedidoId }),
+    })
+  } catch {
+    // El correo es un extra: si falla (sin conexión, SMTP, etc.) el pedido ya quedó guardado.
+  }
+}
+
 function fechaNicaragua() {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Managua',
@@ -175,6 +193,7 @@ export async function crearPedido(input: NuevoPedidoInput) {
     await client.from('movimientos_cuenta').insert({ fecha: `${input.fecha_pedido}T12:00:00`, tipo: 'ingreso', descripcion: `Abono inicial ${created.codigo}`, monto: input.abono, metodo: input.metodo_pago || null, pedido_id: created.id, pago_id: payment.id })
   }
   invalidateCache('pedidos')
+  void notificarPedidoCreado(created.id)
   return created as Pedido
 }
 
