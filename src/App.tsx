@@ -17,8 +17,7 @@ const PagosPage = lazy(() => import('./pages/private/PagosPage').then((module) =
 const GastosPage = lazy(() => import('./pages/private/GastosPage').then((module) => ({ default: module.GastosPage })))
 const CuentaPage = lazy(() => import('./pages/private/CuentaPage').then((module) => ({ default: module.CuentaPage })))
 const ReportesPage = lazy(() => import('./pages/private/ReportesPage').then((module) => ({ default: module.ReportesPage })))
-const InversionesPage = lazy(() => import('./pages/private/InversionesPage').then((module) => ({ default: module.InversionesPage })))
-const StockPage = lazy(() => import('./pages/private/StockPage').then((module) => ({ default: module.StockPage })))
+const InventarioPage = lazy(() => import('./pages/private/InventarioPage').then((module) => ({ default: module.InventarioPage })))
 const MetasPage = lazy(() => import('./pages/private/MetasPage').then((module) => ({ default: module.MetasPage })))
 const ContenidoPage = lazy(() => import('./pages/private/ContenidoPage').then((module) => ({ default: module.ContenidoPage })))
 const TrackingPage = lazy(() => import('./pages/public/TrackingPage').then((module) => ({ default: module.TrackingPage })))
@@ -36,8 +35,9 @@ export function App() {
         <Route path="/pedidos/:id" element={<PedidoDetailPage />} />
         <Route path="/ventas" element={<VentasPage />} />
         <Route path="/productos" element={<ProductosPage />} />
-        <Route path="/inversiones" element={<InversionesPage />} />
-        <Route path="/stock" element={<StockPage />} />
+        <Route path="/stock" element={<InventarioPage />} />
+        <Route path="/inventario" element={<Navigate to="/stock" replace />} />
+        <Route path="/inversiones" element={<Navigate to="/stock" replace />} />
         <Route path="/deudas" element={<Navigate to="/gastos" replace />} />
         <Route path="/metas" element={<MetasPage />} />
         <Route path="/contenido" element={<ContenidoPage />} />
