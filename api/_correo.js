@@ -41,33 +41,75 @@ export function plantillaCorreo({ nombre, codigo, estadoLabel, nota, urlSeguimie
   const saludo = nombre ? `Hola, ${nombre}` : 'Hola'
   // En la creación del pedido el texto confirma el registro; en los cambios de estado, la actualización.
   const intro = esNuevo
-    ? `¡Gracias por tu compra! Registramos tu pedido <strong>${codigo}</strong> y ya comenzamos a gestionarlo:`
-    : `Tu pedido <strong>${codigo}</strong> tiene una nueva actualización:`
+    ? `Gracias por tu compra. Recibimos tu pedido y ya comenzamos a gestionarlo.`
+    : `Tu pedido tiene una nueva actualización.`
+  // Texto de previsualización (lo que se ve en la bandeja antes de abrir el correo).
+  const preheader = esNuevo
+    ? `Registramos tu pedido ${codigo}. Sigue cada etapa desde aquí.`
+    : `${codigo}: ${estadoLabel}. Revisa el detalle del seguimiento.`
+  const anio = new Date().getFullYear()
   return `<!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;color:#18181b;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:24px 0;">
-    <tr><td align="center">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);">
-        <tr><td style="background:#111827;padding:24px;text-align:center;">
-          <div style="color:#ffffff;font-size:22px;font-weight:800;letter-spacing:2px;">HAUSLINE</div>
-          <div style="color:#9ca3af;font-size:11px;letter-spacing:3px;text-transform:uppercase;margin-top:4px;">King of Shoes</div>
+<html lang="es" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>Pedido ${codigo}</title>
+  <!--[if mso]><style>body,table,td,a{font-family:Arial,Helvetica,sans-serif !important;}</style><![endif]-->
+</head>
+<body style="margin:0;padding:0;background-color:#ececed;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;font-size:1px;line-height:1px;color:#ececed;">${preheader}</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#ececed;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 24px rgba(17,24,39,.08);">
+
+        <!-- Encabezado -->
+        <tr><td style="background-color:#0b0f19;padding:34px 24px;text-align:center;">
+          <div style="color:#ffffff;font-size:26px;font-weight:800;letter-spacing:5px;line-height:1;">HAUSLINE</div>
+          <div style="color:#8b93a7;font-size:10px;font-weight:600;letter-spacing:4px;text-transform:uppercase;margin-top:8px;">King of Shoes</div>
         </td></tr>
-        <tr><td style="padding:32px 28px 8px;">
-          <p style="margin:0 0 16px;font-size:16px;">${saludo},</p>
-          <p style="margin:0 0 20px;font-size:15px;color:#374151;">${intro}</p>
-          <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:20px;text-align:center;margin-bottom:20px;">
-            <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#6b7280;margin-bottom:6px;">Estado actual</div>
-            <div style="font-size:20px;font-weight:700;color:#111827;">${estadoLabel}</div>
-            <div style="font-size:14px;color:#4b5563;margin-top:8px;">${nota}</div>
-          </div>
-          <div style="text-align:center;margin:24px 0 8px;">
-            <a href="${urlSeguimiento}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:13px 28px;border-radius:10px;">Ver seguimiento completo</a>
-          </div>
+
+        <!-- Barra de acento -->
+        <tr><td style="height:4px;background-color:#c8a24b;font-size:0;line-height:0;">&nbsp;</td></tr>
+
+        <!-- Cuerpo -->
+        <tr><td style="padding:38px 36px 12px;">
+          <p style="margin:0 0 6px;font-size:18px;font-weight:700;color:#0b0f19;">${saludo}</p>
+          <p style="margin:0 0 26px;font-size:15px;line-height:1.6;color:#4b5563;">${intro}</p>
+
+          <!-- Número de pedido -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px;">
+            <tr><td style="background-color:#f6f7f9;border:1px solid #e6e8ec;border-radius:10px;padding:16px 20px;">
+              <span style="font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#8b93a7;">Número de pedido</span><br>
+              <span style="font-size:19px;font-weight:800;color:#0b0f19;letter-spacing:1px;">${codigo}</span>
+            </td></tr>
+          </table>
+
+          <!-- Estado actual -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 30px;">
+            <tr><td style="border:1px solid #e6e8ec;border-radius:12px;padding:24px 22px;text-align:center;">
+              <div style="font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#8b93a7;margin-bottom:10px;">Estado actual</div>
+              <div style="display:inline-block;background-color:#0b0f19;color:#ffffff;font-size:15px;font-weight:700;letter-spacing:.3px;padding:9px 22px;border-radius:999px;">${estadoLabel}</div>
+              <div style="font-size:14px;line-height:1.6;color:#4b5563;margin-top:16px;">${nota}</div>
+            </td></tr>
+          </table>
+
+          <!-- Botón -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center">
+            <a href="${urlSeguimiento}" target="_blank" style="display:inline-block;background-color:#c8a24b;color:#0b0f19;text-decoration:none;font-weight:700;font-size:15px;letter-spacing:.3px;padding:15px 38px;border-radius:10px;">Ver seguimiento del pedido</a>
+          </td></tr></table>
+          <p style="margin:16px 0 0;font-size:12px;line-height:1.5;text-align:center;color:#9aa0ab;">O copia este enlace:<br><a href="${urlSeguimiento}" target="_blank" style="color:#6b7280;text-decoration:underline;word-break:break-all;">${urlSeguimiento}</a></p>
         </td></tr>
-        <tr><td style="padding:20px 28px 28px;text-align:center;border-top:1px solid #f3f4f6;">
-          <p style="margin:0;font-size:12px;color:#9ca3af;">Este es un aviso automático de tu pedido en Hausline.<br>Si tienes dudas, responde a este correo.</p>
+
+        <!-- Pie -->
+        <tr><td style="padding:28px 36px 34px;border-top:1px solid #eef0f2;text-align:center;">
+          <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#0b0f19;letter-spacing:2px;">HAUSLINE</p>
+          <p style="margin:0 0 14px;font-size:12px;line-height:1.6;color:#9aa0ab;">Este es un aviso automático de tu pedido.<br>¿Tienes dudas? Responde a este mismo correo y te ayudamos.</p>
+          <p style="margin:0;font-size:11px;color:#b7bcc5;">© ${anio} Hausline · King of Shoes</p>
         </td></tr>
+
       </table>
     </td></tr>
   </table>
