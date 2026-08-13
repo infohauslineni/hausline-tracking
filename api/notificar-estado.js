@@ -64,9 +64,10 @@ async function obtenerFactura(codigo, esNuevo) {
   }
 }
 
-// Aviso por correo cuando cambia el estado de un pedido. Lo dispara el webhook de
-// Supabase (con el secreto compartido). El aviso al CREAR el pedido lo maneja la app
-// directamente vía /api/notificar-creacion, así que aquí solo procesamos cambios de estado.
+// Aviso por correo del pedido. Lo dispara SIEMPRE el webhook de Supabase (con el
+// secreto compartido): tanto al CREAR el pedido (INSERT -> factura de compra) como
+// al cambiar de estado (UPDATE -> aviso simple, o comprobante PAGADO al entregar).
+// La app NO envía correos por su cuenta, así que no hay envíos duplicados.
 export default async function handler(request, response) {
   if (request.method !== 'POST') return response.status(405).json({ ok: false, error: 'Method not allowed' })
 
@@ -82,9 +83,6 @@ export default async function handler(request, response) {
   const body = typeof request.body === 'string' ? JSON.parse(request.body || '{}') : (request.body ?? {})
   const record = body.record ?? {}
   const oldRecord = body.old_record ?? {}
-
-  // Diagnóstico temporal: qué manda el webhook (para depurar la factura del correo).
-  console.log('notificar-estado payload', JSON.stringify({ type: body.type, table: body.table, recordKeys: Object.keys(record), codigo: record.codigo }))
 
   // Notificamos al crear el pedido (INSERT) y cuando cambia su estado (UPDATE).
   const tipo = body.type
@@ -106,7 +104,6 @@ export default async function handler(request, response) {
   // Factura dentro del correo: al crear el pedido (compra) y al marcarlo entregado (pago).
   const conFactura = esNuevo || estado === 'entregado'
   const factura = conFactura ? await obtenerFactura(record.codigo, esNuevo) : null
-  console.log('notificar-estado factura', JSON.stringify({ conFactura, tieneFactura: !!factura, items: factura?.items?.length ?? 0, total: factura?.total }))
 
   try {
     await enviarCorreoPedido({ correo, nombre, codigo: record.codigo, estado, esNuevo, factura })
