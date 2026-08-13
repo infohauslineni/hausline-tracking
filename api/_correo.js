@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer'
+import { facturaPdfBuffer } from './_factura-pdf.js'
 
 // Lógica de correo compartida por las funciones /api (aviso al crear el pedido y al
 // cambiar de estado). Vercel no convierte los archivos con "_" en endpoints, pero sí
@@ -37,7 +38,80 @@ export const ESTADO_NOTA = {
   incidencia: 'Tenemos una novedad con tu pedido y ya la estamos gestionando. Te contactaremos pronto.',
 }
 
-export function plantillaCorreo({ nombre, codigo, estadoLabel, nota, urlSeguimiento, esNuevo }) {
+// Escapa texto que viene de la base (nombres de producto, etc.) para el HTML del correo.
+function esc(valor) {
+  return String(valor ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+}
+
+function montoUSD(valor) {
+  return `USD ${(Number(valor) || 0).toFixed(2)}`
+}
+
+// Tabla de factura dentro del correo (estilo recibo). Se muestra solo cuando llegan
+// los productos: en la creación del pedido (variante 'compra', con saldo) y al
+// entregarlo (variante 'pago', marcado como PAGADO).
+export function bloqueFactura(factura) {
+  if (!factura || !Array.isArray(factura.items) || factura.items.length === 0) return ''
+  const esPago = factura.variante === 'pago'
+
+  const filas = factura.items.map((item) => {
+    const codigo = item.codigo
+      ? `<div style="font-size:11px;color:#9aa0ab;margin-top:3px;letter-spacing:.3px;">Código: ${esc(item.codigo)}</div>`
+      : ''
+    const detalle = item.detalle
+      ? `<div style="font-size:12px;color:#8b93a7;margin-top:2px;">${esc(item.detalle)}</div>`
+      : ''
+    // Miniatura de la foto del producto (si el pedido la guardó). Tamaño fijo para
+    // que se vea igual en todos los clientes de correo.
+    const foto = item.imagen
+      ? `<img src="${esc(item.imagen)}" width="52" height="52" alt="" style="display:block;width:52px;height:52px;border-radius:8px;object-fit:cover;border:1px solid #eef0f2;background-color:#f6f7f9;">`
+      : `<div style="width:52px;height:52px;border-radius:8px;border:1px solid #eef0f2;background-color:#f6f7f9;"></div>`
+    return `<tr>
+      <td style="padding:13px 0;border-bottom:1px solid #eef0f2;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+          <td style="padding:0 12px 0 0;vertical-align:top;width:52px;">${foto}</td>
+          <td style="vertical-align:top;font-size:14px;color:#0b0f19;line-height:1.4;">${esc(item.producto)}${codigo}${detalle}</td>
+        </tr></table>
+      </td>
+      <td style="padding:13px 0;border-bottom:1px solid #eef0f2;font-size:14px;color:#4b5563;text-align:center;white-space:nowrap;vertical-align:top;">${Number(item.cantidad) || 1}</td>
+      <td style="padding:13px 0;border-bottom:1px solid #eef0f2;font-size:14px;color:#4b5563;text-align:right;white-space:nowrap;vertical-align:top;">${montoUSD(item.precioUnitario)}</td>
+      <td style="padding:13px 0 13px 14px;border-bottom:1px solid #eef0f2;font-size:14px;font-weight:600;color:#0b0f19;text-align:right;white-space:nowrap;vertical-align:top;">${montoUSD(item.subtotal)}</td>
+    </tr>`
+  }).join('')
+
+  const totalFila = (label, valor, { strong = false, color = '#0b0f19' } = {}) => `<tr>
+    <td colspan="2" style="border:0;"></td>
+    <td style="padding:5px 0;font-size:13px;color:#6b7280;text-align:right;white-space:nowrap;">${label}</td>
+    <td style="padding:5px 0 5px 14px;font-size:${strong ? '17px' : '13px'};font-weight:${strong ? 800 : 600};color:${color};text-align:right;white-space:nowrap;">${valor}</td>
+  </tr>`
+
+  const saldoFila = esPago
+    ? totalFila('Saldo pendiente', 'PAGADO', { strong: true, color: '#2f8f2f' })
+    : totalFila('Saldo pendiente', montoUSD(factura.saldo), { strong: true, color: (Number(factura.saldo) || 0) > 0.01 ? '#b26a00' : '#2f8f2f' })
+
+  return `
+          <!-- Factura -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 30px;">
+            <tr><td style="border:1px solid #e6e8ec;border-radius:12px;padding:22px 22px 18px;">
+              <div style="font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#8b93a7;margin-bottom:14px;">${esPago ? 'Comprobante de pago' : 'Detalle de tu compra'}</div>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="padding:0 0 10px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#8b93a7;">Producto</td>
+                  <td style="padding:0 0 10px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#8b93a7;text-align:center;">Cant.</td>
+                  <td style="padding:0 0 10px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#8b93a7;text-align:right;">Precio</td>
+                  <td style="padding:0 0 10px 14px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#8b93a7;text-align:right;">Subtotal</td>
+                </tr>
+                ${filas}
+                <tr><td colspan="4" style="height:14px;font-size:0;line-height:0;">&nbsp;</td></tr>
+                ${totalFila('Total del pedido', montoUSD(factura.total))}
+                ${totalFila(esPago ? 'Pago recibido' : 'Abono recibido', montoUSD(factura.abono))}
+                ${saldoFila}
+              </table>
+            </td></tr>
+          </table>`
+}
+
+export function plantillaCorreo({ nombre, codigo, estadoLabel, nota, urlSeguimiento, esNuevo, factura }) {
   const saludo = nombre ? `Hola, ${nombre}` : 'Hola'
   // En la creación del pedido el texto confirma el registro; en los cambios de estado, la actualización.
   const intro = esNuevo
@@ -95,7 +169,7 @@ export function plantillaCorreo({ nombre, codigo, estadoLabel, nota, urlSeguimie
               <div style="font-size:14px;line-height:1.6;color:#4b5563;margin-top:16px;">${nota}</div>
             </td></tr>
           </table>
-
+${bloqueFactura(factura)}
           <!-- Botón -->
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center">
             <a href="${urlSeguimiento}" target="_blank" style="display:inline-block;background-color:#c8a24b;color:#0b0f19;text-decoration:none;font-weight:700;font-size:15px;letter-spacing:.3px;padding:15px 38px;border-radius:10px;">Ver seguimiento del pedido</a>
@@ -117,7 +191,9 @@ export function plantillaCorreo({ nombre, codigo, estadoLabel, nota, urlSeguimie
 }
 
 // Envía el correo del pedido (creación o cambio de estado). Lanza si el SMTP falla.
-export async function enviarCorreoPedido({ correo, nombre, codigo, estado, esNuevo }) {
+// `factura` es opcional: cuando llega, el correo incluye la tabla de la compra
+// (al crear el pedido) o del pago (al entregarlo).
+export async function enviarCorreoPedido({ correo, nombre, codigo, estado, esNuevo, factura }) {
   const estadoLabel = ESTADO_LABEL[estado]
   const nota = ESTADO_NOTA[estado] ?? 'Tu pedido fue actualizado.'
   const appUrl = (process.env.APP_URL ?? process.env.VITE_PUBLIC_APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
@@ -130,10 +206,24 @@ export async function enviarCorreoPedido({ correo, nombre, codigo, estado, esNue
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
   })
 
+  // Cuando hay factura (creación o entrega), se adjunta también en PDF. Si el PDF
+  // falla por lo que sea, el correo se envía igual con la tabla en el cuerpo.
+  const attachments = []
+  if (factura && Array.isArray(factura.items) && factura.items.length) {
+    try {
+      const pdf = await facturaPdfBuffer({ codigo, nombre, fecha: factura.fecha, factura })
+      const tipo = factura.variante === 'pago' ? 'comprobante' : 'factura'
+      attachments.push({ filename: `Hausline-${codigo}-${tipo}.pdf`, content: pdf, contentType: 'application/pdf' })
+    } catch {
+      // Sin PDF adjunto: el cuerpo del correo ya lleva el detalle.
+    }
+  }
+
   await transporter.sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to: correo,
     subject: esNuevo ? `Pedido ${codigo} registrado en Hausline` : `Pedido ${codigo}: ${estadoLabel}`,
-    html: plantillaCorreo({ nombre, codigo, estadoLabel, nota, urlSeguimiento, esNuevo }),
+    html: plantillaCorreo({ nombre, codigo, estadoLabel, nota, urlSeguimiento, esNuevo, factura }),
+    attachments,
   })
 }
