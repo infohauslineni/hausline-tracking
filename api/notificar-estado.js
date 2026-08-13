@@ -2,40 +2,46 @@ import { ESTADO_LABEL, enviarCorreoPedido } from './_correo.js'
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-// Trae los productos del pedido para armar la factura del correo. Usa la llave de
-// servicio (ya configurada en Vercel para el cron) porque pedido_items está
-// protegido por RLS.
+// Trae el pedido + sus productos para armar la factura del correo. Usa la llave de
+// servicio (ya configurada en Vercel para el cron) porque las tablas están con RLS.
+//
+// Se busca por CÓDIGO (siempre viene en el payload del webhook), no por id: el
+// trigger que dispara el aviso manda un record reducido que puede no traer el id.
 //
 // OJO con la creación: la app inserta primero el pedido (aquí dispara el webhook)
 // y JUSTO DESPUÉS los productos, así que al crear puede que los ítems todavía no
-// estén y que record.total siga en 0. Por eso: (1) reintentamos unos segundos y
-// (2) calculamos el total sumando los subtotales de los ítems (no confiamos en
-// record.total). Si aun así no hay ítems, devuelve null y el correo va sin tabla.
-async function obtenerFactura(record, esNuevo) {
+// estén. Por eso reintentamos unos segundos. El total se calcula sumando los
+// subtotales de los ítems. Si aun así no hay ítems, devuelve null y va sin tabla.
+async function obtenerFactura(codigo, esNuevo) {
   const base = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!base || !key || !record?.id) return null
+  if (!base || !key || !codigo) return null
 
-  const url = `${base.replace(/\/$/, '')}/rest/v1/pedido_items`
-    + `?pedido_id=eq.${record.id}`
-    + `&select=producto,codigo_producto,imagen,talla,color,cantidad,precio_unitario,subtotal`
-    + `&order=created_at`
+  const url = `${base.replace(/\/$/, '')}/rest/v1/pedidos`
+    + `?codigo=eq.${encodeURIComponent(codigo)}`
+    + `&select=abono,fecha_pedido,pedido_items(producto,codigo_producto,imagen,talla,color,cantidad,precio_unitario,subtotal)`
+    + `&limit=1`
 
   const intentos = esNuevo ? 6 : 1
-  let rows = []
+  let pedido = null
   for (let i = 0; i < intentos; i++) {
     try {
-      const res = await fetch(url, { headers: { apikey: key, authorization: `Bearer ${key}` } })
+      const res = await fetch(url, { headers: { apikey: key, authorization: `Bearer ${key}`, accept: 'application/json' } })
       if (res.ok) {
         const data = await res.json()
-        if (Array.isArray(data) && data.length) { rows = data; break }
+        const p = Array.isArray(data) ? data[0] : null
+        if (p && Array.isArray(p.pedido_items) && p.pedido_items.length) { pedido = p; break }
+      } else {
+        console.error('obtenerFactura: fetch no ok', res.status)
       }
-    } catch { /* reintenta */ }
+    } catch (error) {
+      console.error('obtenerFactura: error', error?.message)
+    }
     if (i < intentos - 1) await sleep(500)
   }
-  if (!rows.length) return null
+  if (!pedido) { console.error('obtenerFactura: sin items para', codigo); return null }
 
-  const items = rows.map((r) => ({
+  const items = pedido.pedido_items.map((r) => ({
     producto: r.producto,
     codigo: r.codigo_producto || '',
     imagen: r.imagen || '',
@@ -47,13 +53,13 @@ async function obtenerFactura(record, esNuevo) {
 
   const total = items.reduce((sum, it) => sum + it.subtotal, 0)
   // Al entregar (comprobante) se da por pagado el total; al crear se usa el abono real.
-  const abono = esNuevo ? (Number(record.abono) || 0) : total
+  const abono = esNuevo ? (Number(pedido.abono) || 0) : total
   return {
     items,
     total,
     abono,
     saldo: Math.max(0, total - abono),
-    fecha: record.fecha_pedido || null,
+    fecha: pedido.fecha_pedido || null,
     variante: esNuevo ? 'compra' : 'pago',
   }
 }
@@ -77,6 +83,9 @@ export default async function handler(request, response) {
   const record = body.record ?? {}
   const oldRecord = body.old_record ?? {}
 
+  // Diagnóstico temporal: qué manda el webhook (para depurar la factura del correo).
+  console.log('notificar-estado payload', JSON.stringify({ type: body.type, table: body.table, recordKeys: Object.keys(record), codigo: record.codigo }))
+
   // Notificamos al crear el pedido (INSERT) y cuando cambia su estado (UPDATE).
   const tipo = body.type
   if (body.table !== 'pedidos' || (tipo !== 'UPDATE' && tipo !== 'INSERT')) return response.status(200).json({ ok: true, skipped: 'no aplica' })
@@ -96,7 +105,8 @@ export default async function handler(request, response) {
 
   // Factura dentro del correo: al crear el pedido (compra) y al marcarlo entregado (pago).
   const conFactura = esNuevo || estado === 'entregado'
-  const factura = conFactura ? await obtenerFactura(record, esNuevo) : null
+  const factura = conFactura ? await obtenerFactura(record.codigo, esNuevo) : null
+  console.log('notificar-estado factura', JSON.stringify({ conFactura, tieneFactura: !!factura, items: factura?.items?.length ?? 0, total: factura?.total }))
 
   try {
     await enviarCorreoPedido({ correo, nombre, codigo: record.codigo, estado, esNuevo, factura })
