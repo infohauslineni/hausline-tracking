@@ -122,6 +122,20 @@ export function plantillaCorreo({ nombre, codigo, estadoLabel, nota, urlSeguimie
     ? `Registramos tu pedido ${codigo}. Sigue cada etapa desde aquí.`
     : `${codigo}: ${estadoLabel}. Revisa el detalle del seguimiento.`
   const anio = new Date().getFullYear()
+
+  // El recuadro de "Estado actual" (píldora) solo aparece en los avisos de estado
+  // intermedios, donde el estado es lo importante. En los correos con factura
+  // (compra o comprobante de pago) se omite: manda el detalle de la compra.
+  const conFactura = factura && Array.isArray(factura.items) && factura.items.length
+  const bloqueEstado = conFactura ? '' : `
+          <!-- Estado actual -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 30px;">
+            <tr><td style="border:1px solid #e6e8ec;border-radius:12px;padding:24px 22px;text-align:center;">
+              <div style="font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#8b93a7;margin-bottom:10px;">Estado actual</div>
+              <div style="display:inline-block;background-color:#0b0f19;color:#ffffff;font-size:15px;font-weight:700;letter-spacing:.3px;padding:9px 22px;border-radius:999px;">${estadoLabel}</div>
+              <div style="font-size:14px;line-height:1.6;color:#4b5563;margin-top:16px;">${nota}</div>
+            </td></tr>
+          </table>`
   return `<!doctype html>
 <html lang="es" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
@@ -161,15 +175,7 @@ export function plantillaCorreo({ nombre, codigo, estadoLabel, nota, urlSeguimie
             </td></tr>
           </table>
 
-          <!-- Estado actual -->
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 30px;">
-            <tr><td style="border:1px solid #e6e8ec;border-radius:12px;padding:24px 22px;text-align:center;">
-              <div style="font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#8b93a7;margin-bottom:10px;">Estado actual</div>
-              <div style="display:inline-block;background-color:#0b0f19;color:#ffffff;font-size:15px;font-weight:700;letter-spacing:.3px;padding:9px 22px;border-radius:999px;">${estadoLabel}</div>
-              <div style="font-size:14px;line-height:1.6;color:#4b5563;margin-top:16px;">${nota}</div>
-            </td></tr>
-          </table>
-${bloqueFactura(factura)}
+${bloqueEstado}${bloqueFactura(factura)}
           <!-- Botón -->
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center">
             <a href="${urlSeguimiento}" target="_blank" style="display:inline-block;background-color:#c8a24b;color:#0b0f19;text-decoration:none;font-weight:700;font-size:15px;letter-spacing:.3px;padding:15px 38px;border-radius:10px;">Ver seguimiento del pedido</a>
