@@ -24,10 +24,10 @@ type TrackingForm = z.infer<typeof trackingSchema>
 type EditingTarget = { kind: 'pedido'; value: Trayecto } | { kind: 'stock'; value: Inversion } | null
 
 export function LogisticaPage() {
-  const [trayectos, setTrayectos] = useState<Trayecto[]>(DEMO_TRAYECTOS)
+  const [trayectos, setTrayectos] = useState<Trayecto[]>(isSupabaseConfigured ? [] : DEMO_TRAYECTOS)
   const [stock, setStock] = useState<Inversion[]>([])
-  const [pedidos, setPedidos] = useState<Pedido[]>(DEMO_PEDIDOS)
-  const [transportistas, setTransportistas] = useState<Transportista[]>(DEMO_TRANSPORTISTAS)
+  const [pedidos, setPedidos] = useState<Pedido[]>(isSupabaseConfigured ? [] : DEMO_PEDIDOS)
+  const [transportistas, setTransportistas] = useState<Transportista[]>(isSupabaseConfigured ? [] : DEMO_TRANSPORTISTAS)
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<EditingTarget>(null)
   const [modalOpen, setModalOpen] = useState(false)

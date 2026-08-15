@@ -65,9 +65,30 @@ export function mensajeWhatsAppEstado(estado: EstadoPedido, data: { nombre?: str
   return mensajes[estado]
 }
 
+// Cada etapa tiene su propio color para reconocerla de un vistazo en toda la app.
 export const estadoTone = (estado: EstadoPedido) => {
-  if (estado === 'entregado' || estado === 'disponible_entrega') return 'success'
-  if (estado === 'incidencia' || estado === 'cancelado') return 'danger'
-  if (estado === 'pedido_confirmado' || estado === 'en_preparacion' || estado === 'control_calidad' || estado === 'etiqueta_creada') return 'neutral'
-  return 'info'
+  switch (estado) {
+    case 'pedido_confirmado': return 'confirmada'
+    case 'en_preparacion': return 'preparacion'
+    case 'control_calidad': return 'calidad'
+    case 'despachado':
+    case 'etiqueta_creada': return 'despachado'
+    case 'transito_internacional':
+    case 'recibido_estados_unidos':
+    case 'transito_nicaragua': return 'transito'
+    case 'llego_nicaragua': return 'destino'
+    case 'disponible_entrega': return 'disponible'
+    case 'entregado': return 'entregado'
+    case 'incidencia': return 'incidencia'
+    case 'cancelado': return 'cancelado'
+    default: return 'neutral'
+  }
 }
+
+// Color hex por tono (para puntos/acentos que no usan las clases .status-*).
+export const TONE_COLOR: Record<string, string> = {
+  confirmada: '#94a3b8', preparacion: '#fbbf24', calidad: '#c4b5fd', despachado: '#fb923c',
+  transito: '#7dd3fc', destino: '#5eead4', disponible: '#b7ff00', entregado: '#34d399',
+  incidencia: '#ffb08a', cancelado: '#f87171', neutral: '#8c948f', success: '#62eaa0', info: '#76b4ff', danger: '#ff9696',
+}
+export const estadoColor = (estado: EstadoPedido) => TONE_COLOR[estadoTone(estado)] ?? '#8c948f'

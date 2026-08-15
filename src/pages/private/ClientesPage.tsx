@@ -21,7 +21,7 @@ type FormValues = z.infer<typeof schema>
 const emptyValues: FormValues = { nombre: '', whatsapp: '', correo: '', departamento: '', ciudad: '', referencia: '', notas: '' }
 
 export function ClientesPage() {
-  const [clientes, setClientes] = useState<Cliente[]>(DEMO_CLIENTES)
+  const [clientes, setClientes] = useState<Cliente[]>(isSupabaseConfigured ? [] : DEMO_CLIENTES)
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<Cliente | null>(null)

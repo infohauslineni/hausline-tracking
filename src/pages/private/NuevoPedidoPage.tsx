@@ -22,7 +22,7 @@ const blankItem = { producto: '', producto_id: '', proveedor_id: '', codigo_prod
 
 export function NuevoPedidoPage() {
   const navigate = useNavigate()
-  const [clientes, setClientes] = useState<Cliente[]>(DEMO_CLIENTES)
+  const [clientes, setClientes] = useState<Cliente[]>(isSupabaseConfigured ? [] : DEMO_CLIENTES)
   const [productos, setProductos] = useState<Producto[]>([])
   const [quickOpen, setQuickOpen] = useState(false)
   const [quick, setQuick] = useState({ nombre: '', whatsapp: '', correo: '' })
