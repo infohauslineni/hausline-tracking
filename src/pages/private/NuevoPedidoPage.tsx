@@ -34,7 +34,7 @@ export function NuevoPedidoPage() {
   const total = useMemo(() => (items ?? []).reduce((sum, item) => sum + (Number(item.cantidad) || 0) * (Number(item.precio_unitario) || 0), 0), [items])
   const costo = useMemo(() => (items ?? []).reduce((sum, item) => sum + (Number(item.precio_compra) || 0), 0), [items])
 
-  useEffect(() => { if (isSupabaseConfigured) void Promise.all([listarClientes(), listarProductos()]).then(([clients, products]) => { setClientes(clients); setProductos(products.filter((p) => p.activo)) }).catch(() => toast.error('No se pudieron cargar clientes y productos.')) }, [])
+  useEffect(() => { if (isSupabaseConfigured) void Promise.all([listarClientes(setClientes), listarProductos((products) => setProductos(products.filter((p) => p.activo)))]).then(([clients, products]) => { setClientes(clients); setProductos(products.filter((p) => p.activo)) }).catch(() => toast.error('No se pudieron cargar clientes y productos.')) }, [])
 
   const selectProduct = (index: number, productId: string) => {
     const product = productos.find((item) => item.id === productId)

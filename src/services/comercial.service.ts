@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase'
 import catalogoInicial from '../data/catalogo-productos.json'
 import type { CajaMes, Deuda, Gasto, Inversion, MovimientoCuenta, Pago, Producto, Proveedor, ResumenComercial } from '../types/domain'
-import { cachedQuery, invalidateCache } from '../utils/queryCache'
+import { cachedQuery, invalidateCache, invalidateComercial } from '../utils/queryCache'
 import { obtenerGananciaDisponibleActual } from './finanzas.service'
 
 function client() { if (!supabase) throw new Error('Supabase no está configurado.'); return supabase }
@@ -20,25 +20,30 @@ export async function guardarTipoCambio(tipoCambio: number) {
 function normalizarCaja(value: Partial<CajaMes>, periodo: string): CajaMes {
   return { periodo: String(value.periodo ?? periodo), sugerido: Number(value.sugerido ?? 0), apertura: value.apertura == null ? null : Number(value.apertura), opening: Number(value.opening ?? 0), movimientos_mes: Number(value.movimientos_mes ?? 0), saldo_mes: Number(value.saldo_mes ?? 0), confirmada: Boolean(value.confirmada) }
 }
-export async function obtenerCajaMes(periodo: string): Promise<CajaMes> {
-  const { data, error } = await client().rpc('obtener_apertura_caja', { p_periodo: periodo })
-  if (error) throw error
-  return normalizarCaja(data as Partial<CajaMes>, periodo)
+export async function obtenerCajaMes(periodo: string, onFresh?: (value: CajaMes) => void): Promise<CajaMes> {
+  return cachedQuery(`caja:${periodo}`, async () => {
+    const { data, error } = await client().rpc('obtener_apertura_caja', { p_periodo: periodo })
+    if (error) throw error
+    return normalizarCaja(data as Partial<CajaMes>, periodo)
+  }, 45_000, onFresh)
 }
 export async function guardarAperturaCaja(periodo: string, monto: number, nota?: string): Promise<CajaMes> {
   const { data, error } = await client().rpc('guardar_apertura_caja', { p_periodo: periodo, p_monto: monto, p_nota: nota ?? null })
   if (error) throw error
+  invalidateComercial()
   return normalizarCaja(data as Partial<CajaMes>, periodo)
 }
 
-export async function obtenerResumenComercial(desde?: string, hasta?: string) {
-  const { data, error } = await client().rpc('obtener_resumen_comercial', { p_desde: desde || null, p_hasta: hasta || null })
-  if (error) throw error
-  const value = data as Partial<ResumenComercial>
-  return { ventas: Number(value.ventas ?? 0), cobrado: Number(value.cobrado ?? 0), por_cobrar: Number(value.por_cobrar ?? 0), gastos: Number(value.gastos ?? 0), costos_productos: Number(value.costos_productos ?? 0), saldo_cuenta: Number(value.saldo_cuenta ?? 0), pedidos: Number(value.pedidos ?? 0) } satisfies ResumenComercial
+export async function obtenerResumenComercial(desde?: string, hasta?: string, onFresh?: (value: ResumenComercial) => void) {
+  return cachedQuery(`resumen:${desde || ''}:${hasta || ''}`, async () => {
+    const { data, error } = await client().rpc('obtener_resumen_comercial', { p_desde: desde || null, p_hasta: hasta || null })
+    if (error) throw error
+    const value = data as Partial<ResumenComercial>
+    return { ventas: Number(value.ventas ?? 0), cobrado: Number(value.cobrado ?? 0), por_cobrar: Number(value.por_cobrar ?? 0), gastos: Number(value.gastos ?? 0), costos_productos: Number(value.costos_productos ?? 0), saldo_cuenta: Number(value.saldo_cuenta ?? 0), pedidos: Number(value.pedidos ?? 0) } satisfies ResumenComercial
+  }, 45_000, onFresh)
 }
 
-export async function listarProductos() { return cachedQuery('productos', async () => { const { data, error } = await client().from('productos').select('*, proveedores(nombre)').order('created_at', { ascending: false }); if (error) throw error; return data as unknown as Producto[] }) }
+export async function listarProductos(onFresh?: (value: Producto[]) => void) { return cachedQuery('productos', async () => { const { data, error } = await client().from('productos').select('*, proveedores(nombre)').order('created_at', { ascending: false }); if (error) throw error; return data as unknown as Producto[] }, 45_000, onFresh) }
 export async function guardarProducto(input: Omit<Producto, 'id' | 'created_at' | 'proveedores'>, id?: string) { const query = id ? client().from('productos').update(input).eq('id', id) : client().from('productos').insert(input); const { data, error } = await query.select('*, proveedores(nombre)').single(); if (error) throw error; invalidateCache('productos'); return data as unknown as Producto }
 export async function actualizarImagenProducto(id: string, imagen: string | null) { const { data, error } = await client().from('productos').update({ imagen }).eq('id', id).select('*, proveedores(nombre)').single(); if (error) throw error; invalidateCache('productos'); return data as unknown as Producto }
 export async function eliminarProducto(id: string) { const { error } = await client().from('productos').update({ activo: false }).eq('id', id); if (error) throw error; invalidateCache('productos') }
@@ -82,14 +87,15 @@ export async function sincronizarCatalogo(url = 'https://hauslineshopni.es/catal
 export async function listarProveedores() { return cachedQuery('proveedores', async () => { const { data, error } = await client().from('proveedores').select('*').eq('activo', true).order('nombre'); if (error) throw error; return data as Proveedor[] }) }
 export async function guardarProveedor(nombre: string) { const { data, error } = await client().from('proveedores').upsert({ nombre: nombre.trim(), activo: true }, { onConflict: 'nombre' }).select('*').single(); if (error) throw error; invalidateCache('proveedores'); return data as Proveedor }
 
-export async function listarPagos() { const { data, error } = await client().from('pagos').select('*, pedidos(codigo,saldo), clientes(nombre)').order('fecha', { ascending: false }).limit(300); if (error) throw error; return data as unknown as Pago[] }
+export async function listarPagos(onFresh?: (value: Pago[]) => void) { return cachedQuery('pagos', async () => { const { data, error } = await client().from('pagos').select('*, pedidos(codigo,saldo), clientes(nombre)').order('fecha', { ascending: false }).limit(300); if (error) throw error; return data as unknown as Pago[] }, 45_000, onFresh) }
 export async function registrarPago(input: Omit<Pago, 'id' | 'created_at' | 'pedidos' | 'clientes'>) {
   const { data, error } = await client().from('pagos').insert(input).select('*, pedidos(codigo,saldo), clientes(nombre)').single(); if (error) throw error
   if (input.tipo !== 'reembolso') await client().from('movimientos_cuenta').insert({ fecha: `${input.fecha}T12:00:00`, tipo: 'ingreso', descripcion: `Pago de cliente`, monto: input.monto, moneda: input.moneda ?? 'USD', monto_original: input.monto_original ?? input.monto, tipo_cambio: input.tipo_cambio ?? null, metodo: input.metodo_pago, pedido_id: input.pedido_id, pago_id: data.id, observaciones: input.observaciones })
+  invalidateComercial()
   return data as unknown as Pago
 }
 
-export async function listarGastos() { const { data, error } = await client().from('gastos').select('*, pedidos(codigo), inversiones(producto,codigo), proveedores(nombre)').order('fecha', { ascending: false }).limit(300); if (error) throw error; return data as unknown as Gasto[] }
+export async function listarGastos(onFresh?: (value: Gasto[]) => void) { return cachedQuery('gastos', async () => { const { data, error } = await client().from('gastos').select('*, pedidos(codigo), inversiones(producto,codigo), proveedores(nombre)').order('fecha', { ascending: false }).limit(300); if (error) throw error; return data as unknown as Gasto[] }, 45_000, onFresh) }
 // Un gasto de categoría "Deuda" es un pago de deuda hecho directamente desde Gastos:
 // baja el saldo de caja (como cualquier gasto) y además consume ganancia disponible.
 const esDeuda = (categoria: string) => categoria.trim().toLowerCase() === 'deuda'
@@ -104,7 +110,7 @@ export async function registrarGasto(input: Omit<Gasto, 'id' | 'created_at' | 'p
   }
   // El costo del envío se refleja dentro del pedido (Costo real del pedido y Ventas),
   // no en el catálogo maestro de Productos.
-  invalidateCache('pedidos')
+  invalidateComercial()
   return data as unknown as Gasto
 }
 
@@ -119,7 +125,7 @@ export async function actualizarGasto(id: string, input: Omit<Gasto, 'id' | 'cre
     const { error: allocationError } = await client().from('asignaciones_ganancia').insert({ fecha: input.fecha, tipo: 'pago_deuda', monto: input.monto, descripcion: `Deuda pagada · ${input.descripcion}`, gasto_id: id })
     if (allocationError) throw allocationError
   }
-  invalidateCache('inversiones'); invalidateCache('pedidos')
+  invalidateComercial()
   return data as unknown as Gasto
 }
 
@@ -131,14 +137,14 @@ export async function eliminarGasto(id: string) {
   if (movError) throw movError
   const { error } = await client().from('gastos').delete().eq('id', id)
   if (error) throw error
-  invalidateCache('inversiones'); invalidateCache('pedidos')
+  invalidateComercial()
 }
 
-export async function listarMovimientos() { const { data, error } = await client().from('movimientos_cuenta').select('*, pedidos(codigo)').order('fecha', { ascending: false }).limit(300); if (error) throw error; return data as unknown as MovimientoCuenta[] }
-export async function registrarMovimiento(input: Omit<MovimientoCuenta, 'id' | 'created_at' | 'pedidos'>) { const { data, error } = await client().from('movimientos_cuenta').insert(input).select('*, pedidos(codigo)').single(); if (error) throw error; return data as unknown as MovimientoCuenta }
-export async function eliminarMovimiento(id: string) { const { error } = await client().from('movimientos_cuenta').delete().eq('id', id); if (error) throw error }
+export async function listarMovimientos(onFresh?: (value: MovimientoCuenta[]) => void) { return cachedQuery('movimientos', async () => { const { data, error } = await client().from('movimientos_cuenta').select('*, pedidos(codigo)').order('fecha', { ascending: false }).limit(300); if (error) throw error; return data as unknown as MovimientoCuenta[] }, 45_000, onFresh) }
+export async function registrarMovimiento(input: Omit<MovimientoCuenta, 'id' | 'created_at' | 'pedidos'>) { const { data, error } = await client().from('movimientos_cuenta').insert(input).select('*, pedidos(codigo)').single(); if (error) throw error; invalidateComercial(); return data as unknown as MovimientoCuenta }
+export async function eliminarMovimiento(id: string) { const { error } = await client().from('movimientos_cuenta').delete().eq('id', id); if (error) throw error; invalidateComercial() }
 
-export async function listarInversiones() { return cachedQuery('inversiones', async () => { const { data, error } = await client().from('inversiones').select('*, productos(nombre,codigo), gastos(id,monto,categoria)').order('fecha', { ascending: false }); if (error) throw error; return data as unknown as Inversion[] }) }
+export async function listarInversiones(onFresh?: (value: Inversion[]) => void) { return cachedQuery('inversiones', async () => { const { data, error } = await client().from('inversiones').select('*, productos(nombre,codigo), gastos(id,monto,categoria)').order('fecha', { ascending: false }); if (error) throw error; return data as unknown as Inversion[] }, 45_000, onFresh) }
 export async function registrarInversion(input: Omit<Inversion, 'id' | 'created_at' | 'productos'>, metodo: string, descontarDeCuenta = true) {
   const { data, error } = await client().from('inversiones').insert(input).select('*, productos(nombre,codigo)').single()
   if (error) throw error
@@ -147,10 +153,10 @@ export async function registrarInversion(input: Omit<Inversion, 'id' | 'created_
     const { error: movementError } = await client().from('movimientos_cuenta').insert({ fecha: `${input.fecha}T12:00:00`, tipo: 'inversion', descripcion: `InversiÃ³n en ${input.producto}`, monto, metodo: metodo || null, inversion_id: data.id, observaciones: input.notas })
     if (movementError) { await client().from('inversiones').delete().eq('id', data.id); throw movementError }
   }
-  invalidateCache('inversiones')
+  invalidateComercial()
   return data as unknown as Inversion
 }
-export async function cambiarEstadoInversion(id: string, estado: Inversion['estado']) { const { data, error } = await client().from('inversiones').update({ estado }).eq('id', id).select('*, productos(nombre,codigo)').single(); if (error) throw error; invalidateCache('inversiones'); return data as unknown as Inversion }
+export async function cambiarEstadoInversion(id: string, estado: Inversion['estado']) { const { data, error } = await client().from('inversiones').update({ estado }).eq('id', id).select('*, productos(nombre,codigo)').single(); if (error) throw error; invalidateComercial(); return data as unknown as Inversion }
 
 // Venta directa de stock inmediato: registra el ingreso y marca el producto como vendido,
 // SIN crear un pedido de importación ni pasar por el flujo de tracking.
@@ -162,7 +168,7 @@ export async function venderStockInmediato(item: Inversion, opts: { fecha: strin
     const { error: movError } = await client().from('movimientos_cuenta').insert({ fecha: `${opts.fecha}T12:00:00`, tipo: 'ingreso', descripcion: `Venta de stock · ${item.producto}${detalle}`, monto: opts.monto_recibido, metodo: opts.metodo || null, inversion_id: item.id, observaciones: opts.observaciones || null })
     if (movError) throw movError
   }
-  invalidateCache('inversiones')
+  invalidateComercial()
   return data as unknown as Inversion
 }
 
@@ -185,7 +191,7 @@ export async function eliminarInversion(id: string) {
   await client().from('movimientos_cuenta').delete().eq('inversion_id', id).eq('tipo', 'inversion')
   const { error } = await client().from('inversiones').delete().eq('id', id)
   if (error) throw error
-  invalidateCache('inversiones')
+  invalidateComercial()
 }
 export async function actualizarInversion(id: string, input: Partial<Omit<Inversion, 'id'|'created_at'|'productos'>>) {
   const { data, error } = await client().from('inversiones').update(input).eq('id', id).select('*, productos(nombre,codigo)').single()
@@ -194,7 +200,7 @@ export async function actualizarInversion(id: string, input: Partial<Omit<Invers
     const updated = data as unknown as Inversion
     await client().from('movimientos_cuenta').update({ descripcion: `Inversión en ${updated.producto}`, monto: Number(updated.costo_unitario) * Number(updated.cantidad) + Number(updated.gastos_adicionales), observaciones: updated.notas }).eq('inversion_id', id)
   }
-  invalidateCache('inversiones')
+  invalidateComercial()
   return data as unknown as Inversion
 }
 
@@ -220,5 +226,6 @@ export async function registrarPagoDeuda(deuda: Deuda, montoSolicitado: number, 
   }
   const { data: updated, error: reloadError } = await client().from('deudas').select('*, pagos_deuda(*)').eq('id', deuda.id).single()
   if (reloadError) throw reloadError
+  invalidateComercial()
   return updated as unknown as Deuda
 }

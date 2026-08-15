@@ -22,13 +22,21 @@ export function prefetchRoute(path: string) {
 export function warmDashboard() {
   const run = async () => {
     Object.values(routeLoaders).forEach((loader) => void loader())
-    const [{ listarProductos, listarInversiones }, { listarPedidos }, { listarClientes }, { listarIdeasContenido }] = await Promise.all([
+    const [comercial, { listarPedidos }, { listarClientes }, { listarIdeasContenido }, { periodoDeMes }] = await Promise.all([
       import('../services/comercial.service'),
       import('../services/pedidos.service'),
       import('../services/clientes.service'),
       import('../services/contenido.service'),
+      import('./periodo'),
     ])
-    await Promise.allSettled([listarProductos(), listarInversiones(), listarPedidos(), listarClientes(), listarIdeasContenido()])
+    const { listarProductos, listarInversiones, listarPagos, listarGastos, listarMovimientos, obtenerResumenComercial, obtenerCajaMes } = comercial
+    const periodo = periodoDeMes()
+    // Calienta también los datos de dinero (Mi cuenta / Resumen) para que entren al instante.
+    await Promise.allSettled([
+      listarProductos(), listarInversiones(), listarPedidos(), listarClientes(), listarIdeasContenido(),
+      listarPagos(), listarGastos(), listarMovimientos(),
+      obtenerResumenComercial(periodo.desde, periodo.hasta), obtenerCajaMes(periodo.periodo),
+    ])
   }
 
   if ('requestIdleCallback' in window) {

@@ -25,7 +25,7 @@ export function InventarioPage() {
   const [selling, setSelling] = useState<Inversion | null>(null)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'todos' | Inversion['estado']>('todos')
-  const load = () => void Promise.all([listarInversiones(), listarProductos()]).then(([investments, catalog]) => { setItems(investments); setProducts(catalog.filter((item) => item.activo)) }).catch(() => toast.error('No se pudo cargar el inventario. Ejecuta la migración nueva.'))
+  const load = () => void Promise.all([listarInversiones(setItems), listarProductos((catalog) => setProducts(catalog.filter((item) => item.activo)))]).then(([investments, catalog]) => { setItems(investments); setProducts(catalog.filter((item) => item.activo)) }).catch(() => toast.error('No se pudo cargar el inventario. Ejecuta la migración nueva.'))
   useEffect(load, [])
   // Métrica de capital: total invertido sobre TODO (visión de inversiones) y detalle sobre lo activo (visión de stock).
   const metrics = useMemo(() => items.reduce((result, item) => {

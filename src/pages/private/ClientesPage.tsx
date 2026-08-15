@@ -29,7 +29,7 @@ export function ClientesPage() {
 
   useEffect(() => {
     if (!isSupabaseConfigured) return
-    void listarClientes()
+    void listarClientes(setClientes)
       .then(setClientes)
       .catch(() => toast.error('No se pudieron cargar los clientes.'))
       .finally(() => setLoading(false))

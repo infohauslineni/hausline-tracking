@@ -28,7 +28,7 @@ export function DashboardPage() {
 
   useEffect(() => {
     if (!isSupabaseConfigured) return
-    void Promise.all([listarPedidos(), obtenerResumenComercial(periodo.desde, periodo.hasta).catch(() => EMPTY_SUMMARY), listarPagos(), listarGastos(), listarIdeasContenido().catch(() => []), obtenerCajaMes(periodo.periodo).catch(() => null), listarTrayectos().catch(() => [])])
+    void Promise.all([listarPedidos(setPedidos), obtenerResumenComercial(periodo.desde, periodo.hasta, setSummary).catch(() => EMPTY_SUMMARY), listarPagos(setPagos), listarGastos(setGastos), listarIdeasContenido().catch(() => []), obtenerCajaMes(periodo.periodo, (c) => setSaldoMes(c.saldo_mes)).catch(() => null), listarTrayectos().catch(() => [])])
       .then(([orders, commercial, payments, expenses, content, caja, routes]) => { setPedidos(orders); setSummary(commercial); setPagos(payments); setGastos(expenses); setIdeas(content); setSaldoMes(caja ? caja.saldo_mes : commercial.saldo_cuenta); setTrayectos(routes) })
       .catch(() => undefined)
   }, [periodo])

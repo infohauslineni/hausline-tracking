@@ -10,12 +10,12 @@ function requireSupabase() {
   return supabase
 }
 
-export async function listarClientes() {
+export async function listarClientes(onFresh?: (value: Cliente[]) => void) {
   return cachedQuery('clientes', async () => {
     const { data, error } = await requireSupabase().from('clientes').select('*').order('created_at', { ascending: false })
     if (error) throw error
     return data as Cliente[]
-  })
+  }, 45_000, onFresh)
 }
 
 export async function guardarCliente(input: ClienteInput, id?: string) {

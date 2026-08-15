@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase'
 import { notaPublicaEstado } from '../constants/orders'
 import type { EstadoPedido, Pedido, PedidoItem } from '../types/domain'
-import { cachedQuery, invalidateCache } from '../utils/queryCache'
+import { cachedQuery, invalidateComercial } from '../utils/queryCache'
 
 export type NuevoPedidoInput = {
   cliente_id: string
@@ -44,7 +44,7 @@ function sumarDias(fecha: string, dias: number) {
   return result.toISOString().slice(0, 10)
 }
 
-export async function listarPedidos() {
+export async function listarPedidos(onFresh?: (value: Pedido[]) => void) {
   return cachedQuery('pedidos', async () => {
     const { data, error } = await requireSupabase()
       .from('pedidos')
@@ -52,7 +52,7 @@ export async function listarPedidos() {
       .order('created_at', { ascending: false })
     if (error) throw error
     return data as unknown as Pedido[]
-  })
+  }, 45_000, onFresh)
 }
 
 export async function obtenerPedido(id: string) {
@@ -91,7 +91,7 @@ export async function actualizarEstadoPedido(id: string, estado: EstadoPedido) {
     updated = dated as Pedido
   }
 
-  invalidateCache('pedidos')
+  invalidateComercial()
   return updated
 }
 
@@ -115,7 +115,7 @@ export async function entregarPedidoConPago(id: string, montoRecibido: number, m
   }
   const { data, error } = await client.from('pedidos').update({ estado: 'entregado', notas_publicas: notaPublicaEstado('entregado'), fecha_entrega: new Date().toISOString() }).eq('id', id).select('*').single()
   if (error) throw error
-  invalidateCache('pedidos')
+  invalidateComercial()
   return data as Pedido
 }
 
@@ -125,7 +125,7 @@ export async function eliminarPedido(id: string) {
   if (filesError) throw filesError
   const { error } = await client.from('pedidos').delete().eq('id', id)
   if (error) throw error
-  invalidateCache('pedidos')
+  invalidateComercial()
   const paths = (files ?? []).map((file) => file.storage_path).filter(Boolean)
   if (paths.length) await client.storage.from('pedidos').remove(paths)
 }
@@ -174,7 +174,7 @@ export async function crearPedido(input: NuevoPedidoInput) {
     if (paymentError) { await client.from('pedidos').delete().eq('id', created.id); throw paymentError }
     await client.from('movimientos_cuenta').insert({ fecha: `${input.fecha_pedido}T12:00:00`, tipo: 'ingreso', descripcion: `Abono inicial ${created.codigo}`, monto: input.abono, metodo: input.metodo_pago || null, pedido_id: created.id, pago_id: payment.id })
   }
-  invalidateCache('pedidos')
+  invalidateComercial()
   return created as Pedido
 }
 
@@ -223,7 +223,7 @@ export async function actualizarPedidoCompleto(id: string, input: EditarPedidoIn
 
   if (input.costo_proveedor != null) await ajustarCostoProveedor(client, id, Number(input.costo_proveedor))
 
-  invalidateCache('pedidos')
+  invalidateComercial()
   return obtenerPedido(id)
 }
 

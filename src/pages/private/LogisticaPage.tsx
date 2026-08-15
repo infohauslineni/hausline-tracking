@@ -35,7 +35,7 @@ export function LogisticaPage() {
 
   useEffect(() => {
     if (!isSupabaseConfigured) return
-    void Promise.all([listarTrayectos(), listarPedidos(), listarTransportistas(), listarInversiones()])
+    void Promise.all([listarTrayectos(), listarPedidos(setPedidos), listarTransportistas(), listarInversiones(setStock)])
       .then(([routes, orders, carriers, inventory]) => { setTrayectos(routes); setPedidos(orders); setTransportistas(carriers); setStock(inventory) })
       .catch(() => toast.error('No se pudo cargar la información logística.'))
   }, [])

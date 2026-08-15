@@ -13,7 +13,7 @@ export function PedidosPage() {
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [search, setSearch] = useState('')
   const [estado, setEstado] = useState<EstadoPedido | 'todos'>('todos')
-  useEffect(() => { if (isSupabaseConfigured) void listarPedidos().then(setPedidos).catch(() => toast.error('No se pudieron cargar los pedidos.')).finally(() => setLoading(false)) }, [])
+  useEffect(() => { if (isSupabaseConfigured) void listarPedidos(setPedidos).then(setPedidos).catch(() => toast.error('No se pudieron cargar los pedidos.')).finally(() => setLoading(false)) }, [])
 
   const filtered = useMemo(() => {
     const term = search.toLowerCase().trim()

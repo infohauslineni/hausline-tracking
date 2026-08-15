@@ -22,7 +22,7 @@ export function CuentaPage() {
   const [adjustOpen, setAdjustOpen] = useState(false)
   const [aperturaOpen, setAperturaOpen] = useState(false)
 
-  const load = () => void Promise.all([listarMovimientos(), obtenerResumenComercial(periodo.desde, periodo.hasta), obtenerCajaMes(periodo.periodo)])
+  const load = () => void Promise.all([listarMovimientos(setItems), obtenerResumenComercial(periodo.desde, periodo.hasta, setSummary), obtenerCajaMes(periodo.periodo, setCaja)])
     .then(([movements, result, cajaMes]) => {
       setItems(movements)
       setSummary(result)
