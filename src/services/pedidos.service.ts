@@ -12,10 +12,11 @@ export type NuevoPedidoInput = {
   notas_internas: string | null
   notas_publicas: string | null
   metodo_pago?: string | null
+  envio_rapido?: boolean
   items: PedidoItem[]
 }
 
-export type EditarPedidoInput = Pick<NuevoPedidoInput, 'fecha_estimada' | 'abono' | 'notas_internas' | 'notas_publicas' | 'items'> & {
+export type EditarPedidoInput = Pick<NuevoPedidoInput, 'fecha_estimada' | 'abono' | 'notas_internas' | 'notas_publicas' | 'envio_rapido' | 'items'> & {
   // Costo real / pago al proveedor. Se deja editable porque a veces al comprarle al
   // proveedor sale más caro (o más barato) de lo estimado al crear el pedido.
   costo_proveedor?: number | null
@@ -24,6 +25,32 @@ export type EditarPedidoInput = Pick<NuevoPedidoInput, 'fecha_estimada' | 'abono
 function requireSupabase() {
   if (!supabase) throw new Error('Supabase no está configurado.')
   return supabase
+}
+
+// Rellena la foto de cada producto del pedido desde el catálogo (tabla productos),
+// emparejando por CÓDIGO, cuando el ítem no trae su propia imagen. Se resuelve en
+// CADA carga, así que si subís el producto al catálogo —o corregís un código mal
+// escrito— DESPUÉS de crear el pedido, la foto aparece sola. No pisa una imagen
+// propia del ítem. Complementa al trigger productos_sincronizar_imagen, que solo
+// alcanza a los ítems ya enlazados por producto_id (no a los que se registraron
+// cuando el producto aún no estaba en el catálogo).
+async function adjuntarFotosCatalogo(items: PedidoItem[]) {
+  if (!supabase || !items.length) return
+  const norm = (valor: unknown) => String(valor ?? '').trim().toUpperCase()
+  const sinFoto = items.filter((item) => !item.imagen)
+  const codigos = [...new Set(sinFoto.map((item) => norm(item.codigo_producto || item.producto)).filter(Boolean))]
+  if (!codigos.length) return
+  const { data, error } = await supabase.from('productos').select('codigo, imagen').in('codigo', codigos)
+  if (error || !data) return
+  const porCodigo = new Map<string, string>()
+  for (const producto of data as { codigo: string; imagen: string | null }[]) {
+    if (producto.imagen) porCodigo.set(norm(producto.codigo), producto.imagen)
+  }
+  if (!porCodigo.size) return
+  for (const item of sinFoto) {
+    const foto = porCodigo.get(norm(item.codigo_producto || item.producto))
+    if (foto) item.imagen = foto
+  }
 }
 
 function fechaNicaragua() {
@@ -51,7 +78,9 @@ export async function listarPedidos(onFresh?: (value: Pedido[]) => void) {
       .select('*, clientes(nombre, whatsapp), pedido_items(*), gastos(id, monto, categoria)')
       .order('created_at', { ascending: false })
     if (error) throw error
-    return data as unknown as Pedido[]
+    const pedidos = data as unknown as Pedido[]
+    await adjuntarFotosCatalogo(pedidos.flatMap((pedido) => pedido.pedido_items ?? []))
+    return pedidos
   }, 45_000, onFresh)
 }
 
@@ -62,7 +91,9 @@ export async function obtenerPedido(id: string) {
     .eq('id', id)
     .single()
   if (error) throw error
-  return data as unknown as Pedido
+  const pedido = data as unknown as Pedido
+  await adjuntarFotosCatalogo(pedido.pedido_items ?? [])
+  return pedido
 }
 
 export async function actualizarEstadoPedido(id: string, estado: EstadoPedido) {
@@ -218,6 +249,7 @@ export async function actualizarPedidoCompleto(id: string, input: EditarPedidoIn
     abono: input.abono,
     notas_internas: input.notas_internas,
     notas_publicas: input.notas_publicas,
+    ...(input.envio_rapido != null ? { envio_rapido: input.envio_rapido } : {}),
   }).eq('id', id)
   if (pedidoError) throw pedidoError
 
