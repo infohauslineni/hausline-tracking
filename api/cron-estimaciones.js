@@ -1,4 +1,36 @@
 import { createClient } from '@supabase/supabase-js'
+import { registrarEnTrack17 } from './_track17.js'
+
+// Registra en 17TRACK las guías que aún no se han registrado (track17_registrado_at
+// nulo). Corre una vez al día junto con las estimaciones. Como el envío tarda días,
+// registrar en las próximas 24 h no pierde nada: 17track trae el historial completo
+// al registrar. Si falta la API key, simplemente no hace nada.
+async function registrarGuiasPendientes(client) {
+  if (!process.env.TRACK17_API_KEY) return 0
+  const { data: pendientes, error } = await client
+    .from('trayectos')
+    .select('id, tracking')
+    .not('tracking', 'is', null)
+    .is('track17_registrado_at', null)
+    .eq('activo', true)
+    .limit(40)
+  if (error) { console.error('cron: error leyendo guías pendientes', error.message); return 0 }
+  const numeros = [...new Set((pendientes ?? []).map((t) => String(t.tracking ?? '').trim()).filter(Boolean))]
+  if (!numeros.length) return 0
+
+  const { accepted } = await registrarEnTrack17(numeros)
+  const aceptados = new Set((accepted ?? []).map((a) => String(a.number ?? '').trim()))
+  // Marcamos como registrados los aceptados. Los rechazados (guía inválida o ya
+  // registrada) se reintentan otro día; el registro no consume cuota extra.
+  const marcar = numeros.filter((n) => aceptados.has(n))
+  if (marcar.length) {
+    const { error: upError } = await client.from('trayectos')
+      .update({ track17_registrado_at: new Date().toISOString() })
+      .in('tracking', marcar)
+    if (upError) console.error('cron: error marcando guías registradas', upError.message)
+  }
+  return marcar.length
+}
 
 export default async function handler(request, response) {
   const authorization = request.headers?.authorization ?? request.headers?.get?.('authorization')
@@ -7,5 +39,19 @@ export default async function handler(request, response) {
   const client = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
   const { data, error } = await client.rpc('recalcular_fechas_estimadas')
   if (error) return response.status(500).json({ ok: false, error: 'Estimate recalculation failed' })
-  return response.status(200).json({ ok: true, updated: Number(data ?? 0) })
+
+  // Auto-avance: pedidos con 8+ días en "Despachado" pasan a "En tránsito internacional".
+  const { data: avanzados, error: avanzarError } = await client.rpc('avanzar_transito_internacional')
+  if (avanzarError) return response.status(500).json({ ok: false, error: 'Auto-advance failed' })
+
+  // Registro automático de guías nuevas en 17TRACK. Va aislado en try/catch para que
+  // un fallo de 17track nunca tumbe el recálculo de estimaciones (el trabajo principal).
+  let registrados = 0
+  try {
+    registrados = await registrarGuiasPendientes(client)
+  } catch (track17Error) {
+    console.error('cron: registro 17track falló', track17Error?.message)
+  }
+
+  return response.status(200).json({ ok: true, updated: Number(data ?? 0), avanzados: Number(avanzados ?? 0), registrados })
 }
