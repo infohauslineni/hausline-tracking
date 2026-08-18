@@ -1,4 +1,4 @@
-import { ArrowLeft, CalendarDays, Check, CheckCircle2, Clipboard, MessageCircle, Package, Pencil, UserRound } from 'lucide-react'
+import { ArrowLeft, CalendarDays, Check, CheckCircle2, Clipboard, MessageCircle, Package, Pencil, UserRound, Zap } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -80,7 +80,7 @@ export function PedidoDetailPage() {
   return <div>
     <Link to="/pedidos" className="mb-5 inline-flex items-center gap-2 text-xs text-muted hover:text-white"><ArrowLeft size={16} /> Volver a pedidos</Link>
     <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-      <div><div className="flex flex-wrap items-center gap-3"><h1 className="text-3xl font-semibold tracking-tight">{pedido.codigo}</h1><Status estado={pedido.estado} /></div><p className="mt-2 text-sm text-muted">Creado el {new Intl.DateTimeFormat('es-NI', { dateStyle: 'long' }).format(new Date(pedido.fecha_pedido + 'T12:00:00'))}</p></div>
+      <div><div className="flex flex-wrap items-center gap-3"><h1 className="text-3xl font-semibold tracking-tight">{pedido.codigo}</h1><Status estado={pedido.estado} />{pedido.envio_rapido && <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2.5 py-1 text-[11px] font-semibold text-accent"><Zap size={12} /> Envío rápido</span>}</div><p className="mt-2 text-sm text-muted">Creado el {new Intl.DateTimeFormat('es-NI', { dateStyle: 'long' }).format(new Date(pedido.fecha_pedido + 'T12:00:00'))}</p></div>
       <div className="flex flex-wrap gap-2"><button className="subtle-button" onClick={() => void copy(pedido.codigo, 'Código copiado.')}><Clipboard size={16} /> Copiar código</button><button className="subtle-button" onClick={() => void copy(publicUrl, 'Enlace público copiado.')}><Check size={16} /> Copiar enlace</button>{pedido.clientes?.whatsapp && <a className="primary-button px-4" href={whatsappUrl(pedido.clientes.whatsapp, whatsappMessage)} target="_blank" rel="noreferrer"><MessageCircle size={17} /> {pedido.estado === 'disponible_entrega' ? 'Avisar disponibilidad' : qualityMessageReady ? 'Avisar control de calidad' : 'WhatsApp'}</a>}</div>
     </div>
     <div className="mt-7 grid gap-5 xl:grid-cols-[1.5fr_.75fr]">
@@ -92,7 +92,7 @@ export function PedidoDetailPage() {
             <button className="primary-button px-5" onClick={() => void updateStatus()} disabled={savingStatus || estadoSeleccionado === pedido.estado}>{savingStatus ? 'Guardando…' : estadoSeleccionado === 'entregado' ? 'Confirmar entrega' : 'Confirmar etapa'}</button>
           </div>
         </section>
-        <section className="form-section"><div className="flex items-center justify-between"><h2 className="flex items-center gap-2 font-semibold"><Package size={18} className="text-accent" /> Productos</h2><button className="table-action" aria-label="Editar pedido" onClick={() => setEditOpen(true)}><Pencil size={16} /></button></div><div className="mt-4 divide-y divide-line">{pedido.pedido_items?.map((item, index) => <div className="flex items-center gap-3 py-4" key={`${item.producto}-${index}`}>{item.imagen ? <span className="relative size-11 shrink-0 overflow-hidden rounded-xl bg-white/[0.04]"><img src={item.imagen} alt={item.producto} className="size-full object-cover" /><span className="absolute bottom-0 right-0 rounded-tl-md bg-app/85 px-1 text-[10px] font-semibold text-white">{item.cantidad}×</span></span> : <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-white/[0.04] text-sm font-semibold text-muted">{item.cantidad}×</span>}<div className="min-w-0 flex-1"><strong className="block truncate text-sm">{item.producto}</strong><span className="text-xs text-muted">{[item.marca, item.talla, item.color].filter(Boolean).join(' · ')}</span></div><strong className="text-sm">${(item.cantidad * item.precio_unitario).toFixed(2)}</strong></div>)}</div></section>
+        <section className="form-section"><div className="flex items-center justify-between"><h2 className="flex items-center gap-2 font-semibold"><Package size={18} className="text-accent" /> Productos</h2><button className="table-action" aria-label="Editar pedido" onClick={() => setEditOpen(true)}><Pencil size={16} /></button></div><div className="mt-4 divide-y divide-line">{pedido.pedido_items?.map((item, index) => <div className="flex items-center gap-3 py-4" key={`${item.producto}-${index}`}><ProductoThumb imagen={item.imagen} cantidad={item.cantidad} alt={item.producto} /><div className="min-w-0 flex-1"><strong className="block truncate text-sm">{item.producto}</strong><span className="text-xs text-muted">{[item.marca, item.talla, item.color].filter(Boolean).join(' · ')}</span></div><strong className="text-sm">${(item.cantidad * item.precio_unitario).toFixed(2)}</strong></div>)}</div></section>
         <PedidoArchivos pedidoId={pedido.id} codigo={pedido.codigo} onQualityReady={setQualityPhotosReady} />
         <PedidoLogistica pedidoId={pedido.id} />
         <section className="form-section"><h2 className="flex items-center gap-2 font-semibold"><CalendarDays size={18} className="text-accent" /> Fechas</h2><div className="mt-5 grid gap-4 sm:grid-cols-3"><Info label="Pedido" value={pedido.fecha_pedido} /><Info label="Llegada estimada" value={pedido.fecha_estimada ?? 'Sin definir'} /><Info label="Actualización" value={new Intl.DateTimeFormat('es-NI').format(new Date(pedido.updated_at))} /></div></section>
@@ -126,6 +126,19 @@ function EtapaTracker({ actual, seleccionado, onSelect }: { actual: EstadoPedido
       </button>
     })}
   </div>
+}
+// Miniatura del producto. Si no hay imagen —o si la URL está rota/no carga (p. ej.
+// el producto aún no existe en el catálogo)— cae al cuadrito limpio "N×" en vez de
+// mostrar el ícono de imagen rota.
+function ProductoThumb({ imagen, cantidad, alt }: { imagen?: string | null; cantidad: number; alt: string }) {
+  const [error, setError] = useState(false)
+  if (imagen && !error) {
+    return <span className="relative size-11 shrink-0 overflow-hidden rounded-xl bg-white/[0.04]">
+      <img src={imagen} alt={alt} className="size-full object-cover" onError={() => setError(true)} />
+      <span className="absolute bottom-0 right-0 rounded-tl-md bg-app/85 px-1 text-[10px] font-semibold text-white">{cantidad}×</span>
+    </span>
+  }
+  return <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-white/[0.04] text-sm font-semibold text-muted">{cantidad}×</span>
 }
 function Info({ label, value }: { label: string; value: string }) { return <div><span className="block text-[10px] font-semibold uppercase tracking-wider text-muted">{label}</span><strong className="mt-1 block text-sm">{value}</strong></div> }
 function PayRow({ label, value, accent }: { label: string; value: number; accent?: boolean }) { return <div className="flex justify-between gap-3"><span className="text-muted">{label}</span><strong className={accent ? value > 0 ? 'text-amber-300' : 'text-accent' : ''}>${Number(value).toFixed(2)}</strong></div> }
