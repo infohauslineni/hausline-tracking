@@ -9,6 +9,7 @@
 import crypto from 'node:crypto'
 
 const REGISTER_URL = 'https://api.17track.net/track/v2.4/register'
+const GETTRACKINFO_URL = 'https://api.17track.net/track/v2.4/gettrackinfo'
 
 // 17track solo ve la primera pata (proveedor → Miami). "Delivered" para nosotros
 // significa "llegó a Miami", NO entregado al cliente: por eso mapea a 'entregado'
@@ -125,6 +126,28 @@ export async function registrarEnTrack17(numeros) {
   return json.data ?? { accepted: [], rejected: [] }
 }
 
+// Consulta el estado ACTUAL que 17track tiene guardado de cada guía (máx. 40 por
+// llamada). A diferencia del webhook (que espera a que 17track empuje), esto lo
+// jala nosotros: es la red de seguridad para guías cuyo push se perdió o que se
+// registraron cuando el paquete ya venía en movimiento. Devuelve el arreglo de
+// trackings "accepted" (misma forma que el webhook), listo para resumirTracking.
+export async function consultarEnTrack17(numeros) {
+  const key = process.env.TRACK17_API_KEY
+  if (!key) throw new Error('Falta TRACK17_API_KEY')
+  const limpios = [...new Set((numeros ?? []).map((n) => String(n ?? '').trim()).filter(Boolean))].slice(0, 40)
+  if (!limpios.length) return []
+  const res = await fetch(GETTRACKINFO_URL, {
+    method: 'POST',
+    headers: { '17token': key, 'content-type': 'application/json' },
+    body: JSON.stringify(limpios.map((number) => ({ number }))),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok || json?.code !== 0) {
+    throw new Error(`17track gettrackinfo HTTP ${res.status}: ${JSON.stringify(json).slice(0, 300)}`)
+  }
+  return json?.data?.accepted ?? []
+}
+
 // Verifica la firma del webhook: sign = SHA256(event/data/API_KEY). Es una capa
 // EXTRA; el candado principal es el token secreto en la URL del webhook. Se deja
 // como comprobación no bloqueante porque la serialización exacta de "data" puede
@@ -167,4 +190,76 @@ export function resumirTracking(item) {
     fechaEvento: ev.time_iso || ev.time_utc || ev.time_raw || new Date().toISOString(),
     codigoEvento: ev.stage || subStatus || null,
   }
+}
+
+// Corazón compartido por el webhook (push) y el cron (poll): toma UN tracking crudo
+// de 17track, encuentra los trayectos con esa guía y aplica el evento a cada uno.
+// Un mismo número puede estar en varios pedidos: procesamos todos.
+// Reglas clave (por eso vive aquí una sola vez, no duplicado):
+//   • Anti-duplicado por (guía + fecha del evento): si ya guardamos ese evento, no
+//     reinsertamos ni reavanzamos → el cliente no recibe el correo dos veces. Esto
+//     hace que el poll diario sea idempotente: si nada cambió, no hace nada.
+//   • visible_cliente:false a propósito: el texto crudo del transportista puede
+//     revelar el origen (China). El cliente ve solo la línea de tiempo del estado.
+//   • 17track solo cubre proveedor → Miami. Su "Delivered" = llegó a Miami, NO la
+//     entrega final: por eso NUNCA finalizamos el trayecto desde aquí (guardamos
+//     'en_transito'); el estado del pedido sí avanza vía sincronizarPedido.
+// Devuelve { procesados, avanzados }.
+export async function aplicarEventoTrayectos(client, item) {
+  const info = resumirTracking(item)
+  if (!info.numero) return { procesados: 0, avanzados: 0 }
+  const estadoTrayecto = mapearEstadoTrayecto(info.status)
+  if (!estadoTrayecto) return { procesados: 0, avanzados: 0 } // NotFound / Expired: nada que hacer
+
+  const { data: trayectos, error: trayError } = await client
+    .from('trayectos')
+    .select('id, pedido_id, pais_destino, estado, tracking, activo')
+    .eq('tracking', info.numero)
+  if (trayError) { console.error('track17: error buscando trayecto', trayError.message); return { procesados: 0, avanzados: 0 } }
+  if (!trayectos?.length) return { procesados: 0, avanzados: 0 }
+
+  let procesados = 0
+  let avanzados = 0
+  for (const trayecto of trayectos) {
+    const { data: previos } = await client
+      .from('tracking_eventos')
+      .select('id')
+      .eq('trayecto_id', trayecto.id)
+      .eq('fuente', 'track17')
+      .eq('fecha_evento', info.fechaEvento)
+      .limit(1)
+    if (previos?.length) continue
+
+    const { error: evError } = await client.from('tracking_eventos').insert({
+      trayecto_id: trayecto.id,
+      codigo_evento: info.codigoEvento,
+      estado_original: info.status,
+      estado_normalizado: estadoTrayecto,
+      descripcion_original: info.descripcion,
+      descripcion_publica: info.descripcion,
+      ubicacion: info.ubicacion || null,
+      fecha_evento: info.fechaEvento,
+      visible_cliente: false,
+      fuente: 'track17',
+      data_original_json: item,
+    })
+    if (evError) { console.error('track17: error insertando evento', evError.message); continue }
+
+    const estadoTrayectoGuardar = estadoTrayecto === 'entregado' ? 'en_transito' : estadoTrayecto
+    const { error: upError } = await client.from('trayectos').update({
+      estado: estadoTrayectoGuardar,
+      ultima_ubicacion: info.ubicacion || null,
+      ultimo_evento: info.descripcion,
+    }).eq('id', trayecto.id)
+    if (upError) { console.error('track17: error actualizando trayecto', upError.message); continue }
+
+    procesados++
+    try {
+      const nuevo = await sincronizarPedido(client, trayecto, estadoTrayecto, info.descripcion, info.ubicacion)
+      if (nuevo) avanzados++
+    } catch (syncError) {
+      console.error('track17: error sincronizando pedido', syncError?.message)
+    }
+  }
+  return { procesados, avanzados }
 }
