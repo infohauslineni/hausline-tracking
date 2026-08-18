@@ -12,6 +12,20 @@ export type Cliente = {
   updated_at?: string
 }
 
+export type LinkYupoo = {
+  id: string
+  marca: string
+  modelo: string
+  categoria: string | null
+  link: string
+  proveedor: string | null
+  precio: number | null
+  notas: string | null
+  foto_url: string | null
+  created_at: string
+  updated_at?: string
+}
+
 export type EstadoPedido =
   | 'pedido_confirmado' | 'en_preparacion' | 'control_calidad' | 'etiqueta_creada' | 'despachado'
   | 'transito_internacional' | 'recibido_estados_unidos' | 'transito_nicaragua'
@@ -52,6 +66,7 @@ export type Pedido = {
   notas_publicas?: string | null
   metodo_pago?: string | null
   moneda?: string
+  envio_rapido?: boolean
   activo: boolean
   created_at: string
   updated_at: string
