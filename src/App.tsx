@@ -20,7 +20,6 @@ const ReportesPage = lazy(() => import('./pages/private/ReportesPage').then((mod
 const InventarioPage = lazy(() => import('./pages/private/InventarioPage').then((module) => ({ default: module.InventarioPage })))
 const MetasPage = lazy(() => import('./pages/private/MetasPage').then((module) => ({ default: module.MetasPage })))
 const ContenidoPage = lazy(() => import('./pages/private/ContenidoPage').then((module) => ({ default: module.ContenidoPage })))
-const LinksYupooPage = lazy(() => import('./pages/private/LinksYupooPage').then((module) => ({ default: module.LinksYupooPage })))
 const TrackingPage = lazy(() => import('./pages/public/TrackingPage').then((module) => ({ default: module.TrackingPage })))
 
 export function App() {
@@ -42,7 +41,6 @@ export function App() {
         <Route path="/deudas" element={<Navigate to="/gastos" replace />} />
         <Route path="/metas" element={<MetasPage />} />
         <Route path="/contenido" element={<ContenidoPage />} />
-        <Route path="/yupoo" element={<LinksYupooPage />} />
         <Route path="/pagos" element={<PagosPage />} />
         <Route path="/gastos" element={<GastosPage />} />
         <Route path="/cuenta" element={<CuentaPage />} />

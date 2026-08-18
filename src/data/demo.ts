@@ -1,10 +1,4 @@
-import type { Cliente, LinkYupoo, Pedido } from '../types/domain'
-
-export const DEMO_YUPOO: LinkYupoo[] = [
-  { id: '90000000-0000-4000-8000-000000000001', marca: 'Nike', modelo: 'Dunk Low Panda', categoria: 'Zapatos', link: 'https://ejemplo.x.yupoo.com/albums/dunk-panda', proveedor: 'Proveedor A', precio: 40, notas: 'Tallas 36-45', foto_url: null, created_at: '2026-08-10T12:00:00Z' },
-  { id: '90000000-0000-4000-8000-000000000002', marca: 'Gucci', modelo: 'Ace GG Bee', categoria: 'Zapatos', link: 'https://ejemplo.x.yupoo.com/albums/ace-bee', proveedor: 'Proveedor B', precio: 55, notas: 'Con caja', foto_url: null, created_at: '2026-08-11T12:00:00Z' },
-  { id: '90000000-0000-4000-8000-000000000003', marca: 'Louis Vuitton', modelo: 'Neverfull MM', categoria: 'Bolsos', link: 'https://ejemplo.x.yupoo.com/albums/neverfull', proveedor: 'Proveedor B', precio: 90, notas: null, foto_url: null, created_at: '2026-08-12T12:00:00Z' },
-]
+import type { Cliente, Pedido } from '../types/domain'
 
 export const DEMO_CLIENTES: Cliente[] = [
   { id: '10000000-0000-4000-8000-000000000001', nombre: 'Sofía Martínez', whatsapp: '+505 8888 1001', correo: 'sofia@example.com', departamento: 'Managua', ciudad: 'Managua', direccion: 'Residencial Las Colinas', referencia: 'Portón negro', notas: 'Cliente frecuente', created_at: '2026-06-18T14:20:00Z' },

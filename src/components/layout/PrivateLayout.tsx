@@ -1,4 +1,4 @@
-import { BarChart3, Boxes, CircleGauge, Clapperboard, CreditCard, HandCoins, Images, LogOut, Menu, PackageSearch, ReceiptText, Settings, ShoppingBag, Target, Truck, Users, Wallet, X } from 'lucide-react'
+import { BarChart3, Boxes, CircleGauge, Clapperboard, CreditCard, HandCoins, LogOut, Menu, PackageSearch, ReceiptText, Settings, ShoppingBag, Target, Truck, Users, Wallet, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -25,7 +25,6 @@ const links = [
   { to: '/pedidos', label: 'Pedidos', icon: Boxes },
   { to: '/clientes', label: 'Clientes', icon: Users },
   { to: '/productos', label: 'Productos', icon: PackageSearch },
-  { to: '/yupoo', label: 'Links Yupoo', icon: Images },
   { to: '/stock', label: 'Stock e inversiones', icon: HandCoins },
   { to: '/pagos', label: 'Pagos', icon: CreditCard },
   { to: '/gastos', label: 'Gastos', icon: ReceiptText },
