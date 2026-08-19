@@ -263,3 +263,40 @@ export async function aplicarEventoTrayectos(client, item) {
   }
   return { procesados, avanzados }
 }
+
+// Poll: consulta a 17TRACK el estado ACTUAL de las guías activas ya registradas y
+// aplica lo que haya cambiado. Lo usan el cron diario (red de seguridad) y el cron
+// frecuente (para ver la ubicación fresca en el panel). gettrackinfo lee el dato
+// guardado, así que se puede correr seguido sin gastar cuota de registro. Idempotente
+// por el anti-duplicado de fecha del evento (no reinserta ni re-envía correos).
+export async function pollGuiasActivas(client, limite = 120) {
+  if (!process.env.TRACK17_API_KEY) return { consultadas: 0, avanzados: 0 }
+  const { data: activos, error } = await client
+    .from('trayectos')
+    .select('tracking')
+    .not('tracking', 'is', null)
+    .not('track17_registrado_at', 'is', null)
+    .eq('activo', true)
+    .order('track17_registrado_at', { ascending: true })
+    .limit(limite)
+  if (error) { console.error('track17: error leyendo guías a consultar', error.message); return { consultadas: 0, avanzados: 0 } }
+  const numeros = [...new Set((activos ?? []).map((t) => String(t.tracking ?? '').trim()).filter(Boolean))]
+  if (!numeros.length) return { consultadas: 0, avanzados: 0 }
+
+  let consultadas = 0
+  let avanzados = 0
+  for (let i = 0; i < numeros.length; i += 40) {
+    const lote = numeros.slice(i, i + 40)
+    try {
+      const trackings = await consultarEnTrack17(lote)
+      for (const item of trackings) {
+        const r = await aplicarEventoTrayectos(client, item)
+        avanzados += r.avanzados
+      }
+    } catch (loteError) {
+      console.error('track17: poll lote falló', loteError?.message)
+    }
+    consultadas += lote.length
+  }
+  return { consultadas, avanzados }
+}
