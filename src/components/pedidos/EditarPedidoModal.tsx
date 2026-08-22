@@ -19,6 +19,7 @@ export function EditarPedidoModal({ pedido, open, onClose, onSave }: {
   const [costoProveedor, setCostoProveedor] = useState(0)
   const [notasInternas, setNotasInternas] = useState('')
   const [notasPublicas, setNotasPublicas] = useState('')
+  const [envioRapido, setEnvioRapido] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -31,6 +32,7 @@ export function EditarPedidoModal({ pedido, open, onClose, onSave }: {
     setCostoProveedor(proveedor ? Number(proveedor.monto) : costoRealPedido(pedido))
     setNotasInternas(pedido.notas_internas ?? '')
     setNotasPublicas(pedido.notas_publicas ?? '')
+    setEnvioRapido(Boolean(pedido.envio_rapido))
     setError('')
   }, [open, pedido])
 
@@ -52,6 +54,7 @@ export function EditarPedidoModal({ pedido, open, onClose, onSave }: {
         costo_proveedor: Number(costoProveedor),
         notas_internas: notasInternas.trim() || null,
         notas_publicas: notasPublicas.trim() || null,
+        envio_rapido: envioRapido,
         items: items.map((item) => ({ ...item, cantidad: Number(item.cantidad), precio_unitario: Number(item.precio_unitario) })),
       })
       onClose()
@@ -81,6 +84,7 @@ export function EditarPedidoModal({ pedido, open, onClose, onSave }: {
         <Field label="Notas internas"><textarea rows={3} value={notasInternas} onChange={(event) => setNotasInternas(event.target.value)} /></Field>
         <Field label="Nota visible para el cliente"><textarea rows={3} value={notasPublicas} onChange={(event) => setNotasPublicas(event.target.value)} /></Field>
       </div>
+      <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-line bg-white/[0.02] p-3 transition hover:border-accent/40"><input type="checkbox" className="size-4 shrink-0 accent-accent" checked={envioRapido} onChange={(event) => setEnvioRapido(event.target.checked)} /><span className="flex flex-col"><span className="text-sm font-medium">El cliente quiere envío rápido</span><span className="text-[11px] text-muted">Llega en 14 a 17 días en vez de 20 a 25 (cuesta $15 extra en la tienda).</span></span></label>
       <div className="grid gap-3 rounded-xl border border-line bg-white/[0.025] p-4 sm:grid-cols-3"><Money label="Total" value={total} /><Money label="Abono" value={abono} /><Money label="Saldo" value={total - abono} accent /><Money label="Costo real" value={costoProveedor} /><Money label="Ganancia estimada" value={total - costoProveedor} /></div>
       {error && <p className="text-sm text-red-300">{error}</p>}
       <div className="flex justify-end gap-2"><button type="button" className="subtle-button px-4" onClick={onClose}>Cancelar</button><button className="primary-button px-5" disabled={saving}><Save size={16} /> {saving ? 'Guardando…' : 'Guardar cambios'}</button></div>

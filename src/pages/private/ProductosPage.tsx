@@ -3,14 +3,16 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { Modal } from '../../components/ui/Modal'
 import { subirImagenCatalogo } from '../../services/catalogoImagenes.service'
-import { actualizarImagenProducto, eliminarProducto, guardarProducto, listarProductos, listarProveedores, sincronizarCatalogo } from '../../services/comercial.service'
+import { actualizarImagenProducto, autoSincronizarCatalogo, eliminarProducto, guardarProducto, listarProductos, listarProveedores, sincronizarCatalogo } from '../../services/comercial.service'
 import type { Producto, Proveedor } from '../../types/domain'
 
 const empty = { codigo:'', nombre:'', marca:'', categoria:'', proveedor_id:'', tallas:'', precio_compra:'', precio_venta:'', descripcion:'' }
 export function ProductosPage(){
   const [items,setItems]=useState<Producto[]>([]),[providers,setProviders]=useState<Proveedor[]>([]),[search,setSearch]=useState(''),[open,setOpen]=useState(false),[editing,setEditing]=useState<Producto|null>(null)
   const load=()=>void Promise.all([listarProductos(),listarProveedores()]).then(([p,v])=>{setItems(p);setProviders(v)}).catch(()=>toast.error('No se pudieron cargar los productos.'))
-  useEffect(load,[])
+  // Al abrir la página: carga lo que hay y, en segundo plano, sincroniza el catálogo web
+  // (máx. 1 vez cada 15 min). Si sincronizó, recarga para mostrar precios/fotos frescos.
+  useEffect(()=>{load();void autoSincronizarCatalogo().then(did=>{if(did)load()})},[])
   const filtered=useMemo(()=>items.filter(p=>[p.codigo,p.nombre,p.marca].some(v=>v?.toLowerCase().includes(search.toLowerCase()))),[items,search])
   const remove=async(item:Producto)=>{if(!confirm(`¿Desactivar ${item.nombre}?`))return;try{await eliminarProducto(item.id);setItems(all=>all.filter(p=>p.id!==item.id));toast.success('Producto desactivado.')}catch{toast.error('No se pudo desactivar.')}}
   const sync=async()=>{try{const total=await sincronizarCatalogo();toast.success(`${total} productos sincronizados desde hauslineshopni.es.`);load()}catch(error){toast.error(error instanceof Error?error.message:'No se pudo sincronizar el catálogo.')}}

@@ -126,6 +126,30 @@ export async function actualizarEstadoPedido(id: string, estado: EstadoPedido) {
   return updated
 }
 
+// Orden de las etapas (espejo de api/_track17.js PROGRESO) para nunca retroceder.
+const PROGRESO_ESTADOS: EstadoPedido[] = [
+  'pedido_confirmado', 'en_preparacion', 'control_calidad', 'etiqueta_creada', 'despachado',
+  'transito_internacional', 'recibido_estados_unidos', 'transito_nicaragua',
+  'llego_nicaragua', 'disponible_entrega', 'entregado',
+]
+
+// Al subir la foto "Recibido en bodega Miami", el pedido avanza solo a "Warehouse
+// HAUSLINE" (recibido_estados_unidos). Es el evento físico real que confirma la
+// llegada a la bodega. No retrocede el pedido ni pisa entregado/cancelado/incidencia,
+// y no hace nada si ya estaba en esa etapa o más adelante. El UPDATE dispara el
+// historial y el correo automático igual que un cambio manual. Devuelve el pedido
+// actualizado, o null si no correspondía avanzar.
+export async function avanzarAWarehousePorMiami(id: string): Promise<Pedido | null> {
+  const client = requireSupabase()
+  const { data, error } = await client.from('pedidos').select('estado').eq('id', id).single()
+  if (error) throw error
+  const actual = data.estado as EstadoPedido
+  if (actual === 'entregado' || actual === 'cancelado' || actual === 'incidencia') return null
+  const destino: EstadoPedido = 'recibido_estados_unidos'
+  if (PROGRESO_ESTADOS.indexOf(actual) >= PROGRESO_ESTADOS.indexOf(destino)) return null
+  return actualizarEstadoPedido(id, destino)
+}
+
 export async function entregarPedidoConPago(id: string, montoRecibido: number, metodoPago: string) {
   const client = requireSupabase()
   const { data: pedido, error: pedidoError } = await client.from('pedidos').select('id,codigo,cliente_id,saldo').eq('id', id).single()

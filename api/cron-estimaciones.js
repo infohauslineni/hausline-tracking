@@ -1,5 +1,20 @@
 import { createClient } from '@supabase/supabase-js'
 import { registrarEnTrack17, pollGuiasActivas } from './_track17.js'
+import { obtenerCatalogoMergeado, mapearCatalogoAProductos } from './_catalogo.js'
+
+// Sincroniza el catálogo web (tienda + feed + panel) → tabla `productos` del tracking.
+// Corre una vez al día para que los cambios de precio/foto de la web lleguen solos, sin
+// que nadie toque "Sincronizar catálogo". Mismo mapeo que la sincronización manual.
+async function sincronizarCatalogoServidor(client) {
+  const merged = await obtenerCatalogoMergeado()
+  const records = mapearCatalogoAProductos(merged)
+  if (!records.length) return 0
+  for (let i = 0; i < records.length; i += 100) {
+    const { error } = await client.from('productos').upsert(records.slice(i, i + 100), { onConflict: 'codigo', ignoreDuplicates: false })
+    if (error) throw new Error(error.message)
+  }
+  return records.length
+}
 
 // Registra en 17TRACK las guías que aún no se han registrado (track17_registrado_at
 // nulo). Corre una vez al día junto con las estimaciones. Como el envío tarda días,
@@ -62,6 +77,14 @@ export default async function handler(request, response) {
     console.error('cron: poll 17track falló', pollError?.message)
   }
 
+  // Sincronización diaria del catálogo web → productos. Aislada para no tumbar lo principal.
+  let catalogo = 0
+  try {
+    catalogo = await sincronizarCatalogoServidor(client)
+  } catch (catalogoError) {
+    console.error('cron: sync catálogo falló', catalogoError?.message)
+  }
+
   return response.status(200).json({
     ok: true,
     updated: Number(data ?? 0),
@@ -69,5 +92,6 @@ export default async function handler(request, response) {
     registrados,
     consultadas: track17.consultadas,
     avanzados_track17: track17.avanzados,
+    catalogo,
   })
 }

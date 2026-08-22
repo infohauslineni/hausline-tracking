@@ -9,6 +9,7 @@ const DashboardPage = lazy(() => import('./pages/private/DashboardPage').then((m
 const NuevoPedidoPage = lazy(() => import('./pages/private/NuevoPedidoPage').then((module) => ({ default: module.NuevoPedidoPage })))
 const PedidoDetailPage = lazy(() => import('./pages/private/PedidoDetailPage').then((module) => ({ default: module.PedidoDetailPage })))
 const PedidosPage = lazy(() => import('./pages/private/PedidosPage').then((module) => ({ default: module.PedidosPage })))
+const SolicitudesPage = lazy(() => import('./pages/private/SolicitudesPage').then((module) => ({ default: module.SolicitudesPage })))
 const LogisticaPage = lazy(() => import('./pages/private/LogisticaPage').then((module) => ({ default: module.LogisticaPage })))
 const ConfiguracionPage = lazy(() => import('./pages/private/ConfiguracionPage').then((module) => ({ default: module.ConfiguracionPage })))
 const VentasPage = lazy(() => import('./pages/private/VentasPage').then((module) => ({ default: module.VentasPage })))
@@ -31,6 +32,7 @@ export function App() {
       <Route element={<PrivateLayout />}>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/pedidos" element={<PedidosPage />} />
+        <Route path="/solicitudes" element={<SolicitudesPage />} />
         <Route path="/pedidos/nuevo" element={<NuevoPedidoPage />} />
         <Route path="/pedidos/:id" element={<PedidoDetailPage />} />
         <Route path="/ventas" element={<VentasPage />} />

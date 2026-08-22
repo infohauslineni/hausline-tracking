@@ -11,8 +11,8 @@ import { isSupabaseConfigured, supabase } from '../../lib/supabase'
 import { actualizarInversion, listarInversiones } from '../../services/comercial.service'
 import { eliminarTrayecto, guardarTrayecto, listarTransportistas, listarTrayectos, marcarTrayectoEntregado, reabrirTrayecto, type TrayectoInput } from '../../services/logistica.service'
 import { listarPedidos } from '../../services/pedidos.service'
-import type { Inversion, Pedido, Transportista, Trayecto } from '../../types/domain'
-import { construirUrlTransportista, consultarEnEverest, consultarEnUsps } from '../../utils/externalTracking'
+import type { EstadoPedido, Inversion, Pedido, Transportista, Trayecto } from '../../types/domain'
+import { etapaBase } from '../../constants/orders'
 
 const trackingSchema = z.object({
   destino_tipo: z.enum(['pedido', 'stock']),
@@ -107,32 +107,29 @@ export function LogisticaPage() {
     <h2 className="mt-6 text-sm font-semibold text-accent">Trackings activos</h2>
     <div className="mt-3 grid gap-4 xl:grid-cols-2">
       {activeRoutes.map((route) => <RouteCard key={route.id} route={route} onEdit={() => { setEditing({ kind: 'pedido', value: route }); setModalOpen(true) }} onDelete={() => void removeRoute(route)} onDelivered={() => void deliverRoute(route)} onReopen={() => void reopenRoute(route)} />)}
-      {activeStock.map((item) => <StockRouteCard key={`stock-${item.id}`} item={item} carriers={transportistas} onEdit={() => { setEditing({ kind: 'stock', value: item }); setModalOpen(true) }} onDelete={() => void removeStockTracking(item)} onDelivered={() => void deliverStock(item)} onReopen={() => void reopenStock(item)} />)}
+      {activeStock.map((item) => <StockRouteCard key={`stock-${item.id}`} item={item} onEdit={() => { setEditing({ kind: 'stock', value: item }); setModalOpen(true) }} onDelete={() => void removeStockTracking(item)} onDelivered={() => void deliverStock(item)} onReopen={() => void reopenStock(item)} />)}
     </div>
-    {entregados > 0 && (() => { const expandido = mostrarEntregados || Boolean(search.trim()); return <><button type="button" onClick={() => setMostrarEntregados((value) => !value)} className="mt-10 flex w-full items-center gap-2 rounded-xl border border-line bg-white/[0.02] px-4 py-3 text-sm font-semibold text-emerald-300 transition hover:border-emerald-300/30 hover:bg-emerald-300/[0.04]"><CheckCircle2 size={17} /> Trackings entregados ({entregados}) <span className="ml-auto flex items-center gap-1.5 text-xs font-medium text-muted">{expandido ? 'Ocultar' : 'Ver'} {expandido ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span></button>{expandido && <div className="mt-3 grid gap-4 xl:grid-cols-2">{deliveredRoutes.map((route) => <RouteCard key={route.id} route={route} onEdit={() => { setEditing({ kind: 'pedido', value: route }); setModalOpen(true) }} onDelete={() => void removeRoute(route)} onDelivered={() => void deliverRoute(route)} onReopen={() => void reopenRoute(route)} />)}{deliveredStock.map((item) => <StockRouteCard key={`stock-${item.id}`} item={item} carriers={transportistas} onEdit={() => { setEditing({ kind: 'stock', value: item }); setModalOpen(true) }} onDelete={() => void removeStockTracking(item)} onDelivered={() => void deliverStock(item)} onReopen={() => void reopenStock(item)} />)}</div>}</> })()}
+    {entregados > 0 && (() => { const expandido = mostrarEntregados || Boolean(search.trim()); return <><button type="button" onClick={() => setMostrarEntregados((value) => !value)} className="mt-10 flex w-full items-center gap-2 rounded-xl border border-line bg-white/[0.02] px-4 py-3 text-sm font-semibold text-emerald-300 transition hover:border-emerald-300/30 hover:bg-emerald-300/[0.04]"><CheckCircle2 size={17} /> Trackings entregados ({entregados}) <span className="ml-auto flex items-center gap-1.5 text-xs font-medium text-muted">{expandido ? 'Ocultar' : 'Ver'} {expandido ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span></button>{expandido && <div className="mt-3 grid gap-4 xl:grid-cols-2">{deliveredRoutes.map((route) => <RouteCard key={route.id} route={route} onEdit={() => { setEditing({ kind: 'pedido', value: route }); setModalOpen(true) }} onDelete={() => void removeRoute(route)} onDelivered={() => void deliverRoute(route)} onReopen={() => void reopenRoute(route)} />)}{deliveredStock.map((item) => <StockRouteCard key={`stock-${item.id}`} item={item} onEdit={() => { setEditing({ kind: 'stock', value: item }); setModalOpen(true) }} onDelete={() => void removeStockTracking(item)} onDelivered={() => void deliverStock(item)} onReopen={() => void reopenStock(item)} />)}</div>}</> })()}
     {filteredRoutes.length + filteredStock.length === 0 && <div className="mt-6 grid min-h-64 place-items-center rounded-2xl border border-dashed border-line text-center"><div><Truck className="mx-auto text-muted" /><h2 className="mt-3 font-semibold">No hay trackings</h2><p className="mt-1 text-sm text-muted">Agrega el tracking de un pedido o producto de stock.</p></div></div>}
     <TrackingModal open={modalOpen} editing={editing} pedidos={pedidos} stock={stock} carriers={transportistas} onClose={() => { setModalOpen(false); setEditing(null) }} onRouteSaved={saveRoute} onStockSaved={saveStock} />
   </div>
 }
 
-function TrackingButtons({ tracking, carrierName, carrierUrl }: { tracking: string; carrierName: string; carrierUrl?: string | null }) {
-  const normalized = carrierName.toLowerCase()
-  const standardUrl = construirUrlTransportista(carrierUrl ?? null, tracking)
-  const openEverest = () => { try { consultarEnEverest(tracking) } catch (error) { toast.error(error instanceof Error ? error.message : 'No se pudo abrir Everest.') } }
-  const openUsps = () => { try { consultarEnUsps(tracking) } catch (error) { toast.error(error instanceof Error ? error.message : 'No se pudo abrir USPS.') } }
-  return <><button className="subtle-button text-[#d8ff78]" onClick={openEverest}><ExternalLink size={15} /> Everest</button>{normalized.includes('usps') ? <button className="subtle-button text-[#9ed0ff]" onClick={openUsps}><ExternalLink size={15} /> USPS</button> : !normalized.includes('everest') && standardUrl && <a className="subtle-button text-[#9ed0ff]" href={standardUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={15} /> {carrierName}</a>}</>
+// Único botón externo: abre la guía en la página pública de 17TRACK (sin login).
+function TrackingButtons({ tracking }: { tracking: string }) {
+  if (!tracking) return null
+  return <a className="subtle-button text-[#9ed0ff]" href={`https://t.17track.net/es#nums=${encodeURIComponent(tracking)}`} target="_blank" rel="noopener noreferrer"><ExternalLink size={15} /> 17TRACK</a>
 }
 
 function RouteCard({ route, onEdit, onDelete, onDelivered, onReopen }: { route: Trayecto; onEdit: () => void; onDelete: () => void; onDelivered: () => void; onReopen: () => void }) {
   const carrierName = route.transportistas?.nombre ?? 'Sin paquetería'
-  return <article className={`rounded-2xl border bg-panel p-4 sm:p-5 ${route.estado === 'entregado' ? 'border-emerald-300/20' : 'border-line'}`}><div className="flex items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><strong className="tracking-wide">{route.pedidos?.codigo}</strong>{route.estado === 'entregado' && <span className="status-badge status-success">Entregado</span>}</div><p className="mt-1 text-xs">Pedido · <span className="font-semibold text-sky-300">{route.pedidos?.clientes?.nombre}</span></p></div><CardActions onEdit={onEdit} onDelete={onDelete} /></div><TrackingBox tracking={route.tracking ?? ''} carrier={carrierName} /><TrackingProgress route={route} /><div className="mt-5 flex flex-wrap gap-2 border-t border-line pt-4"><TrackingButtons tracking={route.tracking ?? ''} carrierName={carrierName} carrierUrl={route.transportistas?.url_tracking ?? route.url_tracking} />{route.pedidos?.codigo && <a className="subtle-button text-[#c4b5fd]" href={`/tracking/${route.pedidos.codigo}`} target="_blank" rel="noopener noreferrer"><Eye size={15} /> Ver seguimiento</a>}{route.estado !== 'entregado' ? <DeliveredButton onClick={onDelivered} label="Entregado" /> : <button className="subtle-button ml-auto text-amber-200" onClick={onReopen}>Corregir entrega</button>}</div></article>
+  return <article className={`rounded-2xl border bg-panel p-4 sm:p-5 ${route.estado === 'entregado' ? 'border-emerald-300/20' : 'border-line'}`}><div className="flex items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><strong className="tracking-wide">{route.pedidos?.codigo}</strong>{route.estado === 'entregado' && <span className="status-badge status-success">Entregado</span>}</div><p className="mt-1 text-xs">Pedido · <span className="font-semibold text-sky-300">{route.pedidos?.clientes?.nombre}</span></p></div><CardActions onEdit={onEdit} onDelete={onDelete} /></div><TrackingBox tracking={route.tracking ?? ''} carrier={carrierName} /><TrackingProgress route={route} /><div className="mt-5 flex flex-wrap gap-2 border-t border-line pt-4"><TrackingButtons tracking={route.tracking ?? ''} />{route.pedidos?.codigo && <a className="subtle-button text-[#c4b5fd]" href={`/tracking/${route.pedidos.codigo}`} target="_blank" rel="noopener noreferrer"><Eye size={15} /> Ver seguimiento</a>}{route.estado !== 'entregado' ? <DeliveredButton onClick={onDelivered} label="Entregado" /> : <button className="subtle-button ml-auto text-amber-200" onClick={onReopen}>Corregir entrega</button>}</div></article>
 }
 
-function StockRouteCard({ item, carriers, onEdit, onDelete, onDelivered, onReopen }: { item: Inversion; carriers: Transportista[]; onEdit: () => void; onDelete: () => void; onDelivered: () => void; onReopen: () => void }) {
+function StockRouteCard({ item, onEdit, onDelete, onDelivered, onReopen }: { item: Inversion; onEdit: () => void; onDelete: () => void; onDelivered: () => void; onReopen: () => void }) {
   const delivered = item.estado_tracking === 'Entregado'
-  const carrier = carriers.find((value) => value.nombre === item.transportista || value.codigo?.toLowerCase() === item.transportista?.toLowerCase())
   const carrierName = item.transportista || 'Sin paquetería'
-  return <article className={`rounded-2xl border bg-panel p-4 sm:p-5 ${delivered ? 'border-emerald-300/20' : 'border-accent/20'}`}><div className="flex items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><strong className="tracking-wide">{item.codigo || 'STOCK'}</strong>{delivered && <span className="status-badge status-success">Entregado</span>}</div><p className="mt-1 text-xs text-muted">Stock inmediato · {item.producto} · {item.talla_color || 'Sin talla'}</p></div><CardActions onEdit={onEdit} onDelete={onDelete} /></div><TrackingBox tracking={item.tracking ?? ''} carrier={carrierName} stock /><div className="mt-5 flex flex-wrap gap-2 border-t border-line pt-4"><TrackingButtons tracking={item.tracking ?? ''} carrierName={carrierName} carrierUrl={item.url_tracking ?? carrier?.url_tracking} />{!delivered ? <DeliveredButton onClick={onDelivered} label="Recibido" /> : <button className="subtle-button ml-auto text-amber-200" onClick={onReopen}>Corregir entrega</button>}</div></article>
+  return <article className={`rounded-2xl border bg-panel p-4 sm:p-5 ${delivered ? 'border-emerald-300/20' : 'border-accent/20'}`}><div className="flex items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><strong className="tracking-wide">{item.codigo || 'STOCK'}</strong>{delivered && <span className="status-badge status-success">Entregado</span>}</div><p className="mt-1 text-xs text-muted">Stock inmediato · {item.producto} · {item.talla_color || 'Sin talla'}</p></div><CardActions onEdit={onEdit} onDelete={onDelete} /></div><TrackingBox tracking={item.tracking ?? ''} carrier={carrierName} stock /><div className="mt-5 flex flex-wrap gap-2 border-t border-line pt-4"><TrackingButtons tracking={item.tracking ?? ''} />{!delivered ? <DeliveredButton onClick={onDelivered} label="Recibido" /> : <button className="subtle-button ml-auto text-amber-200" onClick={onReopen}>Corregir entrega</button>}</div></article>
 }
 
 function TrackingModal({ open, editing, pedidos, stock, carriers, onClose, onRouteSaved, onStockSaved }: { open: boolean; editing: EditingTarget; pedidos: Pedido[]; stock: Inversion[]; carriers: Transportista[]; onClose: () => void; onRouteSaved: (value: Trayecto) => void; onStockSaved: (value: Inversion) => void }) {
@@ -181,17 +178,12 @@ function TrackingModal({ open, editing, pedidos, stock, carriers, onClose, onRou
 // paquete sin entrar a 17track ni preguntarle al cliente.
 // La barra refleja el estado REAL del pedido (no solo la pata de 17track), para que
 // siempre coincida con lo que ves en Pedidos, tenga o no datos de 17track todavía.
-const ETAPAS_ENVIO = ['Despachado', 'En camino a Warehouse', 'Warehouse HAUSLINE', 'Enviando a Nicaragua', 'País de destino', 'Entregado']
+const ETAPAS_ENVIO = ['Orden confirmada', 'En preparación', 'En tránsito', 'País de destino', 'Disponible para entrega', 'Entregado']
+const ORDEN_ETAPAS: EstadoPedido[] = ['pedido_confirmado', 'en_preparacion', 'transito_internacional', 'llego_nicaragua', 'disponible_entrega', 'entregado']
 function pasoPedido(estado?: string) {
-  switch (estado) {
-    case 'entregado': return 5
-    case 'disponible_entrega':
-    case 'llego_nicaragua': return 4
-    case 'transito_nicaragua': return 3
-    case 'recibido_estados_unidos': return 2
-    case 'transito_internacional': return 1
-    default: return 0 // despachado, etiqueta_creada y etapas previas
-  }
+  if (!estado) return 0
+  const idx = ORDEN_ETAPAS.indexOf(etapaBase(estado as EstadoPedido))
+  return idx < 0 ? 0 : idx
 }
 function haceCuanto(iso?: string | null) {
   if (!iso) return null

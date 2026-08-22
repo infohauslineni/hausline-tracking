@@ -41,9 +41,9 @@ const NOTA_PUBLICA = {
   control_calidad: 'Tu pedido está pasando por control de calidad.',
   etiqueta_creada: 'Tu pedido fue despachado y va en camino.',
   despachado: 'Tu pedido fue despachado y va en camino.',
-  transito_internacional: 'Tu pedido va en camino a nuestro Warehouse HAUSLINE.',
-  recibido_estados_unidos: 'Tu pedido llegó a nuestro Warehouse HAUSLINE.',
-  transito_nicaragua: 'Tu pedido va en camino a HAUSLINE Nicaragua.',
+  transito_internacional: 'Tu pedido está en tránsito internacional.',
+  recibido_estados_unidos: 'Tu pedido está en tránsito internacional.',
+  transito_nicaragua: 'Tu pedido está en tránsito internacional.',
   llego_nicaragua: 'Tu pedido llegó al país de destino.',
   disponible_entrega: 'Tu pedido está disponible para entrega.',
   entregado: 'Tu pedido fue entregado.',
@@ -254,12 +254,9 @@ export async function aplicarEventoTrayectos(client, item) {
     if (upError) { console.error('track17: error actualizando trayecto', upError.message); continue }
 
     procesados++
-    try {
-      const nuevo = await sincronizarPedido(client, trayecto, estadoTrayecto, info.descripcion, info.ubicacion)
-      if (nuevo) avanzados++
-    } catch (syncError) {
-      console.error('track17: error sincronizando pedido', syncError?.message)
-    }
+    // 17TRACK SOLO refresca la ubicación del trayecto en el panel de Logística. NO avanza
+    // el estado público del pedido ni dispara correos: esas etapas se cambian a mano desde
+    // Pedidos. (Antes aquí se llamaba a sincronizarPedido; se quitó a propósito.)
   }
   return { procesados, avanzados }
 }

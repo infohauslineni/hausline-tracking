@@ -23,7 +23,7 @@ function inferirEstadoPedido(trayecto: Trayecto, estado: EstadoTrayecto, descrip
   const texto = normalizar(`${descripcion} ${ubicacion}`)
   if (estado === 'incidencia' || estado === 'entrega_fallida') return 'incidencia'
   if (estado === 'pendiente') return 'en_preparacion'
-  if (estado === 'etiqueta_creada') return 'etiqueta_creada'
+  if (estado === 'etiqueta_creada') return 'despachado'
   if (estado === 'cancelado') return null
   if (estado === 'entregado') {
     if (normalizar(trayecto.pais_destino ?? '').includes('nicaragua') || texto.includes('nicaragua') || texto.includes('managua')) return 'llego_nicaragua'

@@ -94,6 +94,13 @@ export default async function handler(request, response) {
   if (!estado) return response.status(200).json({ ok: true, skipped: 'sin estado' })
   if (!esNuevo && estado === oldRecord.estado) return response.status(200).json({ ok: true, skipped: 'sin cambio de estado' })
   if (!ESTADO_LABEL[estado]) return response.status(200).json({ ok: true, skipped: 'estado no notificable' })
+  // Estados que se manejan a mano: NO se envía correo automático al cliente.
+  const SIN_CORREO = new Set(['cancelado', 'incidencia'])
+  if (SIN_CORREO.has(estado)) return response.status(200).json({ ok: true, skipped: 'estado sin correo' })
+  // Evita correos repetidos cuando el cliente ve la MISMA etiqueta pública: las etapas de
+  // bodega (recibido_estados_unidos / transito_nicaragua) se muestran como "En tránsito
+  // internacional", igual que transito_internacional → así manda UN solo correo de tránsito.
+  if (!esNuevo && ESTADO_LABEL[estado] === ESTADO_LABEL[oldRecord.estado]) return response.status(200).json({ ok: true, skipped: 'misma etiqueta pública' })
 
   // El correo y el nombre del cliente vienen dentro del aviso (los agrega el trigger de Supabase),
   // así no hace falta la llave de servicio de Supabase en el servidor.

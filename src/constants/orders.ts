@@ -1,26 +1,48 @@
 import type { EstadoPedido } from '../types/domain'
 import { cuentasTexto } from './pagos'
 
-// Estas son las únicas etapas que se pueden seleccionar manualmente.
+// Las 6 etapas que se seleccionan manualmente (mismas que ve el cliente). Antes había
+// 10 con sub-etapas de bodega; ahora todo se agrupa en estas 6 para que el panel, el
+// selector y el seguimiento público muestren exactamente lo mismo.
 export const ESTADOS_PEDIDO: { value: EstadoPedido; label: string }[] = [
   { value: 'pedido_confirmado', label: 'Orden confirmada' },
   { value: 'en_preparacion', label: 'En preparación' },
-  { value: 'control_calidad', label: 'Control de calidad' },
-  { value: 'despachado', label: 'Despachado' },
-  { value: 'transito_internacional', label: 'En tránsito internacional' },
+  { value: 'transito_internacional', label: 'En tránsito' },
   { value: 'llego_nicaragua', label: 'País de destino' },
   { value: 'disponible_entrega', label: 'Disponible para entrega' },
   { value: 'entregado', label: 'Entregado' },
 ]
 
-// Agrupa estados logísticos anteriores sin romper pedidos ya guardados.
+// Colapsa CUALQUIER estado (incluidas las etapas viejas de bodega que aún puedan tener
+// pedidos en curso, o las que setea 17TRACK / la foto de Miami) a una de las 6 etapas
+// canónicas. Así nada se rompe aunque un pedido siga guardado como 'despachado' o
+// 'recibido_estados_unidos': se muestra como "En tránsito".
+export const etapaBase = (estado: EstadoPedido): EstadoPedido => (({
+  pedido_confirmado: 'pedido_confirmado',
+  en_preparacion: 'en_preparacion',
+  control_calidad: 'en_preparacion',
+  etiqueta_creada: 'transito_internacional',
+  despachado: 'transito_internacional',
+  transito_internacional: 'transito_internacional',
+  recibido_estados_unidos: 'transito_internacional',
+  transito_nicaragua: 'transito_internacional',
+  llego_nicaragua: 'llego_nicaragua',
+  disponible_entrega: 'disponible_entrega',
+  entregado: 'entregado',
+  cancelado: 'cancelado',
+  incidencia: 'incidencia',
+} as Record<EstadoPedido, EstadoPedido>)[estado] ?? estado)
+
+// Etiqueta de cada estado (colapsado a una de las 6 etapas). Igual en panel y cliente.
 export const estadoLabel = (estado: EstadoPedido) => {
-  if (estado === 'etiqueta_creada') return 'Despachado'
-  if (estado === 'recibido_estados_unidos' || estado === 'transito_nicaragua') return 'En tránsito internacional'
   if (estado === 'cancelado') return 'Cancelado'
   if (estado === 'incidencia') return 'Requiere atención'
-  return ESTADOS_PEDIDO.find((item) => item.value === estado)?.label ?? estado
+  const base = etapaBase(estado)
+  return ESTADOS_PEDIDO.find((item) => item.value === base)?.label ?? estado
 }
+
+// El cliente ve la misma etiqueta que el panel (ya todo colapsado a 6 etapas).
+export const estadoLabelPublico = (estado: EstadoPedido) => estadoLabel(estado)
 
 export const notaPublicaEstado = (estado: EstadoPedido) => ({
   pedido_confirmado: 'Recibimos y confirmamos tu orden.',
@@ -67,15 +89,10 @@ export function mensajeWhatsAppEstado(estado: EstadoPedido, data: { nombre?: str
 
 // Cada etapa tiene su propio color para reconocerla de un vistazo en toda la app.
 export const estadoTone = (estado: EstadoPedido) => {
-  switch (estado) {
+  switch (etapaBase(estado)) {
     case 'pedido_confirmado': return 'confirmada'
     case 'en_preparacion': return 'preparacion'
-    case 'control_calidad': return 'calidad'
-    case 'despachado':
-    case 'etiqueta_creada': return 'despachado'
-    case 'transito_internacional':
-    case 'recibido_estados_unidos':
-    case 'transito_nicaragua': return 'transito'
+    case 'transito_internacional': return 'transito'
     case 'llego_nicaragua': return 'destino'
     case 'disponible_entrega': return 'disponible'
     case 'entregado': return 'entregado'

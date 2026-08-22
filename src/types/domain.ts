@@ -52,6 +52,7 @@ export type Pedido = {
   notas_publicas?: string | null
   metodo_pago?: string | null
   moneda?: string
+  envio_rapido?: boolean
   activo: boolean
   created_at: string
   updated_at: string

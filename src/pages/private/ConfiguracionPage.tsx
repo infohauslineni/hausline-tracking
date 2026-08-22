@@ -7,7 +7,7 @@ import { guardarTipoCambio, obtenerTipoCambio } from '../../services/comercial.s
 import { DEFAULT_ESTIMACIONES, guardarConfiguracionEstimaciones, obtenerConfiguracionEstimaciones, recalcularEstimaciones, type ConfiguracionEstimaciones } from '../../services/estimaciones.service'
 import type { EstadoPedido } from '../../types/domain'
 
-const EDITABLE_STATES: EstadoPedido[] = ['pedido_confirmado', 'en_preparacion', 'control_calidad', 'despachado', 'transito_internacional', 'llego_nicaragua']
+const EDITABLE_STATES: EstadoPedido[] = ['pedido_confirmado', 'en_preparacion', 'transito_internacional', 'llego_nicaragua']
 
 export function ConfiguracionPage() {
   const [config, setConfig] = useState<ConfiguracionEstimaciones>(DEFAULT_ESTIMACIONES)

@@ -7,7 +7,7 @@ import { EditarPedidoModal } from '../../components/pedidos/EditarPedidoModal'
 import { FacturaModal } from '../../components/pedidos/FacturaModal'
 import { PedidoLogistica } from '../../components/pedidos/PedidoLogistica'
 import { Modal } from '../../components/ui/Modal'
-import { ESTADOS_PEDIDO, estadoLabel, mensajeWhatsAppEstado } from '../../constants/orders'
+import { ESTADOS_PEDIDO, estadoLabel, etapaBase, mensajeWhatsAppEstado } from '../../constants/orders'
 import { DEMO_PEDIDOS } from '../../data/demo'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { actualizarEstadoPedido, actualizarPedidoCompleto, entregarPedidoConPago, obtenerPedido } from '../../services/pedidos.service'
@@ -93,7 +93,7 @@ export function PedidoDetailPage() {
           </div>
         </section>
         <section className="form-section"><div className="flex items-center justify-between"><h2 className="flex items-center gap-2 font-semibold"><Package size={18} className="text-accent" /> Productos</h2><button className="table-action" aria-label="Editar pedido" onClick={() => setEditOpen(true)}><Pencil size={16} /></button></div><div className="mt-4 divide-y divide-line">{pedido.pedido_items?.map((item, index) => <div className="flex items-center gap-3 py-4" key={`${item.producto}-${index}`}><ProductoThumb imagen={item.imagen} cantidad={item.cantidad} alt={item.producto} /><div className="min-w-0 flex-1"><strong className="block truncate text-sm">{item.producto}</strong><span className="text-xs text-muted">{[item.marca, item.talla, item.color].filter(Boolean).join(' · ')}</span></div><strong className="text-sm">${(item.cantidad * item.precio_unitario).toFixed(2)}</strong></div>)}</div></section>
-        <PedidoArchivos pedidoId={pedido.id} codigo={pedido.codigo} onQualityReady={setQualityPhotosReady} />
+        <PedidoArchivos pedidoId={pedido.id} codigo={pedido.codigo} onQualityReady={setQualityPhotosReady} onEstadoAvanzado={(updated) => setPedido((current) => current ? { ...current, ...updated } : updated)} />
         <PedidoLogistica pedidoId={pedido.id} />
         <section className="form-section"><h2 className="flex items-center gap-2 font-semibold"><CalendarDays size={18} className="text-accent" /> Fechas</h2><div className="mt-5 grid gap-4 sm:grid-cols-3"><Info label="Pedido" value={pedido.fecha_pedido} /><Info label="Llegada estimada" value={pedido.fecha_estimada ?? 'Sin definir'} /><Info label="Actualización" value={new Intl.DateTimeFormat('es-NI').format(new Date(pedido.updated_at))} /></div></section>
       </div>
@@ -114,7 +114,7 @@ export function PedidoDetailPage() {
   </div>
 }
 function EtapaTracker({ actual, seleccionado, onSelect }: { actual: EstadoPedido; seleccionado: EstadoPedido; onSelect: (estado: EstadoPedido) => void }) {
-  const actualIndex = Math.max(0, ESTADOS_PEDIDO.findIndex((step) => step.value === actual))
+  const actualIndex = Math.max(0, ESTADOS_PEDIDO.findIndex((step) => step.value === etapaBase(actual)))
   return <div className="mt-5 flex gap-1 overflow-x-auto pb-2">
     {ESTADOS_PEDIDO.map((step, index) => {
       const reached = index <= actualIndex

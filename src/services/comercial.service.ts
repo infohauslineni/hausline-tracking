@@ -84,6 +84,27 @@ export async function sincronizarCatalogo(url = 'https://hauslineshopni.es/catal
   return uniqueRecords.length
 }
 
+// Sincroniza el catálogo web → productos en segundo plano, como máximo una vez cada
+// 15 min (marca de tiempo en localStorage, compartida entre pestañas). Silenciosa: si
+// falla no molesta al usuario (el botón manual y el cron diario siguen disponibles).
+// Devuelve true si realmente sincronizó (para que la página recargue su lista).
+const AUTO_SYNC_KEY = 'hausline_catalogo_sync_at'
+const AUTO_SYNC_MS = 15 * 60_000
+export async function autoSincronizarCatalogo(force = false): Promise<boolean> {
+  try {
+    const previa = Number(localStorage.getItem(AUTO_SYNC_KEY) || 0)
+    if (!force && Date.now() - previa < AUTO_SYNC_MS) return false
+    // Marcamos ANTES de sincronizar para que dos montajes casi simultáneos no disparen
+    // dos sincronizaciones en paralelo.
+    localStorage.setItem(AUTO_SYNC_KEY, String(Date.now()))
+    await sincronizarCatalogo()
+    return true
+  } catch {
+    localStorage.removeItem(AUTO_SYNC_KEY) // deja reintentar en el próximo montaje
+    return false
+  }
+}
+
 export async function listarProveedores() { return cachedQuery('proveedores', async () => { const { data, error } = await client().from('proveedores').select('*').eq('activo', true).order('nombre'); if (error) throw error; return data as Proveedor[] }) }
 export async function guardarProveedor(nombre: string) { const { data, error } = await client().from('proveedores').upsert({ nombre: nombre.trim(), activo: true }, { onConflict: 'nombre' }).select('*').single(); if (error) throw error; invalidateCache('proveedores'); return data as Proveedor }
 

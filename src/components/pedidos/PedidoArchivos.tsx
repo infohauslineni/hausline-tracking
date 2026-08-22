@@ -3,15 +3,17 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { comprimirImagen, eliminarArchivo, listarArchivos, marcaParaTipo, marcarPrincipal, subirArchivo } from '../../services/archivos.service'
-import type { ArchivoPedido, TipoArchivo } from '../../types/domain'
+import { avanzarAWarehousePorMiami } from '../../services/pedidos.service'
+import type { ArchivoPedido, Pedido, TipoArchivo } from '../../types/domain'
 
-// Solo se permite subir fotos de control de calidad. El resto de categorías quedó
-// oculto a pedido del negocio (el componente conserva toda su lógica interna).
+// Categorías visibles para subir fotos. "Recibido en bodega Miami" mueve el pedido
+// automáticamente a "Warehouse HAUSLINE" (ver cargar()).
 const CATEGORIAS: { id: TipoArchivo; label: string; description: string }[] = [
   { id: 'control_calidad', label: 'Control de calidad', description: 'Evidencia de revisión y empaque' },
+  { id: 'recepcion_miami', label: 'Recibido en bodega Miami', description: 'Foto del paquete en la bodega · pasa el pedido a Warehouse HAUSLINE' },
 ]
 
-export function PedidoArchivos({ pedidoId, codigo, onQualityReady }: { pedidoId: string; codigo?: string; onQualityReady?: (ready: boolean) => void }) {
+export function PedidoArchivos({ pedidoId, codigo, onQualityReady, onEstadoAvanzado }: { pedidoId: string; codigo?: string; onQualityReady?: (ready: boolean) => void; onEstadoAvanzado?: (pedido: Pedido) => void }) {
   const [categoria, setCategoria] = useState<TipoArchivo>('control_calidad')
   const [archivos, setArchivos] = useState<ArchivoPedido[]>([])
   const [visibleCliente, setVisibleCliente] = useState(true)
@@ -65,6 +67,13 @@ export function PedidoArchivos({ pedidoId, codigo, onQualityReady }: { pedidoId:
       }
       if (categoria === 'control_calidad' && visibleCliente) onQualityReady?.(true)
       toast.success(`${imagenes.length === 1 ? 'Imagen cargada' : 'Imágenes cargadas'} correctamente.`)
+      // Al subir la foto de recepción en Miami, el pedido pasa solo a "Warehouse HAUSLINE".
+      if (categoria === 'recepcion_miami' && isSupabaseConfigured) {
+        try {
+          const avanzado = await avanzarAWarehousePorMiami(pedidoId)
+          if (avanzado) { onEstadoAvanzado?.(avanzado); toast.success('📦 Pedido movido a “Warehouse HAUSLINE”.') }
+        } catch { toast.error('La foto se guardó, pero no se pudo mover el pedido a Warehouse. Cámbialo a mano.') }
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo cargar la imagen.')
     } finally {
