@@ -67,8 +67,9 @@ async function obtenerFactura(codigo, esNuevo) {
 // Aviso por correo del pedido. Lo dispara SIEMPRE el webhook de Supabase (con el
 // secreto compartido). Al CREAR el pedido (INSERT) —sea manual o al confirmar un
 // encargo web— el pedido nace en 'pedido_confirmado', así que el cliente recibe el
-// correo de "Orden confirmada" (ya NO el de "pedido registrado"). Al cambiar de
-// estado (UPDATE) se envía el aviso de esa etapa, y el comprobante PAGADO al entregar.
+// correo de "Orden confirmada" CON la factura (producto, precio, abono, saldo + PDF),
+// ya NO uno titulado "pedido registrado". Al cambiar de estado (UPDATE) se envía el
+// aviso de esa etapa, y el comprobante PAGADO al entregar.
 // La app NO envía correos por su cuenta, así que no hay envíos duplicados.
 export default async function handler(request, response) {
   if (request.method !== 'POST') return response.status(405).json({ ok: false, error: 'Method not allowed' })
@@ -110,15 +111,13 @@ export default async function handler(request, response) {
   const nombre = body.cliente_nombre ?? null
   if (!correo) return response.status(200).json({ ok: true, skipped: 'cliente sin correo' })
 
-  // Factura dentro del correo: SOLO al entregar (comprobante PAGADO). En la creación ya
-  // no se manda la factura de compra: el primer correo es "Orden confirmada" simple.
-  const conFactura = estado === 'entregado'
-  const factura = conFactura ? await obtenerFactura(record.codigo, false) : null
+  // Factura dentro del correo: al confirmar el pedido (INSERT → tabla de compra con
+  // producto, precio, abono y saldo) y al marcarlo entregado (comprobante PAGADO).
+  const conFactura = esNuevo || estado === 'entregado'
+  const factura = conFactura ? await obtenerFactura(record.codigo, esNuevo) : null
 
   try {
-    // esNuevo:false SIEMPRE → nunca se usa la plantilla de "pedido registrado"; en la
-    // creación el cliente ve el aviso normal de la etapa (Orden confirmada).
-    await enviarCorreoPedido({ correo, nombre, codigo: record.codigo, estado, esNuevo: false, factura })
+    await enviarCorreoPedido({ correo, nombre, codigo: record.codigo, estado, esNuevo, factura })
   } catch (sendError) {
     return response.status(502).json({ ok: false, error: 'No se pudo enviar el correo' })
   }

@@ -118,11 +118,11 @@ export function plantillaCorreo({ nombre, codigo, estadoLabel, nota, urlSeguimie
   const saludo = nombre ? `Hola, ${nombre}` : 'Hola'
   // En la creación del pedido el texto confirma el registro; en los cambios de estado, la actualización.
   const intro = esNuevo
-    ? `Gracias por tu compra. Recibimos tu pedido y ya comenzamos a gestionarlo.`
+    ? `Gracias por tu compra. Confirmamos tu pedido y ya comenzamos a gestionarlo.`
     : `Tu pedido tiene una nueva actualización.`
   // Texto de previsualización (lo que se ve en la bandeja antes de abrir el correo).
   const preheader = esNuevo
-    ? `Registramos tu pedido ${codigo}. Sigue cada etapa desde aquí.`
+    ? `Confirmamos tu pedido ${codigo}. Sigue cada etapa desde aquí.`
     : `${codigo}: ${estadoLabel}. Revisa el detalle del seguimiento.`
   const anio = new Date().getFullYear()
 
@@ -231,7 +231,7 @@ export async function enviarCorreoPedido({ correo, nombre, codigo, estado, esNue
   await transporter.sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to: correo,
-    subject: esNuevo ? `Pedido ${codigo} registrado en Hausline` : `Pedido ${codigo}: ${estadoLabel}`,
+    subject: esNuevo ? `Pedido ${codigo}: Orden confirmada` : `Pedido ${codigo}: ${estadoLabel}`,
     html: plantillaCorreo({ nombre, codigo, estadoLabel, nota, urlSeguimiento, esNuevo, factura }),
     attachments,
   })
