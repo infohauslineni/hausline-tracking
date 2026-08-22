@@ -1,4 +1,6 @@
 import { ESTADO_LABEL, enviarCorreoPedido } from './_correo.js'
+import { facturaPdfBuffer } from './_factura-pdf.js'
+import { subirFacturaDrive } from './_drive.js'
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -122,5 +124,21 @@ export default async function handler(request, response) {
     return response.status(502).json({ ok: false, error: 'No se pudo enviar el correo' })
   }
 
-  return response.status(200).json({ ok: true, sent: correo })
+  // Archiva la MISMA factura del correo en tu Google Drive, en la carpeta del mes y del
+  // código de pedido. Al confirmar → "Orden confirmada"; al pagar/entregar → "Comprobante
+  // pagado", en la MISMA carpeta del pedido. Best-effort: si falla (o no está configurado
+  // Drive), no rompe el aviso, solo se registra en el log.
+  let archivado = false
+  if (factura) {
+    try {
+      const pdf = await facturaPdfBuffer({ codigo: record.codigo, nombre, fecha: factura.fecha, factura })
+      const tipo = factura.variante === 'pago' ? 'Comprobante pagado' : 'Orden confirmada'
+      await subirFacturaDrive({ codigo: record.codigo, fecha: factura.fecha, filename: `${record.codigo} - ${tipo}.pdf`, pdf })
+      archivado = true
+    } catch (driveError) {
+      console.error('drive: no se pudo archivar la factura', driveError?.message)
+    }
+  }
+
+  return response.status(200).json({ ok: true, sent: correo, archivado })
 }
