@@ -5,16 +5,19 @@ import { facturaPdfBuffer } from './_factura-pdf.js'
 // cambiar de estado). Vercel no convierte los archivos con "_" en endpoints, pero sí
 // permite importarlos. Es JavaScript independiente del build de la app.
 
-// Etiqueta pública de cada estado (espejo de src/constants/orders.ts).
+// Etiqueta pública de cada estado (espejo de las 6 etapas de src/constants/orders.ts).
+// Las etapas viejas de bodega se agrupan en "En tránsito" para que el cliente reciba
+// UN solo correo de tránsito. La deduplicación por etiqueta (en notificar-estado.js)
+// evita correos repetidos cuando dos estados comparten etiqueta.
 export const ESTADO_LABEL = {
   pedido_confirmado: 'Orden confirmada',
   en_preparacion: 'En preparación',
-  control_calidad: 'Control de calidad',
-  etiqueta_creada: 'Despachado',
-  despachado: 'Despachado',
-  transito_internacional: 'En tránsito internacional',
-  recibido_estados_unidos: 'En tránsito internacional',
-  transito_nicaragua: 'En tránsito internacional',
+  control_calidad: 'En preparación',
+  etiqueta_creada: 'En tránsito',
+  despachado: 'En tránsito',
+  transito_internacional: 'En tránsito',
+  recibido_estados_unidos: 'En tránsito',
+  transito_nicaragua: 'En tránsito',
   llego_nicaragua: 'País de destino',
   disponible_entrega: 'Disponible para entrega',
   entregado: 'Entregado',
@@ -24,13 +27,13 @@ export const ESTADO_LABEL = {
 
 export const ESTADO_NOTA = {
   pedido_confirmado: 'Gracias por tu compra. Confirmamos tu pedido y ya comenzamos a prepararlo. Te avisaremos en cada etapa.',
-  en_preparacion: 'Estamos preparando tu pedido con la fábrica antes de enviarlo.',
-  control_calidad: 'Tu pedido está pasando por control de calidad. Ya puedes ver las fotos de tu producto en el seguimiento.',
-  etiqueta_creada: 'Tu pedido fue despachado y ya va en camino.',
-  despachado: 'Tu pedido fue despachado y ya va en camino.',
-  transito_internacional: 'Tu pedido va en tránsito internacional rumbo a Nicaragua.',
-  recibido_estados_unidos: 'Tu pedido va en tránsito internacional rumbo a Nicaragua.',
-  transito_nicaragua: 'Tu pedido va en tránsito internacional rumbo a Nicaragua.',
+  en_preparacion: 'Estamos preparando y revisando tu pedido antes de enviarlo.',
+  control_calidad: 'Estamos preparando y revisando tu pedido antes de enviarlo.',
+  etiqueta_creada: 'Tu pedido va en tránsito rumbo a Nicaragua.',
+  despachado: 'Tu pedido va en tránsito rumbo a Nicaragua.',
+  transito_internacional: 'Tu pedido va en tránsito rumbo a Nicaragua.',
+  recibido_estados_unidos: 'Tu pedido va en tránsito rumbo a Nicaragua.',
+  transito_nicaragua: 'Tu pedido va en tránsito rumbo a Nicaragua.',
   llego_nicaragua: 'Tu pedido llegó a Nicaragua. Pronto estará disponible para entrega.',
   disponible_entrega: 'Tu pedido ya está disponible para entrega. Escríbenos para coordinar el envío o retiro.',
   entregado: 'Tu pedido fue entregado. Gracias por confiar en Hausline.',
