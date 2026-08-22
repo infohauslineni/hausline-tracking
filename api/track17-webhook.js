@@ -1,14 +1,16 @@
 import { createClient } from '@supabase/supabase-js'
 import { verificarFirma, extraerTrackings, aplicarEventoTrayectos } from './_track17.js'
 
-// Recibe los avisos de 17TRACK (proveedor → Miami) y los mete en la tubería que ya
-// existe: inserta el evento en tracking_eventos (fuente 'track17'), actualiza el
-// trayecto y avanza el estado del pedido. Ese cambio de estado dispara SOLO el
-// correo con tu marca (webhook de Supabase → api/notificar-estado).
+// Recibe los avisos de 17TRACK (proveedor → Miami) y SOLO refresca la ubicación del
+// trayecto en el panel de Logística (un único UPDATE, ruta rápida). NO avanza el estado
+// del pedido ni dispara correos: esas etapas se cambian a mano desde Pedidos. La respuesta
+// tiene que ser veloz o 17TRACK marca el push como fallido (504) y reintenta en bucle.
 //
 // Seguridad: candado principal = token secreto en la URL (?token=...), que solo
 // 17track conoce porque lo configuras en su panel. La firma SHA256 se comprueba
 // como capa extra (no bloqueante) y se registra en el log.
+export const config = { maxDuration: 20 }
+
 export default async function handler(request, response) {
   if (request.method !== 'POST') return response.status(405).json({ ok: false, error: 'Method not allowed' })
 
@@ -43,11 +45,10 @@ export default async function handler(request, response) {
   let procesados = 0
   let avanzados = 0
 
-  // Todo el trabajo (buscar trayectos, anti-duplicado, insertar evento, avanzar el
-  // pedido) vive en aplicarEventoTrayectos() para que el push (aquí) y el poll del
-  // cron se comporten EXACTAMENTE igual.
+  // Ruta rápida (soloUbicacion): un UPDATE por guía, sin selects ni inserts de historial,
+  // para responder al instante. El historial completo lo arma el poll del cron.
   for (const item of trackings) {
-    const r = await aplicarEventoTrayectos(client, item)
+    const r = await aplicarEventoTrayectos(client, item, { soloUbicacion: true })
     procesados += r.procesados
     avanzados += r.avanzados
   }

@@ -204,12 +204,27 @@ export function resumirTracking(item) {
 //   • 17track solo cubre proveedor → Miami. Su "Delivered" = llegó a Miami, NO la
 //     entrega final: por eso NUNCA finalizamos el trayecto desde aquí (guardamos
 //     'en_transito'); el estado del pedido sí avanza vía sincronizarPedido.
-// Devuelve { procesados, avanzados }.
-export async function aplicarEventoTrayectos(client, item) {
+// Devuelve { procesados, avanzados }. Con { soloUbicacion: true } hace SOLO una
+// actualización rápida (un UPDATE, sin historial) para que el WEBHOOK responda al
+// instante y 17TRACK no marque el push como fallido (504). El poll del cron usa la
+// ruta completa (con historial en tracking_eventos) porque tiene más tiempo.
+export async function aplicarEventoTrayectos(client, item, { soloUbicacion = false } = {}) {
   const info = resumirTracking(item)
   if (!info.numero) return { procesados: 0, avanzados: 0 }
   const estadoTrayecto = mapearEstadoTrayecto(info.status)
   if (!estadoTrayecto) return { procesados: 0, avanzados: 0 } // NotFound / Expired: nada que hacer
+  // 17track solo cubre proveedor → Miami: su "entregado" NO finaliza el trayecto.
+  const estadoTrayectoGuardar = estadoTrayecto === 'entregado' ? 'en_transito' : estadoTrayecto
+
+  // Ruta rápida del webhook: un solo UPDATE de la ubicación en todos los trayectos con
+  // esa guía que sigan activos. Sin selects previos ni inserts → responde en < 1 s.
+  if (soloUbicacion) {
+    const { data, error } = await client.from('trayectos')
+      .update({ estado: estadoTrayectoGuardar, ultima_ubicacion: info.ubicacion || null, ultimo_evento: info.descripcion })
+      .eq('tracking', info.numero).eq('activo', true).select('id')
+    if (error) { console.error('track17: update rápido falló', error.message); return { procesados: 0, avanzados: 0 } }
+    return { procesados: data?.length ?? 0, avanzados: 0 }
+  }
 
   const { data: trayectos, error: trayError } = await client
     .from('trayectos')
@@ -245,7 +260,6 @@ export async function aplicarEventoTrayectos(client, item) {
     })
     if (evError) { console.error('track17: error insertando evento', evError.message); continue }
 
-    const estadoTrayectoGuardar = estadoTrayecto === 'entregado' ? 'en_transito' : estadoTrayecto
     const { error: upError } = await client.from('trayectos').update({
       estado: estadoTrayectoGuardar,
       ultima_ubicacion: info.ubicacion || null,

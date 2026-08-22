@@ -9,6 +9,8 @@ import { pollGuiasActivas } from './_track17.js'
 // Autorización: sirve para dos cosas y acepta ambas —
 //   • el botón "Actualizar seguimiento" del panel manda la sesión del admin (JWT), o
 //   • un cron externo manda el CRON_SECRET (Vercel Hobby no permite crons sub-diarios).
+export const config = { maxDuration: 60 }
+
 export default async function handler(request, response) {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return response.status(500).json({ ok: false, error: 'Missing server configuration' })
