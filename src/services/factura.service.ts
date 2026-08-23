@@ -3,7 +3,7 @@ import { whatsappUrl } from '../utils/whatsapp'
 // Factura / comprobante de compra que se genera al registrar un pedido, para enviarla al
 // cliente junto con su código de seguimiento. Disponible como imagen (WhatsApp) y como PDF.
 
-export type FacturaLinea = { producto: string; detalle?: string; cantidad: number; precio: number }
+export type FacturaLinea = { producto: string; detalle?: string; cantidad: number; precio: number; codigo?: string | null; imagen?: string | null }
 export type FacturaData = {
   codigo: string
   cliente: string
@@ -30,8 +30,44 @@ function truncar(context: CanvasRenderingContext2D, texto: string, maxAncho: num
   return `${recorte}…`
 }
 
+// Carga una imagen para dibujarla en el canvas. Pide CORS ('anonymous'): si el
+// servidor no lo permite, la carga falla (onerror) en vez de "contaminar" el canvas,
+// así que toBlob nunca se rompe. Si falla, devolvemos null y la línea va sin foto.
+function cargarImagen(url: string) {
+  return new Promise<HTMLImageElement | null>((resolve) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => resolve(img)
+    img.onerror = () => resolve(null)
+    img.src = url
+  })
+}
+
+// Dibuja la imagen recortada tipo "object-fit: cover" dentro del recuadro.
+function dibujarCover(context: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number) {
+  const ir = img.width / img.height, r = w / h
+  let sw: number, sh: number, sx: number, sy: number
+  if (ir > r) { sh = img.height; sw = sh * r; sx = (img.width - sw) / 2; sy = 0 }
+  else { sw = img.width; sh = sw / r; sx = 0; sy = (img.height - sh) / 2 }
+  context.drawImage(img, sx, sy, sw, sh, x, y, w, h)
+}
+
 async function facturaJpeg(data: FacturaData) {
+  // Precarga las fotos de los productos (máx. las 12 que caben). Si alguna se
+  // "contamina" y toBlob se rompe, reintenta sin fotos.
+  const visibles = data.items.slice(0, 12)
+  const fotos = await Promise.all(visibles.map((item) => (item.imagen ? cargarImagen(item.imagen) : Promise.resolve(null))))
+  try {
+    return await renderFactura(data, visibles, fotos)
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'SecurityError') return await renderFactura(data, visibles, visibles.map(() => null))
+    throw error
+  }
+}
+
+async function renderFactura(data: FacturaData, visibles: FacturaLinea[], fotos: (HTMLImageElement | null)[]) {
   const esPago = data.variante === 'pago'
+  const hayFotos = fotos.some(Boolean)
   const canvas = document.createElement('canvas'); canvas.width = 1240; canvas.height = 1754
   const context = canvas.getContext('2d'); if (!context) throw new Error('No se pudo crear la factura.')
   context.fillStyle = '#f6f7f3'; context.fillRect(0, 0, canvas.width, canvas.height)
@@ -59,16 +95,29 @@ async function facturaJpeg(data: FacturaData) {
   context.textAlign = 'center'; context.fillText('CANT.', 860, 535)
   context.textAlign = 'right'; context.fillText('SUBTOTAL', 1140, 535); context.textAlign = 'left'
 
-  // Líneas (máx. 12 para que quepan)
+  // Líneas (máx. 12 para que quepan). Si hay fotos, se reserva una columna con la
+  // miniatura del producto; el texto se corre a la derecha.
+  const textX = hayFotos ? 195 : 100
+  const anchoNombre = hayFotos ? 610 : 700
   let y = 590
-  for (const item of data.items.slice(0, 12)) {
-    context.fillStyle = '#151815'; context.font = '600 30px Arial'; context.fillText(truncar(context, item.producto || 'Producto', 700), 100, y)
-    if (item.detalle) { context.fillStyle = '#8a8f89'; context.font = '500 22px Arial'; context.fillText(truncar(context, item.detalle, 700), 100, y + 32) }
+  visibles.forEach((item, i) => {
+    const codigo = (item.codigo ?? '').trim()
+    const sub = [codigo ? `Cód. ${codigo}` : '', item.detalle].filter(Boolean).join('   ·   ')
+    if (hayFotos) {
+      const foto = fotos[i]
+      const top = y - 38
+      context.save(); context.beginPath(); context.roundRect(100, top, 74, 74, 14)
+      if (foto) { context.clip(); dibujarCover(context, foto, 100, top, 74, 74) }
+      else { context.fillStyle = '#eef0ea'; context.fill(); context.fillStyle = '#9aa093'; context.font = '600 22px Arial'; context.textAlign = 'center'; context.fillText(`${item.cantidad}×`, 137, top + 46); context.textAlign = 'left' }
+      context.restore()
+    }
+    context.fillStyle = '#151815'; context.font = '600 30px Arial'; context.fillText(truncar(context, item.producto || 'Producto', anchoNombre), textX, y)
+    if (sub) { context.fillStyle = '#8a8f89'; context.font = '500 22px Arial'; context.fillText(truncar(context, sub, anchoNombre), textX, y + 32) }
     context.fillStyle = '#343934'; context.font = '600 30px Arial'; context.textAlign = 'center'; context.fillText(`${item.cantidad}`, 860, y)
     context.textAlign = 'right'; context.fillText(`USD ${(item.cantidad * item.precio).toFixed(2)}`, 1140, y); context.textAlign = 'left'
-    y += item.detalle ? 86 : 64
-  }
-  if (data.items.length > 12) { context.fillStyle = '#8a8f89'; context.font = '500 24px Arial'; context.fillText(`+ ${data.items.length - 12} producto(s) más`, 100, y); y += 50 }
+    y += hayFotos ? 100 : sub ? 86 : 64
+  })
+  if (data.items.length > 12) { context.fillStyle = '#8a8f89'; context.font = '500 24px Arial'; context.fillText(`+ ${data.items.length - 12} producto(s) más`, textX, y); y += 50 }
 
   // Totales
   const totalsY = Math.max(y + 40, 1220)

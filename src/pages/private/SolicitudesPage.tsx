@@ -18,6 +18,13 @@ function tiempoRestante(venceAt: string): { texto: string; tono: 'ok' | 'warn' |
 }
 const usd = (n: number) => `USD ${Number(n).toFixed(2)}`
 const nio = (n: number | null) => (n != null ? `≈ C$${Number(n).toLocaleString('es-NI', { maximumFractionDigits: 0 })}` : '')
+// Monto en dólares y su equivalente en córdobas (redondeado a la decena, como el resto
+// de la app) para los recordatorios de WhatsApp: "USD 80.00 (≈ C$2,960)".
+const usdNio = (monto: number, tipoCambio: number | null) => {
+  const tc = tipoCambio && tipoCambio > 0 ? tipoCambio : 37
+  const cordobas = Math.round((Number(monto) * tc) / 10) * 10
+  return `USD ${Number(monto).toFixed(2)} (≈ C$${cordobas.toLocaleString('es-NI')})`
+}
 const fechaCorta = (iso: string) => new Intl.DateTimeFormat('es-NI', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(iso))
 
 export function SolicitudesPage() {
@@ -139,9 +146,10 @@ function SolicitudCard({ s, busy, onConfirm, onDiscard }: { s: Solicitud; busy: 
   const abono50 = s.pago_tipo === '50'
   const rapido = s.envio === 'rapido'
   // El mensaje de WhatsApp cambia según urgencia: por vencer vs pedir comprobante.
+  const montoRecordar = usdNio(abono50 ? s.abono : s.total, s.tipo_cambio)
   const mensaje = urgente
-    ? `Hola ${s.cliente_nombre} 👋, tu encargo ${s.codigo} de ${s.producto} está por vencer (te quedan pocas horas). Para no perderlo, transferí ${usd(abono50 ? s.abono : s.total)} y envianos el comprobante. ¡Gracias!`
-    : `Hola ${s.cliente_nombre}, vi tu encargo ${s.codigo} de ${s.producto} (${usd(abono50 ? s.abono : s.total)}). Para confirmarlo necesito el comprobante de la transferencia. ¡Gracias!`
+    ? `Hola ${s.cliente_nombre} 👋, tu encargo ${s.codigo} de ${s.producto} está por vencer (te quedan pocas horas). Para no perderlo, transferí ${montoRecordar} y envianos el comprobante. ¡Gracias!`
+    : `Hola ${s.cliente_nombre}, vi tu encargo ${s.codigo} de ${s.producto} (${montoRecordar}). Para confirmarlo necesito el comprobante de la transferencia. ¡Gracias!`
   return <article className={`panel-card ${urgente ? 'border-red-400/40' : ''}`}>
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex items-start gap-3">

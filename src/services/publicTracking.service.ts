@@ -40,7 +40,7 @@ function demoPublicOrder(order: Pedido): PublicOrder {
     fecha_pedido: order.fecha_pedido, fecha_estimada: estimateDateForPreview(order.estado), fecha_entrega: order.estado === 'entregado' ? order.updated_at : null,
     ultima_actualizacion: order.updated_at, imagen_principal: null,
     notas_publicas: order.notas_publicas ?? (order.estado === 'incidencia' ? 'Estamos gestionando una incidencia logística.' : 'Tu pedido avanza según lo previsto.'),
-    productos: (order.pedido_items ?? []).map((item) => ({ producto: item.producto, marca: item.marca ?? null, categoria: item.categoria ?? null, talla: item.talla ?? null, color: item.color ?? null, cantidad: item.cantidad, imagen: item.imagen ?? null })),
+    productos: (order.pedido_items ?? []).map((item) => ({ producto: item.producto, codigo: item.codigo_producto ?? null, marca: item.marca ?? null, categoria: item.categoria ?? null, talla: item.talla ?? null, color: item.color ?? null, cantidad: item.cantidad, imagen: item.imagen ?? null })),
     historial: [
       { estado: 'Pedido confirmado', nota: 'Recibimos y confirmamos tu pedido.', ubicacion: null, fecha: order.created_at },
       ...(order.estado !== 'pedido_confirmado' ? [{ estado: estadoLabelPublico(order.estado), nota: order.notas_publicas ?? 'Tu pedido fue actualizado.', ubicacion: routes.at(-1)?.ultima_ubicacion ?? null, fecha: order.updated_at }] : []),

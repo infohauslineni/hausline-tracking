@@ -38,6 +38,10 @@ export type Solicitud = {
 function requireSupabase() { if (!supabase) throw new Error('Supabase no está configurado.'); return supabase }
 
 export async function listarSolicitudes() {
+  // Antes de listar, vence los encargos de +24 h sin confirmar (pendiente → vencida)
+  // para que salgan solos de la bandeja "por confirmar" apenas se abre la página, sin
+  // esperar al cron diario. Si falla, seguimos igual (no es crítico).
+  try { await requireSupabase().rpc('vencer_solicitudes') } catch { /* no crítico */ }
   const { data, error } = await requireSupabase().from('solicitudes').select('*').order('created_at', { ascending: false })
   if (error) throw error
   const solicitudes = data as unknown as Solicitud[]

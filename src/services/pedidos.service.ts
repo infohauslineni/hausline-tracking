@@ -27,6 +27,38 @@ function requireSupabase() {
   return supabase
 }
 
+// Envío rápido (14–17 días): recargo único de US$ 15 por pedido. Se cobra como una
+// línea real del pedido para que el total, el saldo, la factura, las ventas y la
+// contabilidad cuadren solos (el total del pedido = suma de los subtotales de sus
+// líneas). Precio de compra 0 → es margen puro (ingreso por el servicio de envío).
+export const ENVIO_RAPIDO_RECARGO = 15
+// Marca interna para reconocer y no duplicar la línea del envío rápido.
+const ENVIO_RAPIDO_NOTA = '__envio_rapido__'
+
+// True si el ítem es la línea automática del envío rápido (no un producto real).
+export function esLineaEnvioRapido(item: Pick<PedidoItem, 'notas'>) {
+  return item.notas === ENVIO_RAPIDO_NOTA
+}
+
+// Quita cualquier línea previa de envío rápido y, si corresponde, agrega una fresca.
+// Así, al crear/editar, el recargo lo maneja solo la casilla "envío rápido" y nunca
+// se duplica ni queda pegado si se desmarca.
+function conLineaEnvioRapido(items: PedidoItem[], envioRapido?: boolean): PedidoItem[] {
+  const base = items.filter((item) => !esLineaEnvioRapido(item))
+  if (!envioRapido) return base
+  return [...base, {
+    producto: 'Envío rápido (14–17 días)',
+    categoria: 'Servicio',
+    cantidad: 1,
+    precio_unitario: ENVIO_RAPIDO_RECARGO,
+    precio_compra: 0,
+    envio_internacional: 0,
+    costo_delivery: 0,
+    otros_gastos: 0,
+    notas: ENVIO_RAPIDO_NOTA,
+  }]
+}
+
 // Rellena la foto de cada producto del pedido desde el catálogo (tabla productos),
 // emparejando por CÓDIGO, cuando el ítem no trae su propia imagen. Se resuelve en
 // CADA carga, así que si subís el producto al catálogo —o corregís un código mal
@@ -51,6 +83,31 @@ async function adjuntarFotosCatalogo(items: PedidoItem[]) {
     const foto = porCodigo.get(norm(item.codigo_producto || item.producto))
     if (foto) item.imagen = foto
   }
+}
+
+// "Aprende" el costo del producto: si el producto del catálogo AÚN NO tiene costo
+// (precio_compra en 0), le guarda el costo unitario que se pagó al proveedor en el
+// pedido. NUNCA pisa un costo ya existente. Empareja por producto_id o, si no, por
+// código. Así, al registrar el pago al proveedor de un encargo sin costo, el producto
+// queda con su costo real (deja de salir en $0.00).
+async function aprenderCostoProducto(client: NonNullable<typeof supabase>, item: Pick<PedidoItem, 'producto_id' | 'codigo_producto'>, costoUnitario: number) {
+  const costo = Number(costoUnitario)
+  if (!(costo > 0)) return
+  const codigo = (item.codigo_producto ?? '').trim()
+  let query = client.from('productos').select('id, precio_compra')
+  if (item.producto_id) query = query.eq('id', item.producto_id)
+  else if (codigo) query = query.ilike('codigo', codigo)
+  else return
+  const { data, error } = await query.limit(1).maybeSingle()
+  if (error || !data) return
+  if (Number(data.precio_compra || 0) > 0) return // ya tiene costo: no lo tocamos
+  await client.from('productos').update({ precio_compra: costo }).eq('id', data.id)
+}
+
+// De los ítems de un pedido, devuelve los que son PRODUCTOS reales (con producto_id o
+// código), excluyendo servicios como el envío rápido o el delivery cobrado.
+function itemsProducto<T extends Pick<PedidoItem, 'producto_id' | 'codigo_producto' | 'notas'>>(items: T[]): T[] {
+  return items.filter((it) => !esLineaEnvioRapido(it) && Boolean(it.producto_id || (it.codigo_producto ?? '').trim()))
 }
 
 function fechaNicaragua() {
@@ -187,7 +244,8 @@ export async function eliminarPedido(id: string) {
 
 export async function crearPedido(input: NuevoPedidoInput) {
   const client = requireSupabase()
-  const { items, ...pedido } = input
+  const { items: itemsBase, ...pedido } = input
+  const items = conLineaEnvioRapido(itemsBase, input.envio_rapido)
   const { data: created, error } = await client.from('pedidos').insert(pedido).select('*').single()
   if (error) throw error
 
@@ -229,6 +287,14 @@ export async function crearPedido(input: NuevoPedidoInput) {
     if (paymentError) { await client.from('pedidos').delete().eq('id', created.id); throw paymentError }
     await client.from('movimientos_cuenta').insert({ fecha: `${input.fecha_pedido}T12:00:00`, tipo: 'ingreso', descripcion: `Abono inicial ${created.codigo}`, monto: input.abono, metodo: input.metodo_pago || null, pedido_id: created.id, pago_id: payment.id })
   }
+  // Aprende el costo del producto si el pedido es de un solo producto y ese producto
+  // aún no tiene costo en el catálogo (mismo criterio que al ajustar el costo real).
+  const productosCreados = itemsProducto(items)
+  const distintosCrear = new Set(productosCreados.map((it) => it.producto_id || (it.codigo_producto ?? '').trim().toUpperCase()))
+  if (productosCreados.length && distintosCrear.size === 1) {
+    await aprenderCostoProducto(client, productosCreados[0], Number(productosCreados[0].precio_compra || 0))
+  }
+
   invalidateComercial()
   return created as Pedido
 }
@@ -238,7 +304,7 @@ export async function actualizarPedidoCompleto(id: string, input: EditarPedidoIn
   const { data: anteriores, error: anterioresError } = await client.from('pedido_items').select('*').eq('pedido_id', id)
   if (anterioresError) throw anterioresError
 
-  const nuevos = input.items.map((item) => ({
+  const nuevos = conLineaEnvioRapido(input.items, input.envio_rapido).map((item) => ({
     pedido_id: id,
     producto: item.producto.trim(),
     marca: item.marca?.trim() || null,
@@ -287,6 +353,20 @@ export async function actualizarPedidoCompleto(id: string, input: EditarPedidoIn
 // "Proveedor" y el movimiento de caja asociado para que la ganancia y la caja cuadren.
 async function ajustarCostoProveedor(client: NonNullable<typeof supabase>, pedidoId: string, monto: number) {
   const nuevoCosto = Math.max(0, monto)
+
+  // Si el pedido tiene UN SOLO producto y ese producto aún no tiene costo en el
+  // catálogo, le aprendemos el costo pagado al proveedor (costo unitario = monto /
+  // cantidad). Solo con un producto para no repartir mal en pedidos de varios.
+  if (nuevoCosto > 0) {
+    const { data: itemsPedido } = await client.from('pedido_items').select('producto_id, codigo_producto, cantidad, notas').eq('pedido_id', pedidoId)
+    const productos = itemsProducto(itemsPedido ?? [])
+    const distintos = new Set(productos.map((it) => it.producto_id || (it.codigo_producto ?? '').trim().toUpperCase()))
+    if (productos.length && distintos.size === 1) {
+      const cantidad = productos.reduce((sum, it) => sum + Number(it.cantidad || 1), 0) || 1
+      await aprenderCostoProducto(client, productos[0], nuevoCosto / cantidad)
+    }
+  }
+
   const { data: gasto, error: gastoError } = await client.from('gastos').select('id').eq('pedido_id', pedidoId).ilike('categoria', '%proveedor%').maybeSingle()
   if (gastoError) throw gastoError
 

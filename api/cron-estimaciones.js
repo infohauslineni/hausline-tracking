@@ -85,6 +85,17 @@ export default async function handler(request, response) {
     console.error('cron: sync catálogo falló', catalogoError?.message)
   }
 
+  // Vence los encargos web que pasaron de 24 h sin confirmarse: los saca de la bandeja
+  // "por confirmar" (pendiente → vencida). Aislado para no tumbar lo principal.
+  let vencidas = 0
+  try {
+    const { data: nVencidas, error: vencerError } = await client.rpc('vencer_solicitudes')
+    if (vencerError) console.error('cron: vencer encargos falló', vencerError.message)
+    else vencidas = Number(nVencidas ?? 0)
+  } catch (vencerError) {
+    console.error('cron: vencer encargos falló', vencerError?.message)
+  }
+
   return response.status(200).json({
     ok: true,
     updated: Number(data ?? 0),
@@ -93,5 +104,6 @@ export default async function handler(request, response) {
     consultadas: track17.consultadas,
     avanzados_track17: track17.avanzados,
     catalogo,
+    vencidas,
   })
 }

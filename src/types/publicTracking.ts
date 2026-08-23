@@ -1,6 +1,6 @@
 import type { EstadoPedido, EstadoTrayecto } from './domain'
 
-export type PublicProduct = { producto: string; marca: string | null; categoria: string | null; talla: string | null; color: string | null; cantidad: number; imagen: string | null }
+export type PublicProduct = { producto: string; codigo: string | null; marca: string | null; categoria: string | null; talla: string | null; color: string | null; cantidad: number; imagen: string | null }
 export type PublicHistory = { estado: string; nota: string | null; ubicacion: string | null; fecha: string }
 export type PublicEvent = { descripcion: string; ubicacion: string | null; fecha: string }
 export type PublicJourney = { tipo: string; origen: string | null; destino: string | null; transportista: string | null; tracking: string | null; url_tracking: string | null; estado: EstadoTrayecto; ultima_ubicacion: string | null; ultimo_evento: string | null; fecha_estimada: string | null; eventos: PublicEvent[] }

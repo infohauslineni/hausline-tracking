@@ -1,7 +1,7 @@
 import { Plus, Save, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Modal } from '../ui/Modal'
-import type { EditarPedidoInput } from '../../services/pedidos.service'
+import { ENVIO_RAPIDO_RECARGO, esLineaEnvioRapido, type EditarPedidoInput } from '../../services/pedidos.service'
 import type { Pedido, PedidoItem } from '../../types/domain'
 import { costoRealPedido } from '../../utils/pedidoCosto'
 
@@ -25,7 +25,9 @@ export function EditarPedidoModal({ pedido, open, onClose, onSave }: {
 
   useEffect(() => {
     if (!open) return
-    setItems(pedido.pedido_items?.length ? pedido.pedido_items.map((item) => ({ ...item })) : [{ ...itemVacio }])
+    // La línea de envío rápido no se edita a mano: la maneja la casilla de abajo.
+    const productos = (pedido.pedido_items ?? []).filter((item) => !esLineaEnvioRapido(item))
+    setItems(productos.length ? productos.map((item) => ({ ...item })) : [{ ...itemVacio }])
     setFechaEstimada(pedido.fecha_estimada ?? '')
     setAbono(Number(pedido.abono))
     const proveedor = pedido.gastos?.find((gasto) => (gasto.categoria ?? '').toLowerCase().includes('proveedor'))
@@ -36,7 +38,8 @@ export function EditarPedidoModal({ pedido, open, onClose, onSave }: {
     setError('')
   }, [open, pedido])
 
-  const total = useMemo(() => items.reduce((sum, item) => sum + Number(item.cantidad || 0) * Number(item.precio_unitario || 0), 0), [items])
+  const totalProductos = useMemo(() => items.reduce((sum, item) => sum + Number(item.cantidad || 0) * Number(item.precio_unitario || 0), 0), [items])
+  const total = totalProductos + (envioRapido ? ENVIO_RAPIDO_RECARGO : 0)
   const changeItem = (index: number, field: keyof PedidoItem, value: string | number) => setItems((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item))
 
   const submit = async (event: FormEvent) => {
@@ -84,7 +87,7 @@ export function EditarPedidoModal({ pedido, open, onClose, onSave }: {
         <Field label="Notas internas"><textarea rows={3} value={notasInternas} onChange={(event) => setNotasInternas(event.target.value)} /></Field>
         <Field label="Nota visible para el cliente"><textarea rows={3} value={notasPublicas} onChange={(event) => setNotasPublicas(event.target.value)} /></Field>
       </div>
-      <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-line bg-white/[0.02] p-3 transition hover:border-accent/40"><input type="checkbox" className="size-4 shrink-0 accent-accent" checked={envioRapido} onChange={(event) => setEnvioRapido(event.target.checked)} /><span className="flex flex-col"><span className="text-sm font-medium">El cliente quiere envío rápido</span><span className="text-[11px] text-muted">Llega en 14 a 17 días en vez de 20 a 25 (cuesta $15 extra en la tienda).</span></span></label>
+      <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-line bg-white/[0.02] p-3 transition hover:border-accent/40"><input type="checkbox" className="size-4 shrink-0 accent-accent" checked={envioRapido} onChange={(event) => setEnvioRapido(event.target.checked)} /><span className="flex flex-col"><span className="text-sm font-medium">El cliente quiere envío rápido</span><span className="text-[11px] text-muted">Llega en 14 a 17 días en vez de 20 a 25. Suma US$15 al total del pedido (una sola vez).</span></span></label>
       <div className="grid gap-3 rounded-xl border border-line bg-white/[0.025] p-4 sm:grid-cols-3"><Money label="Total" value={total} /><Money label="Abono" value={abono} /><Money label="Saldo" value={total - abono} accent /><Money label="Costo real" value={costoProveedor} /><Money label="Ganancia estimada" value={total - costoProveedor} /></div>
       {error && <p className="text-sm text-red-300">{error}</p>}
       <div className="flex justify-end gap-2"><button type="button" className="subtle-button px-4" onClick={onClose}>Cancelar</button><button className="primary-button px-5" disabled={saving}><Save size={16} /> {saving ? 'Guardando…' : 'Guardar cambios'}</button></div>
