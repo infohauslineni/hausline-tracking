@@ -1,5 +1,25 @@
 import { enviarCorreoEncargoAdmin } from './_correo.js'
 
+// Catálogo público de la TIENDA (proyecto Supabase distinto al del tracking). Ahí
+// vive la foto de cada producto (catalogo_web.datos.imagen) por código. La llave es
+// "publishable" (solo lectura pública, la misma que usa el sitio), no un secreto.
+const TIENDA_URL = 'https://xgdijumnmaqfirmckugw.supabase.co'
+const TIENDA_KEY = 'sb_publishable_NwpQth6G3qhpvtnRan3Xfg_8EqPM4Pw'
+
+// Trae la foto del producto por su código, para mostrarla en el correo. Best-effort:
+// si el producto no está en el catálogo del panel o falla la red, devuelve ''.
+async function fotoProducto(codigo) {
+  if (!codigo) return ''
+  try {
+    const url = `${TIENDA_URL}/rest/v1/catalogo_web?select=datos&codigo=eq.${encodeURIComponent(codigo)}&limit=1`
+    const r = await fetch(url, { headers: { apikey: TIENDA_KEY, authorization: `Bearer ${TIENDA_KEY}` } })
+    if (!r.ok) return ''
+    const filas = await r.json()
+    const datos = Array.isArray(filas) && filas[0] ? filas[0].datos : null
+    return (datos && (datos.imagen || (Array.isArray(datos.imagenes) && datos.imagenes[0]))) || ''
+  } catch { return '' }
+}
+
 // Aviso INTERNO (para ti) cuando cae un ENCARGO WEB nuevo desde el catálogo.
 //
 // Lo dispara el webhook de Supabase (Database Webhook) sobre la tabla `solicitudes`
@@ -44,6 +64,9 @@ export default async function handler(request, response) {
 
   const destino = (process.env.AVISO_ADMIN || process.env.SMTP_USER || '').trim()
   if (!destino) return response.status(200).json({ ok: true, skipped: 'sin destinatario' })
+
+  // Foto del producto (por código) para mostrarla en el correo. Best-effort.
+  record.imagen = await fotoProducto(record.producto_codigo)
 
   try {
     await enviarCorreoEncargoAdmin({ to: destino, solicitud: record })

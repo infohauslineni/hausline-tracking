@@ -252,9 +252,17 @@ export function plantillaEncargoAdmin({ s, panelUrl }) {
             </td></tr>
           </table>
 
-          <div style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#8b93a7;margin:0 0 6px;">Producto</div>
-          <p style="margin:0 0 4px;font-size:16px;font-weight:700;color:#0b0f19;">${esc(s.producto)}${s.cantidad > 1 ? ` <span style="color:#6b7280;font-weight:600;">× ${Number(s.cantidad)}</span>` : ''}</p>
-          ${detalle ? `<p style="margin:0 0 18px;font-size:13px;color:#6b7280;">${detalle}</p>` : '<div style="height:10px;"></div>'}
+          <div style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#8b93a7;margin:0 0 10px;">Producto</div>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;"><tr>
+            <td style="vertical-align:top;padding-right:14px;width:88px;">${s.imagen
+              ? `<img src="${esc(s.imagen)}" width="88" height="88" alt="" style="display:block;width:88px;height:88px;border-radius:12px;object-fit:cover;border:1px solid #eef0f2;background-color:#f6f7f9;">`
+              : `<div style="width:88px;height:88px;border-radius:12px;border:1px solid #eef0f2;background-color:#f6f7f9;"></div>`}</td>
+            <td style="vertical-align:top;">
+              <p style="margin:0 0 4px;font-size:16px;font-weight:700;color:#0b0f19;line-height:1.3;">${esc(s.producto)}${s.cantidad > 1 ? ` <span style="color:#6b7280;font-weight:600;">× ${Number(s.cantidad)}</span>` : ''}</p>
+              ${s.producto_codigo ? `<div style="display:inline-block;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;font-weight:700;letter-spacing:.4px;color:#0b0f19;background-color:#f2f4f6;border:1px solid #e6e8ec;border-radius:6px;padding:3px 9px;margin:0 0 6px;">${esc(s.producto_codigo)}</div>` : ''}
+              ${detalle ? `<p style="margin:4px 0 0;font-size:13px;color:#6b7280;">${detalle}</p>` : ''}
+            </td>
+          </tr></table>
 
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #eef0f2;margin-top:8px;padding-top:8px;">
             ${fila('Total', `${montoUSD(s.total)}${totalNio ? ` &nbsp;·&nbsp; <span style="color:#6b7280;font-weight:600;">${totalNio}</span>` : ''}`)}
@@ -297,7 +305,9 @@ export async function enviarCorreoEncargoAdmin({ to, solicitud }) {
   await transporter.sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to,
-    subject: `🛒 Nuevo encargo ${solicitud.codigo}: ${solicitud.producto}`,
+    // Asunto estilo Shopify: "Order SOL-0545 · $67.00 · chrome hearts T SHIRT".
+    // Así, en la notificación del teléfono se lee corto y directo.
+    subject: `Order ${solicitud.codigo} · ${montoUSD(solicitud.total).replace('USD ', '$')} · ${solicitud.producto}`,
     html: plantillaEncargoAdmin({ s: solicitud, panelUrl }),
   })
 }
