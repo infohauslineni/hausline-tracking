@@ -199,6 +199,109 @@ ${bloqueEstado}${bloqueFactura(factura)}
 </body></html>`
 }
 
+function montoNIO(valor) {
+  if (valor === null || valor === undefined || valor === '') return ''
+  return `C$ ${(Number(valor) || 0).toLocaleString('es-NI', { maximumFractionDigits: 0 })}`
+}
+
+// ── Aviso INTERNO (para ti) cuando cae un ENCARGO WEB nuevo ──────────────────
+// No va al cliente: avisa al negocio que entró una solicitud desde el catálogo,
+// con el resumen (cliente, producto, montos, envío) y un botón al panel de
+// "Encargos por confirmar". El encargo vence en 24 h si no se confirma.
+export function plantillaEncargoAdmin({ s, panelUrl }) {
+  const anio = new Date().getFullYear()
+  const wa = String(s.cliente_whatsapp || '').replace(/[^0-9]/g, '')
+  const waLink = wa ? `https://wa.me/${wa}` : ''
+  const detalle = [
+    s.marca && `Marca: ${esc(s.marca)}`,
+    s.talla && `Talla: ${esc(s.talla)}`,
+    s.color && `Color: ${esc(s.color)}`,
+    s.producto_codigo && `Código: ${esc(s.producto_codigo)}`,
+  ].filter(Boolean).join(' · ')
+  const envio = s.envio === 'rapido' ? 'Envío rápido (14-17 días)' : 'Envío estándar (20-25 días)'
+  const pago = s.pago_tipo === '50' ? 'Abono 50%' : 'Pago total'
+  const totalNio = montoNIO(s.total_nio)
+
+  const fila = (label, valor) => valor
+    ? `<tr>
+        <td style="padding:7px 0;font-size:13px;color:#6b7280;white-space:nowrap;vertical-align:top;width:130px;">${label}</td>
+        <td style="padding:7px 0;font-size:14px;color:#0b0f19;font-weight:600;">${valor}</td>
+      </tr>`
+    : ''
+
+  return `<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><title>Encargo ${esc(s.codigo)}</title></head>
+<body style="margin:0;padding:0;background-color:#ececed;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#ececed;">Nuevo encargo ${esc(s.codigo)}: ${esc(s.producto)}. Vence en 24 h.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#ececed;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 24px rgba(17,24,39,.08);">
+        <tr><td style="background-color:#0b0f19;padding:30px 24px;text-align:center;">
+          <div style="color:#ffffff;font-size:24px;font-weight:800;letter-spacing:5px;line-height:1;">HAUSLINE</div>
+          <div style="color:#c8a24b;font-size:11px;font-weight:600;letter-spacing:3px;text-transform:uppercase;margin-top:8px;">Nuevo encargo web</div>
+        </td></tr>
+        <tr><td style="height:4px;background-color:#c8a24b;font-size:0;line-height:0;">&nbsp;</td></tr>
+        <tr><td style="padding:32px 36px 8px;">
+          <p style="margin:0 0 4px;font-size:18px;font-weight:700;color:#0b0f19;">Entró un encargo desde el catálogo</p>
+          <p style="margin:0 0 22px;font-size:14px;line-height:1.6;color:#b26a00;">⏳ Vence en 24 h si no lo confirmas.</p>
+
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;">
+            <tr><td style="background-color:#f6f7f9;border:1px solid #e6e8ec;border-radius:10px;padding:14px 18px;">
+              <span style="font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#8b93a7;">Código del encargo</span><br>
+              <span style="font-size:18px;font-weight:800;color:#0b0f19;letter-spacing:1px;">${esc(s.codigo)}</span>
+            </td></tr>
+          </table>
+
+          <div style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#8b93a7;margin:0 0 6px;">Producto</div>
+          <p style="margin:0 0 4px;font-size:16px;font-weight:700;color:#0b0f19;">${esc(s.producto)}${s.cantidad > 1 ? ` <span style="color:#6b7280;font-weight:600;">× ${Number(s.cantidad)}</span>` : ''}</p>
+          ${detalle ? `<p style="margin:0 0 18px;font-size:13px;color:#6b7280;">${detalle}</p>` : '<div style="height:10px;"></div>'}
+
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #eef0f2;margin-top:8px;padding-top:8px;">
+            ${fila('Total', `${montoUSD(s.total)}${totalNio ? ` &nbsp;·&nbsp; <span style="color:#6b7280;font-weight:600;">${totalNio}</span>` : ''}`)}
+            ${fila('Pago', `${pago}${(Number(s.abono) || 0) > 0 ? ` — abona ${montoUSD(s.abono)}` : ''}`)}
+            ${fila('Envío', envio)}
+            ${fila('Cliente', esc(s.cliente_nombre))}
+            ${fila('WhatsApp', waLink ? `<a href="${waLink}" target="_blank" style="color:#0b0f19;text-decoration:underline;">${esc(s.cliente_whatsapp)}</a>` : esc(s.cliente_whatsapp))}
+            ${fila('Correo', s.cliente_correo ? esc(s.cliente_correo) : '')}
+            ${fila('Ciudad', s.cliente_ciudad ? esc(s.cliente_ciudad) : '')}
+            ${fila('Dirección', s.cliente_direccion ? esc(s.cliente_direccion) : '')}
+            ${fila('Comprobante', s.comprobante_url ? `<a href="${esc(s.comprobante_url)}" target="_blank" style="color:#0b0f19;text-decoration:underline;">Ver comprobante</a>` : 'Aún sin subir')}
+          </table>
+
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:26px;"><tr><td align="center">
+            <a href="${panelUrl}" target="_blank" style="display:inline-block;background-color:#c8a24b;color:#0b0f19;text-decoration:none;font-weight:700;font-size:15px;padding:15px 38px;border-radius:10px;">Abrir en el panel</a>
+          </td></tr></table>
+        </td></tr>
+        <tr><td style="padding:26px 36px 32px;border-top:1px solid #eef0f2;text-align:center;">
+          <p style="margin:0;font-size:11px;color:#b7bcc5;">© ${anio} Hausline · Aviso interno automático</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`
+}
+
+// Envía el aviso interno del encargo web nuevo. `to` puede traer varias direcciones
+// separadas por coma. Lanza si el SMTP falla.
+export async function enviarCorreoEncargoAdmin({ to, solicitud }) {
+  const appUrl = (process.env.APP_URL ?? process.env.VITE_PUBLIC_APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
+  const panelUrl = `${appUrl}/solicitudes`
+
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
+    port: Number(process.env.SMTP_PORT ?? 465),
+    secure: true,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  })
+
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
+    to,
+    subject: `🛒 Nuevo encargo ${solicitud.codigo}: ${solicitud.producto}`,
+    html: plantillaEncargoAdmin({ s: solicitud, panelUrl }),
+  })
+}
+
 // Envía el correo del pedido (creación o cambio de estado). Lanza si el SMTP falla.
 // `factura` es opcional: cuando llega, el correo incluye la tabla de la compra
 // (al crear el pedido) o del pago (al entregarlo).
