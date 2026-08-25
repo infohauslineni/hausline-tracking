@@ -27,7 +27,9 @@ async function calcularEstado(): Promise<{ badges: Badges; alertas: Alerta[] }> 
     '/pagos': pedidos.filter((p) => (p.estado === 'disponible_entrega' || p.estado === 'entregado') && Number(p.saldo) > 0.01).length,
     '/logistica': pedidos.filter((p) => p.estado === 'incidencia').length,
   }
-  return { badges, alertas: calcularAlertas(pedidos) }
+  // Trayectos para las alertas de "tracking sin novedad" (best-effort).
+  const trayectos = await (async () => { try { const { listarTrayectos } = await import('../../services/logistica.service'); return await listarTrayectos() } catch { return [] } })()
+  return { badges, alertas: calcularAlertas(pedidos, trayectos) }
 }
 
 type NavItem = { to: string; label: string; icon: typeof CircleGauge; nuevo?: boolean }

@@ -13,12 +13,16 @@ import { eliminarTrayecto, guardarTrayecto, listarTransportistas, listarTrayecto
 import { listarPedidos } from '../../services/pedidos.service'
 import type { EstadoPedido, Inversion, Pedido, Transportista, Trayecto } from '../../types/domain'
 import { etapaBase } from '../../constants/orders'
+import { trayectoEstancado } from '../../utils/alertas'
 
 const trackingSchema = z.object({
   destino_tipo: z.enum(['pedido', 'stock']),
   destino_id: z.string().uuid('Selecciona un pedido o producto de stock.'),
   transportista_id: z.string(),
   tracking: z.string().trim().min(1, 'Ingresa el número de tracking.'),
+  costo_envio: z.string().optional(),
+  peso: z.string().optional(),
+  fecha_estimada: z.string().optional(),
 })
 type TrackingForm = z.infer<typeof trackingSchema>
 type EditingTarget = { kind: 'pedido'; value: Trayecto } | { kind: 'stock'; value: Inversion } | null
@@ -102,7 +106,7 @@ export function LogisticaPage() {
   return <div>
     {!isSupabaseConfigured && <div className="preview-banner"><strong>Vista previa local:</strong> datos de demostración.</div>}
     <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Cadena de suministro</p><h1 className="page-title">Logística</h1><p className="page-subtitle">Asocia cada tracking a un pedido o a un producto de stock.</p></div><div className="flex gap-2">{isSupabaseConfigured && <button className="subtle-button px-4" onClick={() => void actualizarSeguimiento()} disabled={actualizando}><RefreshCw size={16} className={actualizando ? 'animate-spin' : ''} /> {actualizando ? 'Actualizando…' : 'Actualizar seguimiento'}</button>}<button className="primary-button px-5" onClick={() => { setEditing(null); setModalOpen(true) }}><Plus size={18} /> Agregar tracking</button></div></div>
-    <section className="mt-7 max-w-sm"><Metric label="Trackings activos" value={activos} /></section>
+    <section className="mt-7 grid max-w-lg gap-3 sm:grid-cols-2"><Metric label="Trackings activos" value={activos} /><Metric label="Sin novedad (7+ días)" value={trayectos.filter(trayectoEstancado).length} danger /></section>
     <div className="mt-6"><div className="relative max-w-lg"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" size={18} /><input value={search} onChange={(event) => setSearch(event.target.value)} className="search-input" placeholder="Pedido, stock, tracking o paquetería" /></div></div>
     <h2 className="mt-6 text-sm font-semibold text-accent">Trackings activos</h2>
     <div className="mt-3 grid gap-4 xl:grid-cols-2">
@@ -123,7 +127,18 @@ function TrackingButtons({ tracking }: { tracking: string }) {
 
 function RouteCard({ route, onEdit, onDelete, onDelivered, onReopen }: { route: Trayecto; onEdit: () => void; onDelete: () => void; onDelivered: () => void; onReopen: () => void }) {
   const carrierName = route.transportistas?.nombre ?? 'Sin paquetería'
-  return <article className={`rounded-2xl border bg-panel p-4 sm:p-5 ${route.estado === 'entregado' ? 'border-emerald-300/20' : 'border-line'}`}><div className="flex items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><strong className="tracking-wide">{route.pedidos?.codigo}</strong>{route.estado === 'entregado' && <span className="status-badge status-success">Recibido en USA</span>}</div><p className="mt-1 text-xs">Pedido · <span className="font-semibold text-sky-300">{route.pedidos?.clientes?.nombre}</span></p></div><CardActions onEdit={onEdit} onDelete={onDelete} /></div><TrackingBox tracking={route.tracking ?? ''} carrier={carrierName} /><TrackingProgress route={route} /><div className="mt-5 flex flex-wrap gap-2 border-t border-line pt-4"><TrackingButtons tracking={route.tracking ?? ''} />{route.pedidos?.codigo && <a className="subtle-button text-[#c4b5fd]" href={`/tracking/${route.pedidos.codigo}`} target="_blank" rel="noopener noreferrer"><Eye size={15} /> Ver seguimiento</a>}{route.estado !== 'entregado' ? <DeliveredButton onClick={onDelivered} label="Recibido en USA" /> : <button className="subtle-button ml-auto text-amber-200" onClick={onReopen}>Corregir entrega</button>}</div></article>
+  const estancado = trayectoEstancado(route)
+  const border = route.estado === 'entregado' ? 'border-emerald-300/20' : estancado ? 'border-amber-300/45' : 'border-line'
+  return <article className={`rounded-2xl border bg-panel p-4 sm:p-5 ${border}`}><div className="flex items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><strong className="tracking-wide">{route.pedidos?.codigo}</strong>{route.estado === 'entregado' && <span className="status-badge status-success">Recibido en USA</span>}{estancado && <span className="status-badge status-preparacion">Sin novedad</span>}</div><p className="mt-1 text-xs">Pedido · <span className="font-semibold text-sky-300">{route.pedidos?.clientes?.nombre}</span></p></div><CardActions onEdit={onEdit} onDelete={onDelete} /></div><TrackingBox tracking={route.tracking ?? ''} carrier={carrierName} /><TrackingProgress route={route} /><EnvioInfo route={route} /><div className="mt-5 flex flex-wrap gap-2 border-t border-line pt-4"><TrackingButtons tracking={route.tracking ?? ''} />{route.pedidos?.codigo && <a className="subtle-button text-[#c4b5fd]" href={`/tracking/${route.pedidos.codigo}`} target="_blank" rel="noopener noreferrer"><Eye size={15} /> Ver seguimiento</a>}{route.estado !== 'entregado' ? <DeliveredButton onClick={onDelivered} label="Recibido en USA" /> : <button className="subtle-button ml-auto text-amber-200" onClick={onReopen}>Corregir entrega</button>}</div></article>
+}
+
+function EnvioInfo({ route }: { route: Trayecto }) {
+  const partes: string[] = []
+  if (route.costo_envio != null && Number(route.costo_envio) > 0) partes.push(`Envío $${Number(route.costo_envio).toFixed(2)}`)
+  if (route.peso != null && Number(route.peso) > 0) partes.push(`${route.peso} kg`)
+  if (route.fecha_estimada) partes.push(`ETA ${String(route.fecha_estimada).slice(0, 10)}`)
+  if (!partes.length) return null
+  return <p className="mt-2.5 text-[11px] text-muted">{partes.join('  ·  ')}</p>
 }
 
 function StockRouteCard({ item, onEdit, onDelete, onDelivered, onReopen }: { item: Inversion; onEdit: () => void; onDelete: () => void; onDelivered: () => void; onReopen: () => void }) {
@@ -133,13 +148,13 @@ function StockRouteCard({ item, onEdit, onDelete, onDelivered, onReopen }: { ite
 }
 
 function TrackingModal({ open, editing, pedidos, stock, carriers, onClose, onRouteSaved, onStockSaved }: { open: boolean; editing: EditingTarget; pedidos: Pedido[]; stock: Inversion[]; carriers: Transportista[]; onClose: () => void; onRouteSaved: (value: Trayecto) => void; onStockSaved: (value: Inversion) => void }) {
-  const { register, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<TrackingForm>({ resolver: zodResolver(trackingSchema), defaultValues: { destino_tipo: 'pedido', destino_id: '', transportista_id: '', tracking: '' } })
+  const { register, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<TrackingForm>({ resolver: zodResolver(trackingSchema), defaultValues: { destino_tipo: 'pedido', destino_id: '', transportista_id: '', tracking: '', costo_envio: '', peso: '', fecha_estimada: '' } })
   const targetType = watch('destino_tipo')
   useEffect(() => {
     const everest = carriers.find((item) => item.codigo === 'EVEREST')
-    if (editing?.kind === 'pedido') reset({ destino_tipo: 'pedido', destino_id: editing.value.pedido_id, transportista_id: editing.value.transportista_id ?? '', tracking: editing.value.tracking ?? '' })
-    else if (editing?.kind === 'stock') { const carrier = carriers.find((item) => item.nombre === editing.value.transportista || item.codigo === editing.value.transportista); reset({ destino_tipo: 'stock', destino_id: editing.value.id, transportista_id: carrier?.id ?? '', tracking: editing.value.tracking ?? '' }) }
-    else reset({ destino_tipo: 'pedido', destino_id: '', transportista_id: everest?.id ?? '', tracking: '' })
+    if (editing?.kind === 'pedido') reset({ destino_tipo: 'pedido', destino_id: editing.value.pedido_id, transportista_id: editing.value.transportista_id ?? '', tracking: editing.value.tracking ?? '', costo_envio: editing.value.costo_envio != null ? String(editing.value.costo_envio) : '', peso: editing.value.peso != null ? String(editing.value.peso) : '', fecha_estimada: (editing.value.fecha_estimada ?? '').slice(0, 10) })
+    else if (editing?.kind === 'stock') { const carrier = carriers.find((item) => item.nombre === editing.value.transportista || item.codigo === editing.value.transportista); reset({ destino_tipo: 'stock', destino_id: editing.value.id, transportista_id: carrier?.id ?? '', tracking: editing.value.tracking ?? '', costo_envio: '', peso: '', fecha_estimada: '' }) }
+    else reset({ destino_tipo: 'pedido', destino_id: '', transportista_id: everest?.id ?? '', tracking: '', costo_envio: '', peso: '', fecha_estimada: '' })
   }, [carriers, editing, open, reset])
 
   const submit = async (values: TrackingForm) => {
@@ -157,7 +172,7 @@ function TrackingModal({ open, editing, pedidos, stock, carriers, onClose, onRou
       const order = pedidos.find((item) => item.id === values.destino_id)
       if (!order) throw new Error('Selecciona un pedido.')
       const existing = editing?.kind === 'pedido' ? editing.value : null
-      const input: TrayectoInput = { pedido_id: order.id, transportista_id: carrier?.id ?? null, tipo_trayecto: 'China → Nicaragua vía Estados Unidos', pais_origen: 'China', pais_destino: 'Nicaragua', tracking: values.tracking.trim(), url_tracking: carrier?.url_tracking ?? null, estado: existing?.estado ?? 'etiqueta_creada', ultima_ubicacion: existing?.ultima_ubicacion ?? null, ultimo_evento: existing?.ultimo_evento ?? 'Etiqueta creada por el proveedor', fecha_envio: existing?.fecha_envio ?? null, fecha_estimada: existing?.fecha_estimada ?? null, peso: existing?.peso ?? null, costo_envio: existing?.costo_envio ?? null, numero_paquete: existing?.numero_paquete ?? 'Caja', notas_internas: existing?.notas_internas ?? null, visible_cliente: existing?.visible_cliente ?? true, orden: existing?.orden ?? 1 }
+      const input: TrayectoInput = { pedido_id: order.id, transportista_id: carrier?.id ?? null, tipo_trayecto: 'China → Nicaragua vía Estados Unidos', pais_origen: 'China', pais_destino: 'Nicaragua', tracking: values.tracking.trim(), url_tracking: carrier?.url_tracking ?? null, estado: existing?.estado ?? 'etiqueta_creada', ultima_ubicacion: existing?.ultima_ubicacion ?? null, ultimo_evento: existing?.ultimo_evento ?? 'Etiqueta creada por el proveedor', fecha_envio: existing?.fecha_envio ?? null, fecha_estimada: values.fecha_estimada || existing?.fecha_estimada || null, peso: values.peso ? Number(values.peso) : (existing?.peso ?? null), costo_envio: values.costo_envio !== undefined && values.costo_envio !== '' ? Number(values.costo_envio) : null, numero_paquete: existing?.numero_paquete ?? 'Caja', notas_internas: existing?.notas_internas ?? null, visible_cliente: existing?.visible_cliente ?? true, orden: existing?.orden ?? 1 }
       const saved = isSupabaseConfigured ? await guardarTrayecto(input, existing?.id) : { ...input, id: existing?.id ?? crypto.randomUUID(), fecha_entrega: null, activo: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), pedidos: { codigo: order.codigo, estado: order.estado, clientes: order.clientes ? { nombre: order.clientes.nombre } : null }, transportistas: carrier, tracking_eventos: [] }
       onRouteSaved(saved)
       toast.success(existing ? 'Tracking actualizado.' : 'Tracking agregado al pedido.')
@@ -169,6 +184,12 @@ function TrackingModal({ open, editing, pedidos, stock, carriers, onClose, onRou
     <Field label={targetType === 'stock' ? 'Producto de stock' : 'Pedido'} error={errors.destino_id?.message}><select {...register('destino_id')} disabled={Boolean(editing)}><option value="">Selecciona</option>{targetType === 'stock' ? stock.filter((item) => item.estado !== 'descartado' && (!item.tracking || editing?.kind === 'stock' && editing.value.id === item.id)).map((item) => <option key={item.id} value={item.id}>{item.codigo || 'SIN CÓDIGO'} · {item.producto} · {item.talla_color || 'Sin talla'}</option>) : pedidos.filter((item) => item.estado !== 'entregado' && item.estado !== 'cancelado').map((item) => <option key={item.id} value={item.id}>{item.codigo} · {item.clientes?.nombre}</option>)}</select></Field>
     <Field label="Paquetería"><select {...register('transportista_id')}><option value="">Sin paquetería</option>{carriers.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}</select></Field>
     <Field label="Número de tracking" error={errors.tracking?.message}><input placeholder="Tracking enviado por el proveedor" {...register('tracking')} /></Field>
+    {targetType === 'pedido' && <>
+      <Field label="Costo de envío (USD)"><input type="number" step=".01" min="0" placeholder="0.00" {...register('costo_envio')} /></Field>
+      <Field label="Peso (kg, opcional)"><input type="number" step=".01" min="0" placeholder="Ej. 2.5" {...register('peso')} /></Field>
+      <Field label="Fecha estimada de llegada"><input type="date" {...register('fecha_estimada')} /></Field>
+      <p className="col-span-full -mt-1 text-[11px] leading-4 text-muted">El costo de envío se suma al costo del pedido y baja su ganancia (y el saldo de caja), como un gasto "Envío internacional".</p>
+    </>}
     <div className="col-span-full flex justify-end gap-2"><button type="button" className="subtle-button px-4" onClick={onClose}>Cancelar</button><button className="primary-button px-5" disabled={isSubmitting}>{isSubmitting ? 'Guardando…' : 'Guardar tracking'}</button></div>
   </form></Modal>
 }
@@ -225,6 +246,7 @@ function TrackingProgress({ route }: { route: Trayecto }) {
     {alerta && <p className="mt-2 text-[11px] font-medium text-amber-200">Requiere atención</p>}
     {detalle && <p className="mt-2 flex min-w-0 items-center gap-1.5 text-[11px] text-muted"><MapPin size={12} className="shrink-0" /><span className="truncate">{detalle}</span></p>}
     <p className="mt-1.5 flex items-center gap-1.5 text-[10px] text-muted"><RefreshCw size={10} className="shrink-0" />{auto ? 'Se actualiza solo vía 17TRACK' : 'Aún sin datos de 17TRACK'}{cuando ? ` · ${cuando}` : ''}</p>
+    {trayectoEstancado(route) && <p className="mt-1.5 flex items-center gap-1.5 text-[11px] font-medium text-amber-200">⚠️ Sin movimiento {cuando ?? ''} — revisá el envío.</p>}
   </div>
 }
 function TrackingBox({ tracking, carrier, stock = false }: { tracking: string; carrier: string; stock?: boolean }) { return <div className="mt-5 flex items-center gap-3 rounded-xl border border-line bg-black/15 p-3"><span className="grid size-10 shrink-0 place-items-center rounded-lg bg-white/[0.04] text-muted">{stock ? <Package size={19} /> : <Truck size={19} />}</span><div className="min-w-0 flex-1"><strong className="block truncate text-sm">{tracking}</strong><p className="mt-1 truncate text-xs text-muted">{carrier}</p></div></div> }

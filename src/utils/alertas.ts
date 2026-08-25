@@ -1,5 +1,15 @@
 import { etapaBase } from '../constants/orders'
-import type { Pedido } from '../types/domain'
+import type { Pedido, Trayecto } from '../types/domain'
+
+// Un tracking está "sin novedad" (posible estancamiento) si 17TRACK lo alimenta
+// automáticamente pero no registra un evento nuevo hace 7+ días y aún no fue recibido.
+const DIAS_ESTANCADO = 7
+export function trayectoEstancado(t: Trayecto): boolean {
+  if (t.estado === 'entregado' || t.estado === 'cancelado') return false
+  const auto = (t.tracking_eventos ?? []).some((e) => e.fuente === 'track17')
+  if (!auto) return false
+  return dias(t.updated_at) >= DIAS_ESTANCADO
+}
 
 // Centro de alertas: deriva avisos accionables de los pedidos reales (sin tablas nuevas).
 // Cada alerta se recalcula en cada carga, así que desaparece sola cuando el problema se
@@ -10,9 +20,13 @@ export type Alerta = { id: string; prioridad: PrioridadAlerta; icono: string; ti
 const dias = (fecha?: string | null) => { const raw = fecha || ''; return Math.floor((Date.now() - new Date(raw.includes('T') ? raw : `${raw}T12:00:00`).getTime()) / 86_400_000) }
 const money = (n: number) => new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0)
 
-export function calcularAlertas(pedidos: Pedido[]): Alerta[] {
+export function calcularAlertas(pedidos: Pedido[], trayectos: Trayecto[] = []): Alerta[] {
   const activos = pedidos.filter((p) => !['entregado', 'cancelado'].includes(p.estado))
   const alertas: Alerta[] = []
+
+  // 🚚 Trackings sin novedad (posible estancamiento).
+  const estancados = trayectos.filter(trayectoEstancado)
+  if (estancados.length) alertas.push({ id: 'tracking_estancado', prioridad: 'media', icono: '🚚', titulo: `${estancados.length} ${estancados.length === 1 ? 'tracking sin novedad' : 'trackings sin novedad'}`, descripcion: `Sin movimiento de 17TRACK hace ${DIAS_ESTANCADO}+ días. Revisá el envío.`, to: '/logistica' })
 
   // 🔴 Cobros vencidos: saldo pendiente en pedidos ya entregados o de +30 días.
   const vencidos = pedidos.filter((p) => p.estado !== 'cancelado' && Number(p.saldo) > 0.01 && (p.estado === 'entregado' || dias(p.fecha_pedido) > 30))

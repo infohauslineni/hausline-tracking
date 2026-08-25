@@ -74,6 +74,29 @@ export async function listarTransportistas() {
   return data as Transportista[]
 }
 
+// El costo de envío del tracking se registra como un GASTO "Envío internacional" del
+// pedido, para que entre al COSTO real y baje la GANANCIA (y el saldo de caja), igual que
+// cualquier otro gasto. Se mantiene UNO solo por pedido (marcado con `__envio_tracking__`):
+// al editar se actualiza, y si el costo queda en 0 o se borra el tracking, se elimina.
+const MARCA_ENVIO = '__envio_tracking__'
+async function sincronizarGastoEnvio(pedidoId: string | null | undefined, monto: number | null | undefined, fecha: string) {
+  if (!pedidoId) return
+  const client = requireSupabase()
+  const total = Number(monto || 0)
+  const { data: existente } = await client.from('gastos').select('id').eq('pedido_id', pedidoId).eq('observaciones', MARCA_ENVIO).limit(1).maybeSingle()
+  if (!(total > 0)) {
+    if (existente) { await client.from('movimientos_cuenta').delete().eq('gasto_id', existente.id); await client.from('gastos').delete().eq('id', existente.id) }
+    return
+  }
+  if (existente) {
+    await client.from('gastos').update({ monto: total, monto_original: total, fecha }).eq('id', existente.id)
+    await client.from('movimientos_cuenta').update({ monto: total, monto_original: total, fecha: `${fecha}T12:00:00` }).eq('gasto_id', existente.id)
+  } else {
+    const { data: g } = await client.from('gastos').insert({ fecha, categoria: 'Envío internacional', descripcion: 'Envío internacional (tracking)', monto: total, moneda: 'USD', monto_original: total, pedido_id: pedidoId, metodo_pago: null, observaciones: MARCA_ENVIO }).select('id').single()
+    if (g) await client.from('movimientos_cuenta').insert({ fecha: `${fecha}T12:00:00`, tipo: 'gasto', descripcion: 'Envío internacional', monto: total, moneda: 'USD', monto_original: total, pedido_id: pedidoId, gasto_id: g.id, observaciones: MARCA_ENVIO })
+  }
+}
+
 export async function guardarTrayecto(input: TrayectoInput, id?: string) {
   const client = requireSupabase()
   const query = id ? client.from('trayectos').update(input).eq('id', id) : client.from('trayectos').insert(input)
@@ -81,12 +104,18 @@ export async function guardarTrayecto(input: TrayectoInput, id?: string) {
   if (error) throw error
   const trayecto = data as unknown as Trayecto
   await sincronizarPedido(trayecto, trayecto.estado, trayecto.ultimo_evento ?? '', trayecto.ultima_ubicacion ?? '')
+  // Refleja el costo de envío en el costo/ganancia del pedido (best-effort).
+  try { await sincronizarGastoEnvio(trayecto.pedido_id, trayecto.costo_envio, (trayecto.fecha_envio ?? new Date().toISOString()).slice(0, 10)) } catch { /* no crítico */ }
   return trayecto
 }
 
 export async function eliminarTrayecto(id: string) {
-  const { error } = await requireSupabase().from('trayectos').delete().eq('id', id)
+  const client = requireSupabase()
+  // Antes de borrar, quita el gasto de envío asociado (si lo hubiera).
+  const { data: t } = await client.from('trayectos').select('pedido_id').eq('id', id).maybeSingle()
+  const { error } = await client.from('trayectos').delete().eq('id', id)
   if (error) throw error
+  if (t?.pedido_id) { try { await sincronizarGastoEnvio(t.pedido_id, 0, new Date().toISOString().slice(0, 10)) } catch { /* no crítico */ } }
 }
 
 export async function marcarTrayectoEntregado(id: string) {
