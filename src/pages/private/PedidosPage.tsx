@@ -2,7 +2,7 @@ import { ArrowUpRight, Ban, Boxes, CalendarDays, CheckCircle2, ChevronDown, Down
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
-import { ESTADOS_PEDIDO, estadoLabel, estadoTone } from '../../constants/orders'
+import { ESTADOS_PEDIDO, estadoLabel, estadoTone, etapaBase } from '../../constants/orders'
 import { DEMO_PEDIDOS } from '../../data/demo'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { actualizarEstadoPedido, eliminarPedido, listarPedidos } from '../../services/pedidos.service'
@@ -24,7 +24,7 @@ export function PedidosPage() {
   // Lista principal: del mes, SIN entregados ni cancelados, aplicando estado y búsqueda.
   const filtered = useMemo(() => {
     const term = search.toLowerCase().trim()
-    return delMes.filter((p) => p.estado !== 'entregado' && p.estado !== 'cancelado' && (estado === 'todos' || p.estado === estado) && coincide(p, term))
+    return delMes.filter((p) => p.estado !== 'entregado' && p.estado !== 'cancelado' && (estado === 'todos' || etapaBase(p.estado) === estado) && coincide(p, term))
   }, [estado, delMes, search])
 
   // Cancelados del mes: van en su propio apartado, abajo (fuera de la lista principal).

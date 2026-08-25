@@ -1,4 +1,4 @@
-import { BarChart3, Bell, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, MoreHorizontal, PackagePlus, PackageSearch, Plus, ReceiptText, Settings, ShoppingBag, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
+import { ArrowUpRight, BarChart3, Bell, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, MoreHorizontal, PackagePlus, PackageSearch, Plus, ReceiptText, Settings, ShoppingBag, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -6,11 +6,13 @@ import { useAuth } from '../../contexts/AuthContext'
 import { isSupabaseConfigured, supabase } from '../../lib/supabase'
 import { prefetchRoute, warmDashboard } from '../../utils/prefetchDashboard'
 import { playEncargoChime } from '../../utils/notify'
+import { calcularAlertas, contarUrgentes, type Alerta } from '../../utils/alertas'
 import { Brand } from '../ui/Brand'
 
 type Badges = Record<string, number>
-// Contadores de "requiere atención" que se muestran junto a los enlaces del menú.
-async function calcularBadges(): Promise<Badges> {
+// Contadores de "requiere atención" del menú + alertas para la campana. Se calculan de
+// una sola carga de pedidos (se recalculan en cada navegación).
+async function calcularEstado(): Promise<{ badges: Badges; alertas: Alerta[] }> {
   const { listarPedidos } = await import('../../services/pedidos.service')
   const pedidos = await listarPedidos()
   // Encargos web pendientes de confirmar. Aislado en try/catch por si la tabla aún no existe.
@@ -19,12 +21,13 @@ async function calcularBadges(): Promise<Badges> {
     const { listarSolicitudes } = await import('../../services/solicitudes.service')
     solicitudes = (await listarSolicitudes()).filter((s) => s.estado === 'pendiente').length
   } catch { /* la tabla solicitudes puede no estar creada todavía */ }
-  return {
+  const badges: Badges = {
     '/pedidos': pedidos.filter((p) => p.estado === 'disponible_entrega').length,
     '/solicitudes': solicitudes,
     '/pagos': pedidos.filter((p) => (p.estado === 'disponible_entrega' || p.estado === 'entregado') && Number(p.saldo) > 0.01).length,
     '/logistica': pedidos.filter((p) => p.estado === 'incidencia').length,
   }
+  return { badges, alertas: calcularAlertas(pedidos) }
 }
 
 type NavItem = { to: string; label: string; icon: typeof CircleGauge; nuevo?: boolean }
@@ -34,20 +37,33 @@ const operaciones: NavItem[] = [
   { to: '/pedidos', label: 'Pedidos', icon: Boxes },
   { to: '/ventas', label: 'Ventas', icon: ShoppingBag },
   { to: '/solicitudes', label: 'Encargos web', icon: Inbox },
+]
+const clientesProductos: NavItem[] = [
   { to: '/clientes', label: 'Clientes', icon: Users },
   { to: '/productos', label: 'Productos', icon: PackageSearch },
   { to: '/stock', label: 'Stock e inversiones', icon: HandCoins },
+]
+// "Mi cuenta" es el hub de dinero: gastos, ingresos, salidas, estado de cuenta y saldo.
+// Por eso "Gastos" ya no es una entrada aparte (se registran desde Mi cuenta).
+const finanzas: NavItem[] = [
   { to: '/pagos', label: 'Pagos', icon: CreditCard },
-  { to: '/gastos', label: 'Gastos', icon: ReceiptText },
-  { to: '/logistica', label: 'Logística', icon: Truck },
+  { to: '/cuenta', label: 'Mi cuenta', icon: Wallet },
   { to: '/reportes', label: 'Reportes', icon: BarChart3, nuevo: true },
+]
+const logistica: NavItem[] = [
+  { to: '/logistica', label: 'Logística', icon: Truck },
 ]
 // Opciones administrativas (agrupadas aparte; se pueden ocultar por rol más adelante).
 const administracion: NavItem[] = [
-  { to: '/cuenta', label: 'Mi cuenta', icon: Wallet },
   { to: '/configuracion', label: 'Configuración', icon: Settings },
 ]
-const navGroups = [{ title: 'Operaciones', items: operaciones }, { title: 'Administración', items: administracion }]
+const navGroups = [
+  { title: 'Operaciones', items: operaciones },
+  { title: 'Clientes y productos', items: clientesProductos },
+  { title: 'Finanzas', items: finanzas },
+  { title: 'Logística', items: logistica },
+  { title: 'Administración', items: administracion },
+]
 // Barra inferior en móvil: Resumen · Pedidos · (+) · Ventas · Más.
 const mobileLinks = [operaciones[0], operaciones[1], operaciones[2]]
 // Accesos rápidos del botón central "+" en móvil.
@@ -62,11 +78,14 @@ export function PrivateLayout() {
   const [open, setOpen] = useState(false)
   const [fabOpen, setFabOpen] = useState(false)
   const [badges, setBadges] = useState<Badges>({})
+  const [alertas, setAlertas] = useState<Alerta[]>([])
+  const [bellOpen, setBellOpen] = useState(false)
   const { user, signOut } = useAuth()
   const location = useLocation()
   useEffect(() => { warmDashboard() }, [])
-  // Refresca los contadores al cambiar de página (los datos vienen del caché de pedidos).
-  useEffect(() => { if (!isSupabaseConfigured) return; let vivo = true; void calcularBadges().then((next) => { if (vivo) setBadges(next) }).catch(() => undefined); return () => { vivo = false } }, [location.pathname])
+  // Refresca los contadores y las alertas al cambiar de página (datos del caché de pedidos).
+  useEffect(() => { if (!isSupabaseConfigured) return; let vivo = true; void calcularEstado().then((next) => { if (vivo) { setBadges(next.badges); setAlertas(next.alertas) } }).catch(() => undefined); return () => { vivo = false } }, [location.pathname])
+  useEffect(() => { setBellOpen(false) }, [location.pathname])
 
   // Aviso en vivo cuando cae un encargo nuevo desde la web: suena una campanita
   // (tipo Shopify), sale un toast y se marca el contador de "Encargos web".
@@ -76,7 +95,7 @@ export function PrivateLayout() {
     const channel = client.channel('encargos-alerta').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'solicitudes' }, () => {
       playEncargoChime()
       toast.success('🛍️ Nuevo encargo web — revisalo en "Encargos web".')
-      void calcularBadges().then(setBadges).catch(() => undefined)
+      void calcularEstado().then((next) => { setBadges(next.badges); setAlertas(next.alertas) }).catch(() => undefined)
     }).subscribe()
     return () => { void client.removeChannel(channel) }
   }, [])
@@ -120,7 +139,22 @@ export function PrivateLayout() {
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-line bg-app/90 px-4 backdrop-blur-xl sm:px-6 lg:px-8">
           <button className="icon-button lg:hidden!" onClick={() => setOpen(true)} aria-label="Abrir menú"><Menu size={21} /></button>
           <span className="hidden text-xs font-semibold uppercase tracking-[0.2em] text-muted lg:block">Panel de operaciones</span>
-          <div className="ml-auto flex items-center gap-3"><button type="button" className="icon-button" onClick={() => { playEncargoChime(); toast.success('🔔 Así suena la alarma de encargos.') }} title="Probar alarma de encargos" aria-label="Probar alarma de encargos"><Bell size={18} /></button><span className="status-dot" /> <span className="text-xs text-muted">Sistema operativo</span></div>
+          <div className="ml-auto flex items-center gap-3">
+            <div className="relative">
+              <button type="button" className="icon-button relative" onClick={() => setBellOpen((v) => !v)} title="Alertas" aria-label="Alertas"><Bell size={18} />{contarUrgentes(alertas) > 0 && <span className="absolute -right-1 -top-1 grid min-w-[16px] place-items-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white">{contarUrgentes(alertas)}</span>}</button>
+              {bellOpen && <>
+                <button className="fixed inset-0 z-40 cursor-default" aria-label="Cerrar alertas" onClick={() => setBellOpen(false)} />
+                <div className="absolute right-0 z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-line bg-panel shadow-2xl">
+                  <div className="flex items-center justify-between border-b border-line px-4 py-3"><strong className="text-sm">Alertas</strong><span className="text-[11px] text-muted">{alertas.length} {alertas.length === 1 ? 'activa' : 'activas'}</span></div>
+                  <div className="max-h-[70vh] overflow-y-auto">
+                    {alertas.length === 0 ? <p className="px-4 py-8 text-center text-xs text-muted">Todo en orden. Sin alertas. ✅</p>
+                      : alertas.map((a) => <Link key={a.id} to={a.to} onClick={() => setBellOpen(false)} className="flex gap-3 border-b border-line px-4 py-3 transition last:border-0 hover:bg-white/[.03]"><span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg text-sm ${a.prioridad === 'alta' ? 'bg-red-400/12' : a.prioridad === 'media' ? 'bg-amber-400/12' : 'bg-sky-400/12'}`}>{a.icono}</span><span className="min-w-0 flex-1"><strong className="block text-xs">{a.titulo}</strong><span className="block text-[11px] leading-4 text-muted">{a.descripcion}</span></span><ArrowUpRight size={14} className="mt-1 shrink-0 text-muted" /></Link>)}
+                  </div>
+                </div>
+              </>}
+            </div>
+            <span className="status-dot" /> <span className="hidden text-xs text-muted sm:inline">Sistema operativo</span>
+          </div>
         </header>
         <main className="mx-auto max-w-[1500px] p-4 pb-24 sm:p-6 lg:p-8"><Outlet /></main>
       </div>

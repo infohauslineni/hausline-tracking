@@ -70,17 +70,23 @@ async function adjuntarFotosCatalogo(items: PedidoItem[]) {
   if (!supabase || !items.length) return
   const norm = (valor: unknown) => String(valor ?? '').trim().toUpperCase()
   const sinFoto = items.filter((item) => !item.imagen)
+  if (!sinFoto.length) return
   const codigos = [...new Set(sinFoto.map((item) => norm(item.codigo_producto || item.producto)).filter(Boolean))]
-  if (!codigos.length) return
-  const { data, error } = await supabase.from('productos').select('codigo, imagen').in('codigo', codigos)
-  if (error || !data) return
+  const nombres = [...new Set(sinFoto.map((item) => (item.producto ?? '').trim()).filter(Boolean))]
+  // Empareja por CÓDIGO y también por NOMBRE del producto. Así, si el ítem quedó sin
+  // código (encargos viejos) pero su nombre coincide con un producto del catálogo, la
+  // foto igual aparece en panel, factura y correos.
+  const [porCod, porNom] = await Promise.all([
+    codigos.length ? supabase.from('productos').select('codigo, imagen').in('codigo', codigos) : Promise.resolve({ data: [] as { codigo: string; imagen: string | null }[] }),
+    nombres.length ? supabase.from('productos').select('nombre, imagen').in('nombre', nombres) : Promise.resolve({ data: [] as { nombre: string; imagen: string | null }[] }),
+  ])
   const porCodigo = new Map<string, string>()
-  for (const producto of data as { codigo: string; imagen: string | null }[]) {
-    if (producto.imagen) porCodigo.set(norm(producto.codigo), producto.imagen)
-  }
-  if (!porCodigo.size) return
+  for (const producto of (porCod.data ?? []) as { codigo: string; imagen: string | null }[]) if (producto.imagen) porCodigo.set(norm(producto.codigo), producto.imagen)
+  const porNombre = new Map<string, string>()
+  for (const producto of (porNom.data ?? []) as { nombre: string; imagen: string | null }[]) if (producto.imagen) porNombre.set(norm(producto.nombre), producto.imagen)
+  if (!porCodigo.size && !porNombre.size) return
   for (const item of sinFoto) {
-    const foto = porCodigo.get(norm(item.codigo_producto || item.producto))
+    const foto = porCodigo.get(norm(item.codigo_producto || item.producto)) ?? porNombre.get(norm(item.producto))
     if (foto) item.imagen = foto
   }
 }

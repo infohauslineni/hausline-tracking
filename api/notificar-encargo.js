@@ -65,8 +65,9 @@ export default async function handler(request, response) {
   const destino = (process.env.AVISO_ADMIN || process.env.SMTP_USER || '').trim()
   if (!destino) return response.status(200).json({ ok: true, skipped: 'sin destinatario' })
 
-  // Foto del producto (por código) para mostrarla en el correo. Best-effort.
-  record.imagen = await fotoProducto(record.producto_codigo)
+  // Foto del producto para el correo. Preferimos la que el cliente guardó con el encargo
+  // (viaja en el record del webhook); si no trae, la buscamos por código en el catálogo.
+  if (!record.imagen) record.imagen = await fotoProducto(record.producto_codigo)
 
   try {
     await enviarCorreoEncargoAdmin({ to: destino, solicitud: record })

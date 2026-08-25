@@ -55,7 +55,7 @@ export function GastosPage() {
   </div>
 }
 
-function GastoModal({ open, editing, pedidos, stock, providers, tipoCambio, onClose, onSaved }: { open: boolean; editing: Gasto | null; pedidos: Pedido[]; stock: Inversion[]; providers: Proveedor[]; tipoCambio: number; onClose: () => void; onSaved: (item: Gasto, mode: 'create' | 'edit') => void }) {
+export function GastoModal({ open, editing, pedidos, stock, providers, tipoCambio, onClose, onSaved }: { open: boolean; editing: Gasto | null; pedidos: Pedido[]; stock: Inversion[]; providers: Proveedor[]; tipoCambio: number; onClose: () => void; onSaved: (item: Gasto, mode: 'create' | 'edit') => void }) {
   const initial = useMemo(() => editing
     ? { fecha: editing.fecha.slice(0, 10), categoria: editing.categoria, monto: String(editing.monto_original ?? editing.monto), moneda: (editing.moneda ?? 'USD') as Moneda, metodo_pago: editing.metodo_pago ?? 'Transferencia', pedido_id: editing.pedido_id ?? '', inversion_id: editing.inversion_id ?? '', proveedor_id: editing.proveedor_id ?? '', descripcion: editing.descripcion, observaciones: editing.observaciones ?? '' }
     : { fecha: new Date().toISOString().slice(0, 10), categoria: 'Proveedor', monto: '', moneda: 'USD' as Moneda, metodo_pago: 'Transferencia', pedido_id: '', inversion_id: '', proveedor_id: '', descripcion: '', observaciones: '' }, [editing])

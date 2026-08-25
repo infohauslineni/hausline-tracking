@@ -1,19 +1,25 @@
-import { ArrowDownRight, ArrowUpRight, CalendarRange, Pencil, Sparkles, Trash2, Wallet } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, CalendarRange, Pencil, ReceiptText, Sparkles, Trash2, Wallet } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { Modal } from '../../components/ui/Modal'
 import { MoneyField } from '../../components/ui/MoneyField'
-import { eliminarGasto, eliminarMovimiento, guardarAperturaCaja, listarMovimientos, obtenerCajaMes, obtenerResumenComercial, obtenerTipoCambio, registrarMovimiento } from '../../services/comercial.service'
-import type { CajaMes, Moneda, MovimientoCuenta, ResumenComercial } from '../../types/domain'
+import { eliminarGasto, eliminarMovimiento, guardarAperturaCaja, listarInversiones, listarMovimientos, listarProveedores, obtenerCajaMes, obtenerResumenComercial, obtenerTipoCambio, registrarMovimiento } from '../../services/comercial.service'
+import { listarPedidos } from '../../services/pedidos.service'
+import type { CajaMes, Inversion, Moneda, MovimientoCuenta, Pedido, Proveedor, ResumenComercial } from '../../types/domain'
 import { aUsd, formatMoneda } from '../../utils/money'
 import { periodoDeMes } from '../../utils/periodo'
+import { GastoModal } from './GastosPage'
 import { Actions, Empty, Field, formatDate, PageHeader } from './PagosPage'
 
 const zero: ResumenComercial = { ventas: 0, cobrado: 0, por_cobrar: 0, gastos: 0, costos_productos: 0, saldo_cuenta: 0, pedidos: 0 }
 const zeroCaja: CajaMes = { periodo: '', sugerido: 0, apertura: null, opening: 0, movimientos_mes: 0, saldo_mes: 0, confirmada: false }
+const mesActualStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
+const mesLabel = (ym: string) => { const [y, m] = ym.split('-').map(Number); if (!y || !m) return ym; return new Intl.DateTimeFormat('es-NI', { month: 'long', year: 'numeric' }).format(new Date(y, m - 1, 1)) }
+const capitalizar = (value: string) => value.charAt(0).toUpperCase() + value.slice(1)
 
 export function CuentaPage() {
-  const periodo = useMemo(() => periodoDeMes(), [])
+  const [mes, setMes] = useState(mesActualStr())
+  const periodo = useMemo(() => { const [y, m] = mes.split('-').map(Number); return periodoDeMes(new Date(y, m - 1, 1)) }, [mes])
   const [items, setItems] = useState<MovimientoCuenta[]>([])
   const [summary, setSummary] = useState(zero)
   const [caja, setCaja] = useState(zeroCaja)
@@ -21,17 +27,27 @@ export function CuentaPage() {
   const [open, setOpen] = useState(false)
   const [adjustOpen, setAdjustOpen] = useState(false)
   const [aperturaOpen, setAperturaOpen] = useState(false)
+  // Datos para registrar un gasto desde aquí (mismo modal completo que la sección Gastos).
+  const [pedidos, setPedidos] = useState<Pedido[]>([])
+  const [stock, setStock] = useState<Inversion[]>([])
+  const [providers, setProviders] = useState<Proveedor[]>([])
+  const [gastoOpen, setGastoOpen] = useState(false)
+
+  // Meses con movimientos (del más nuevo al más viejo); siempre incluye el mes actual y el elegido.
+  const meses = useMemo(() => { const set = new Set(items.map((it) => it.fecha.slice(0, 7)).filter(Boolean)); set.add(mesActualStr()); set.add(mes); return [...set].sort().reverse() }, [items, mes])
 
   const load = () => void Promise.all([listarMovimientos(setItems), obtenerResumenComercial(periodo.desde, periodo.hasta, setSummary), obtenerCajaMes(periodo.periodo, setCaja)])
     .then(([movements, result, cajaMes]) => {
       setItems(movements)
       setSummary(result)
       setCaja(cajaMes)
-      if (!cajaMes.confirmada) setAperturaOpen(true)
+      // Solo empuja a definir apertura en el MES ACTUAL; navegar meses viejos no debe abrir el modal.
+      if (!cajaMes.confirmada && mes === mesActualStr()) setAperturaOpen(true)
     })
     .catch(() => toast.error('No se pudo cargar la cuenta. Ejecuta primero la migración de Supabase.'))
   useEffect(load, [periodo])
   useEffect(() => { void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined) }, [])
+  useEffect(() => { void Promise.all([listarPedidos(), listarInversiones(), listarProveedores()]).then(([orders, inventory, suppliers]) => { setPedidos(orders); setStock(inventory); setProviders(suppliers) }).catch(() => undefined) }, [])
 
   const reload = () => { setOpen(false); setAdjustOpen(false); setAperturaOpen(false); load() }
   const borrar = async (movement: MovimientoCuenta) => {
@@ -48,11 +64,14 @@ export function CuentaPage() {
   const mesActual = items.filter((movement) => { const dia = movement.fecha.slice(0, 10); return dia >= periodo.desde && dia <= periodo.hasta })
 
   return <div>
-    <PageHeader title="Mi cuenta" subtitle="Caja del mes: apertura, entradas, salidas y saldo actual." onAdd={() => setOpen(true)} button="Registrar ingreso o retiro" />
+    <PageHeader title="Mi cuenta" subtitle="Gastos, ingresos, salidas y saldo — todo tu movimiento de dinero en un solo lugar." onAdd={() => setOpen(true)} button="Registrar ingreso o retiro" />
 
     <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-white/[.02] px-4 py-3">
-      <span className="flex items-center gap-2 text-sm capitalize"><CalendarRange size={16} className="text-accent" /> {periodo.etiqueta}</span>
-      <button className="subtle-button" onClick={() => setAperturaOpen(true)}><Sparkles size={15} /> {caja.confirmada ? 'Editar apertura del mes' : 'Definir apertura del mes'}</button>
+      <span className="flex items-center gap-2 text-sm"><CalendarRange size={16} className="text-accent" /><select className="select-input sm:w-52" value={mes} onChange={(event) => setMes(event.target.value)} aria-label="Mes">{meses.map((m) => <option key={m} value={m}>{capitalizar(mesLabel(m))}</option>)}</select></span>
+      <div className="flex flex-wrap gap-2">
+        <button className="subtle-button" onClick={() => setGastoOpen(true)}><ReceiptText size={15} /> Registrar gasto</button>
+        <button className="subtle-button" onClick={() => setAperturaOpen(true)}><Sparkles size={15} /> {caja.confirmada ? 'Editar apertura del mes' : 'Definir apertura del mes'}</button>
+      </div>
     </div>
 
     <section className="mt-4 rounded-2xl border border-accent/20 bg-accent/[.06] p-6">
@@ -74,6 +93,7 @@ export function CuentaPage() {
     <MovimientoModal open={open} tipoCambio={tipoCambio} onClose={() => setOpen(false)} onSaved={reload} />
     <AjustarSaldoModal open={adjustOpen} saldoActual={caja.saldo_mes} onClose={() => setAdjustOpen(false)} onSaved={reload} />
     <AperturaCajaModal open={aperturaOpen} caja={caja} periodo={periodo} onClose={() => setAperturaOpen(false)} onSaved={reload} />
+    <GastoModal open={gastoOpen} editing={null} pedidos={pedidos} stock={stock} providers={providers} tipoCambio={tipoCambio} onClose={() => setGastoOpen(false)} onSaved={() => { setGastoOpen(false); load() }} />
   </div>
 }
 

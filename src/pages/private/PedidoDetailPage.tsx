@@ -18,6 +18,19 @@ import { costoRealPedido } from '../../utils/pedidoCosto'
 import { whatsappUrl } from '../../utils/whatsapp'
 import { Status } from './PedidosPage'
 
+// Arma las líneas de la factura desde los ítems del pedido. Si el TOTAL del pedido es
+// mayor que la suma de los ítems (típico en encargos web con envío rápido: el recargo va
+// en el total pero no como línea), agrega una línea "Envío rápido" por la diferencia para
+// que la factura cuadre y muestre el envío.
+function facturaItemsDePedido(pedido: Pedido): FacturaData['items'] {
+  const items = (pedido.pedido_items ?? []).map((item) => ({ producto: item.producto, detalle: [item.marca, item.talla, item.color].filter(Boolean).join(' · ') || undefined, cantidad: Number(item.cantidad || 1), precio: Number(item.precio_unitario || 0), codigo: item.codigo_producto, imagen: item.imagen }))
+  const suma = items.reduce((total, item) => total + item.precio * item.cantidad, 0)
+  const diferencia = Math.round((Number(pedido.total || 0) - suma) * 100) / 100
+  const yaTieneEnvio = items.some((item) => /env[íi]o r[áa]pido/i.test(item.producto))
+  if (diferencia > 0.01 && !yaTieneEnvio) items.push({ producto: 'Envío rápido (14–17 días)', detalle: undefined, cantidad: 1, precio: diferencia, codigo: undefined, imagen: null })
+  return items
+}
+
 export function PedidoDetailPage() {
   const { id = '' } = useParams()
   const [pedido, setPedido] = useState<Pedido | null>(DEMO_PEDIDOS.find((item) => item.id === id) ?? DEMO_PEDIDOS[0])
@@ -62,7 +75,7 @@ export function PedidoDetailPage() {
         cliente: refreshed.clientes?.nombre ?? 'Cliente',
         whatsapp: refreshed.clientes?.whatsapp ?? null,
         fecha: new Date().toISOString().slice(0, 10),
-        items: (refreshed.pedido_items ?? []).map((item) => ({ producto: item.producto, detalle: [item.marca, item.talla, item.color].filter(Boolean).join(' · ') || undefined, cantidad: Number(item.cantidad || 1), precio: Number(item.precio_unitario || 0), codigo: item.codigo_producto, imagen: item.imagen })),
+        items: facturaItemsDePedido(refreshed),
         total: Number(refreshed.total || 0),
         abono: Number(refreshed.abono || 0),
         saldo: Number(refreshed.saldo || 0),

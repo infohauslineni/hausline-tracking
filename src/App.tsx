@@ -5,6 +5,7 @@ import { PrivateLayout } from './components/layout/PrivateLayout'
 import { LoginPage } from './pages/public/LoginPage'
 
 const ClientesPage = lazy(() => import('./pages/private/ClientesPage').then((module) => ({ default: module.ClientesPage })))
+const ClienteDetailPage = lazy(() => import('./pages/private/ClienteDetailPage').then((module) => ({ default: module.ClienteDetailPage })))
 const DashboardPage = lazy(() => import('./pages/private/DashboardPage').then((module) => ({ default: module.DashboardPage })))
 const NuevoPedidoPage = lazy(() => import('./pages/private/NuevoPedidoPage').then((module) => ({ default: module.NuevoPedidoPage })))
 const PedidoDetailPage = lazy(() => import('./pages/private/PedidoDetailPage').then((module) => ({ default: module.PedidoDetailPage })))
@@ -48,6 +49,7 @@ export function App() {
         <Route path="/cuenta" element={<CuentaPage />} />
         <Route path="/reportes" element={<ReportesPage />} />
         <Route path="/clientes" element={<ClientesPage />} />
+        <Route path="/clientes/:id" element={<ClienteDetailPage />} />
         <Route path="/logistica" element={<LogisticaPage />} />
         <Route path="/configuracion" element={<ConfiguracionPage />} />
       </Route>
