@@ -203,45 +203,73 @@ function indiceEtapa(estado) {
   return TIMELINE.findIndex((t) => t.base === base)
 }
 
-// Barra/timeline de progreso: 8 segmentos, verde neón hasta la etapa actual y gris el
-// resto, con el texto "Paso X de 8 · <etapa>". No se muestra en cancelado/incidencia
-// (ni en avisos sin etapa, como el cargo por bodega): esos devuelven índice -1.
+// Titular editorial (serif) según la etapa. Se busca por la etapa base.
+const HEADLINE = {
+  pedido_confirmado: 'Tu orden está confirmada',
+  en_preparacion: 'Estamos preparando tu pedido',
+  control_calidad: 'Tu pedido está en control de calidad',
+  transito_internacional: 'Tu pedido está en camino',
+  llego_nicaragua: 'Tu pedido llegó al país de destino',
+  disponible_entrega: 'Tu pedido está disponible para entrega',
+  pagado: 'Confirmamos el pago de tu pedido',
+  entregado: 'Tu pedido fue entregado',
+  cancelado: 'Tu pedido fue cancelado',
+  incidencia: 'Tu pedido requiere atención',
+}
+export function tituloEstado(estado) {
+  const base = ETAPA_BASE[estado] || estado
+  return HEADLINE[base] || 'Actualización de tu pedido'
+}
+
+// Timeline de progreso vertical: un punto + etiqueta por etapa, unidos por una línea.
+// Completadas = punto negro; etapa actual = punto verde neón con la etiqueta subrayada
+// en neón; futuras = punto hueco gris. Se dibuja vertical (igual en escritorio y móvil)
+// porque es lo que renderiza fiable en TODOS los clientes de correo. Devuelve '' en
+// cancelado/incidencia y cuando no hay etapa (p.ej. el aviso de bodega): índice -1.
 export function bloqueTimeline(estado) {
   const idx = indiceEtapa(estado)
   if (idx < 0) return ''
-  const total = TIMELINE.length
-  const celdas = TIMELINE.map((t, i) => {
-    const on = i <= idx
-    return `<td style="padding:0 3px;"><div style="height:7px;border-radius:4px;background-color:${on ? '#b7ff00' : '#e6e8ec'};font-size:0;line-height:0;">&nbsp;</div></td>`
+  const ultimo = TIMELINE.length - 1
+  const filas = TIMELINE.map((t, i) => {
+    const done = i < idx
+    const current = i === idx
+    const dot = current
+      ? 'background-color:#b7ff00;border:1px solid #a6e600;'
+      : done
+        ? 'background-color:#050505;border:1px solid #050505;'
+        : 'background-color:#ffffff;border:2px solid #d7dade;'
+    const conector = i < ultimo
+      ? `<div style="width:2px;height:22px;margin:3px auto 0;background-color:${i < idx ? '#050505' : '#d7dade'};font-size:0;line-height:0;">&nbsp;</div>`
+      : ''
+    const labelColor = current ? '#0b0f19' : done ? '#3a3f46' : '#aeb4bb'
+    const label = current
+      ? `<span style="border-bottom:2px solid #b7ff00;padding-bottom:2px;">${esc(t.label)}</span>`
+      : esc(t.label)
+    return `<tr>
+      <td width="24" valign="top" style="padding:0;">
+        <div style="width:14px;height:14px;border-radius:50%;margin:1px auto 0;${dot}">&nbsp;</div>
+        ${conector}
+      </td>
+      <td valign="top" style="padding:0 0 ${i < ultimo ? '13px' : '0'} 12px;">
+        <div style="font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:${labelColor};font-weight:${current ? 800 : 600};line-height:1.35;">${label}</div>
+      </td>
+    </tr>`
   }).join('')
   return `
-          <!-- Timeline de progreso -->
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;">
-            <tr><td>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${celdas}</tr></table>
-              <div style="margin-top:11px;font-size:12px;color:#6b7280;text-align:center;">Paso <strong style="color:#0b0f19;">${idx + 1}</strong> de ${total} · <strong style="color:#0b0f19;">${esc(TIMELINE[idx].label)}</strong></div>
-            </td></tr>
-          </table>`
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${filas}</table>`
 }
 
-// Bloque de atención por WhatsApp (número configurable con WHATSAPP_NUMERO).
+// Fila de ayuda por WhatsApp (número configurable con WHATSAPP_NUMERO).
 function bloqueWhatsapp() {
   const wa = String(process.env.WHATSAPP_NUMERO || '50578995116').replace(/[^0-9]/g, '')
   return `
-          <!-- Atención por WhatsApp -->
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:26px 0 0;">
-            <tr><td style="border:1px solid #e6e8ec;border-radius:12px;padding:16px 20px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-                <td style="vertical-align:middle;font-size:13px;color:#4b5563;line-height:1.5;">¿Necesitas ayuda con tu pedido?<br><strong style="color:#0b0f19;">Atención por WhatsApp</strong></td>
-                <td style="vertical-align:middle;text-align:right;white-space:nowrap;"><a href="https://wa.me/${wa}" target="_blank" style="display:inline-block;background-color:#25d366;color:#052012;text-decoration:none;font-weight:700;font-size:13px;padding:11px 18px;border-radius:9px;">Escribir por WhatsApp</a></td>
-              </tr></table>
-            </td></tr>
-          </table>`
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+            <td style="vertical-align:middle;font-size:14px;font-weight:700;color:#0b0f19;line-height:1.5;">¿Necesitas ayuda?<br><span style="font-size:13px;font-weight:400;color:#8b93a7;">Habla con nosotros por WhatsApp</span></td>
+            <td style="vertical-align:middle;text-align:right;white-space:nowrap;"><a href="https://wa.me/${wa}" target="_blank" style="font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#0b0f19;text-decoration:none;border-bottom:2px solid #b7ff00;padding-bottom:2px;">Escribir</a></td>
+          </tr></table>`
 }
 
 export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, urlSeguimiento, esNuevo, factura, fotos }) {
-  const saludo = nombre ? `Hola, ${nombre}` : 'Hola'
-  // En la creación del pedido el texto confirma el registro; en los cambios de estado, la actualización.
   const intro = esNuevo
     ? `Gracias por tu compra. Confirmamos tu pedido y ya comenzamos a gestionarlo.`
     : `Tu pedido tiene una nueva actualización.`
@@ -250,20 +278,16 @@ export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, url
     ? `Confirmamos tu pedido ${codigo}. Sigue cada etapa desde aquí.`
     : `${codigo}: ${estadoLabel}. Revisa el detalle del seguimiento.`
   const anio = new Date().getFullYear()
+  const titulo = tituloEstado(estado)
+  const kicker = esNuevo ? 'Confirmación de pedido' : 'Actualización de pedido'
+  const correoContacto = process.env.CONTACT_EMAIL || 'alerta@hauslineshopni.es'
+  const telContacto = process.env.CONTACT_PHONE || '+505 7899 5116'
 
-  // El recuadro de "Estado actual" (píldora) solo aparece en los avisos de estado
-  // intermedios, donde el estado es lo importante. En los correos con factura
-  // (compra o comprobante de pago) se omite: manda el detalle de la compra.
-  const conFactura = factura && Array.isArray(factura.items) && factura.items.length
-  const bloqueEstado = conFactura ? '' : `
-          <!-- Estado actual -->
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 30px;">
-            <tr><td style="border:1px solid #e6e8ec;border-radius:12px;padding:24px 22px;text-align:center;">
-              <div style="font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#8b93a7;margin-bottom:10px;">Estado actual</div>
-              <div style="display:inline-block;background-color:#050505;color:#b7ff00;font-size:15px;font-weight:700;letter-spacing:.3px;padding:9px 22px;border-radius:999px;">${estadoLabel}</div>
-              <div style="font-size:14px;line-height:1.6;color:#4b5563;margin-top:16px;">${nota}</div>
-            </td></tr>
-          </table>`
+  const timeline = bloqueTimeline(estado)
+  const extras = `${bloqueFotos(fotos)}${bloqueFactura(factura)}`
+  const font = `-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif`
+  const serif = `Georgia,'Times New Roman',Times,serif`
+
   return `<!doctype html>
 <html lang="es" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
@@ -275,48 +299,64 @@ export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, url
   <title>Pedido ${codigo}</title>
   <!--[if mso]><style>body,table,td,a{font-family:Arial,Helvetica,sans-serif !important;}</style><![endif]-->
 </head>
-<body style="margin:0;padding:0;background-color:#ececed;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
-  <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;font-size:1px;line-height:1px;color:#ececed;">${preheader}</div>
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#ececed;">
-    <tr><td align="center" style="padding:32px 16px;">
-      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 24px rgba(17,24,39,.08);">
+<body style="margin:0;padding:0;background-color:#ffffff;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;font-family:${font};">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;font-size:1px;line-height:1px;color:#ffffff;">${preheader}</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;">
+    <tr><td align="center" style="padding:0;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;">
 
-        <!-- Encabezado -->
-        <tr><td style="background-color:#050505;padding:34px 24px;text-align:center;">
-          <div style="color:#ffffff;font-size:26px;font-weight:800;letter-spacing:5px;line-height:1;">HAUS<span style="color:#b7ff00;">LINE</span></div>
-          <div style="color:#8b93a7;font-size:10px;font-weight:600;letter-spacing:4px;text-transform:uppercase;margin-top:8px;">King of Shoes</div>
+        <!-- Filo negro superior -->
+        <tr><td style="height:4px;background-color:#050505;font-size:0;line-height:0;">&nbsp;</td></tr>
+
+        <!-- Encabezado: marca + kicker -->
+        <tr><td style="padding:26px 36px 18px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+            <td style="font-size:16px;font-weight:800;letter-spacing:4px;color:#0b0f19;">HAUS<span style="color:#b7ff00;">LINE</span></td>
+            <td style="text-align:right;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#aeb4bb;">${esc(kicker)}</td>
+          </tr></table>
+        </td></tr>
+        <tr><td style="padding:0 36px;"><div style="height:1px;background-color:#eef0f2;font-size:0;line-height:0;">&nbsp;</div></td></tr>
+
+        <!-- Titular editorial -->
+        <tr><td style="padding:36px 36px 0;">
+          <h1 style="margin:0;font-family:${serif};font-weight:400;font-size:30px;line-height:1.18;color:#0b0f19;">${esc(titulo)}</h1>
+          <p style="margin:14px 0 0;font-size:12px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#aeb4bb;">Pedido #${codigo}</p>
         </td></tr>
 
-        <!-- Barra de acento -->
-        <tr><td style="height:4px;background-color:#b7ff00;font-size:0;line-height:0;">&nbsp;</td></tr>
+        ${timeline ? `<tr><td style="padding:30px 36px 0;">${timeline}</td></tr>` : ''}
 
-        <!-- Cuerpo -->
-        <tr><td style="padding:38px 36px 12px;">
-          <p style="margin:0 0 6px;font-size:18px;font-weight:700;color:#0b0f19;">${saludo}</p>
-          <p style="margin:0 0 26px;font-size:15px;line-height:1.6;color:#4b5563;">${intro}</p>
-
-          <!-- Número de pedido -->
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px;">
-            <tr><td style="background-color:#f6f7f9;border:1px solid #e6e8ec;border-radius:10px;padding:16px 20px;">
-              <span style="font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#8b93a7;">Número de pedido</span><br>
-              <span style="font-size:19px;font-weight:800;color:#0b0f19;letter-spacing:1px;">${codigo}</span>
-            </td></tr>
+        <!-- Nota del estado -->
+        <tr><td style="padding:${timeline ? '30px' : '28px'} 36px 0;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr><td style="border:1px solid #e6e8ec;border-left:4px solid #b7ff00;border-radius:8px;padding:15px 18px;font-size:14px;line-height:1.6;color:#4b5563;">${nota || intro}</td></tr>
           </table>
+        </td></tr>
 
-${bloqueTimeline(estado)}${bloqueEstado}${bloqueFotos(fotos)}${bloqueFactura(factura)}
-          <!-- Botón -->
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center">
-            <a href="${urlSeguimiento}" target="_blank" style="display:inline-block;background-color:#b7ff00;color:#052012;text-decoration:none;font-weight:800;font-size:15px;letter-spacing:.4px;padding:16px 40px;border-radius:10px;">VER MI PEDIDO</a>
-          </td></tr></table>
-          <p style="margin:16px 0 0;font-size:12px;line-height:1.5;text-align:center;color:#9aa0ab;">O copia este enlace de seguimiento:<br><a href="${urlSeguimiento}" target="_blank" style="color:#6b7280;text-decoration:underline;word-break:break-all;">${urlSeguimiento}</a></p>
-${bloqueWhatsapp()}
+        ${extras ? `<tr><td style="padding:28px 36px 0;">${extras}</td></tr>` : ''}
+
+        <!-- Botón -->
+        <tr><td style="padding:28px 36px 0;">
+          <a href="${urlSeguimiento}" target="_blank" style="display:block;background-color:#050505;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:2px;text-transform:uppercase;text-align:center;padding:17px 20px;border-radius:6px;">Ver seguimiento</a>
+          <p style="margin:12px 0 0;font-size:11px;line-height:1.5;text-align:center;color:#b7bcc5;"><a href="${urlSeguimiento}" target="_blank" style="color:#b7bcc5;text-decoration:underline;word-break:break-all;">${urlSeguimiento}</a></p>
+        </td></tr>
+
+        <!-- Ayuda -->
+        <tr><td style="padding:26px 36px 0;"><div style="height:1px;background-color:#eef0f2;font-size:0;line-height:0;">&nbsp;</div></td></tr>
+        <tr><td style="padding:22px 36px 0;">${bloqueWhatsapp()}</td></tr>
+
+        <!-- Confianza -->
+        <tr><td style="padding:26px 36px 0;text-align:center;">
+          <div style="font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#aeb4bb;">Compra segura&nbsp;&nbsp;·&nbsp;&nbsp;Seguimiento de pedido&nbsp;&nbsp;·&nbsp;&nbsp;Atención personalizada</div>
         </td></tr>
 
         <!-- Pie -->
-        <tr><td style="padding:28px 36px 34px;border-top:1px solid #eef0f2;text-align:center;">
-          <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#0b0f19;letter-spacing:2px;">HAUSLINE</p>
-          <p style="margin:0 0 14px;font-size:12px;line-height:1.6;color:#9aa0ab;">Este es un aviso automático de tu pedido.<br>¿Tienes dudas? Responde a este mismo correo y te ayudamos.</p>
-          <p style="margin:0;font-size:11px;color:#b7bcc5;">© ${anio} Hausline · King of Shoes</p>
+        <tr><td style="padding:26px 36px 36px;">
+          <div style="height:1px;background-color:#eef0f2;font-size:0;line-height:0;margin-bottom:20px;">&nbsp;</div>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+            <td style="font-size:13px;font-weight:800;letter-spacing:3px;color:#0b0f19;">HAUSLINE</td>
+            <td style="text-align:right;font-size:11px;color:#9aa0ab;line-height:1.6;">${esc(correoContacto)}<br>${esc(telContacto)}</td>
+          </tr></table>
+          <p style="margin:14px 0 0;font-size:10px;color:#c4c9d0;">© ${anio} Hausline · King of Shoes · Aviso automático de tu pedido</p>
         </td></tr>
 
       </table>
