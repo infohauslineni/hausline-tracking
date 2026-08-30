@@ -41,12 +41,12 @@ as $$
 declare
   v_correo text := lower(trim(coalesce(p_correo, '')));
 begin
-  if v_correo !~ '^[^\s@]+@[^\s@]+\.[^\s@]+$' then
+  if char_length(v_correo) > 150 or v_correo !~ '^[^\s@]+@[^\s@]+\.[^\s@]+$' then
     return json_build_object('ok', false, 'error', 'correo_invalido');
   end if;
 
   insert into public.suscriptores (correo, nombre, consentimiento, fuente)
-  values (v_correo, nullif(trim(coalesce(p_nombre,'')), ''), true, coalesce(nullif(trim(p_fuente),''), 'web'))
+  values (v_correo, nullif(left(trim(coalesce(p_nombre,'')), 80), ''), true, left(coalesce(nullif(trim(p_fuente),''), 'web'), 20))
   on conflict (correo) do update
     set nombre         = coalesce(excluded.nombre, public.suscriptores.nombre),
         consentimiento = true,

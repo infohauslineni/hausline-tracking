@@ -107,6 +107,14 @@ begin
     return json_build_object('ok', false, 'error', 'nombre_invalido');
   end if;
 
+  -- Anti-abuso: máximo 5 reseñas por pedido (evita spam masivo a un mismo código).
+  if p_pedido_codigo is not null and (
+       select count(*) from public.resenas
+       where pedido_codigo = nullif(upper(trim(coalesce(p_pedido_codigo, ''))), '')
+     ) >= 5 then
+    return json_build_object('ok', false, 'error', 'demasiadas_resenas');
+  end if;
+
   -- Si no se pasó el producto, intentamos tomarlo del pedido (primer ítem).
   v_prod := nullif(upper(trim(coalesce(p_producto_codigo, ''))), '');
   if v_prod is null and p_pedido_codigo is not null then
@@ -122,8 +130,15 @@ begin
     end;
   end if;
 
+  -- Límites de longitud (evita payloads gigantes que inflen la base).
   insert into public.resenas (pedido_codigo, producto_codigo, cliente_nombre, estrellas, comentario)
-  values (nullif(upper(trim(coalesce(p_pedido_codigo,''))), ''), v_prod, trim(p_nombre), p_estrellas, nullif(trim(coalesce(p_comentario,'')), ''))
+  values (
+    nullif(upper(trim(coalesce(p_pedido_codigo,''))), ''),
+    left(v_prod, 40),
+    left(trim(p_nombre), 60),
+    p_estrellas,
+    nullif(left(trim(coalesce(p_comentario,'')), 500), '')
+  )
   returning id into v_id;
 
   return json_build_object('ok', true, 'id', v_id);
