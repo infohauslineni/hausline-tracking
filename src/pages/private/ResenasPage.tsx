@@ -98,12 +98,12 @@ export function ResenasPage() {
               </div>
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 {r.aprobada ? (
-                  <button className="table-action" disabled={busy === r.id} onClick={() => void accion(r.id, () => aprobarResena(r.id, false), 'Reseña ocultada.')}><EyeOff size={15} /> Ocultar</button>
+                  <button className="table-action whitespace-nowrap" disabled={busy === r.id} onClick={() => void accion(r.id, () => aprobarResena(r.id, false), 'Reseña ocultada.')}><EyeOff size={15} /> Ocultar</button>
                 ) : (
-                  <button className="primary-button min-h-9 px-3 text-xs" disabled={busy === r.id} onClick={() => void accion(r.id, () => aprobarResena(r.id, true), 'Reseña aprobada. Ya se ve en la tienda.')}><Check size={15} /> Aprobar</button>
+                  <button className="primary-button min-h-9 px-3 text-xs whitespace-nowrap" disabled={busy === r.id} onClick={() => void accion(r.id, () => aprobarResena(r.id, true), 'Reseña aprobada. Ya se ve en la tienda.')}><Check size={15} /> Aprobar</button>
                 )}
-                <button className="table-action" disabled={busy === r.id} onClick={() => void accion(r.id, () => destacarResena(r.id, !r.destacada), r.destacada ? 'Quitada de destacadas.' : 'Marcada como destacada.')}><Star size={15} className={r.destacada ? 'fill-accent text-accent' : ''} /> {r.destacada ? 'Quitar destacada' : 'Destacar'}</button>
-                <button className="table-action table-action-danger ml-auto" disabled={busy === r.id} onClick={() => { if (confirm('¿Eliminar esta reseña? No se puede deshacer.')) void accion(r.id, () => eliminarResena(r.id), 'Reseña eliminada.') }}><Trash2 size={15} /> Eliminar</button>
+                <button className="table-action whitespace-nowrap" disabled={busy === r.id} onClick={() => void accion(r.id, () => destacarResena(r.id, !r.destacada), r.destacada ? 'Quitada de destacadas.' : 'Marcada como destacada.')}><Star size={15} className={r.destacada ? 'fill-accent text-accent' : ''} /> {r.destacada ? 'Quitar destacada' : 'Destacar'}</button>
+                <button className="table-action table-action-danger ml-auto whitespace-nowrap" disabled={busy === r.id} onClick={() => { if (confirm('¿Eliminar esta reseña? No se puede deshacer.')) void accion(r.id, () => eliminarResena(r.id), 'Reseña eliminada.') }}><Trash2 size={15} /> Eliminar</button>
               </div>
             </div>
           ))}

@@ -83,6 +83,25 @@ as $$
   ) r;
 $$;
 
+-- ── Resumen por producto de TODO el catálogo (para las estrellas de las tarjetas) ──
+-- Una sola llamada devuelve {producto_codigo, promedio, total} de cada producto que
+-- tenga reseñas aprobadas. La tienda la cachea y pinta las estrellas en cada tarjeta.
+create or replace function public.resenas_resumen_todos()
+returns json language sql security definer stable
+set search_path = public, pg_temp as $$
+  select coalesce(json_agg(json_build_object(
+    'producto_codigo', producto_codigo,
+    'promedio', prom,
+    'total', tot
+  )), '[]'::json)
+  from (
+    select producto_codigo, round(avg(estrellas)::numeric, 1) as prom, count(*) as tot
+    from public.resenas
+    where aprobada = true and producto_codigo is not null
+    group by producto_codigo
+  ) s;
+$$;
+
 -- ── Alta pública desde /resena/?c=CODE (queda PENDIENTE de aprobación) ────────
 -- Valida el rango de estrellas y el nombre; asocia la reseña a un pedido real si el
 -- código existe (no obligatorio, pero evita spam sin pedido).
@@ -148,10 +167,12 @@ $$;
 revoke all on function public.resenas_producto(text, int) from public;
 revoke all on function public.resenas_resumen(text) from public;
 revoke all on function public.resenas_destacadas(int) from public;
+revoke all on function public.resenas_resumen_todos() from public;
 revoke all on function public.crear_resena_publica(text, text, int, text, text) from public;
 grant execute on function public.resenas_producto(text, int) to anon, authenticated;
 grant execute on function public.resenas_resumen(text) to anon, authenticated;
 grant execute on function public.resenas_destacadas(int) to anon, authenticated;
+grant execute on function public.resenas_resumen_todos() to anon, authenticated;
 grant execute on function public.crear_resena_publica(text, text, int, text, text) to anon, authenticated;
 
 commit;
