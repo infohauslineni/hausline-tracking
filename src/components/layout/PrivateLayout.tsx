@@ -1,4 +1,4 @@
-import { ArrowUpRight, BarChart3, Bell, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, MoreHorizontal, PackagePlus, PackageSearch, Plus, ReceiptText, Settings, ShoppingBag, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
+import { ArrowUpRight, BarChart3, Bell, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, MoreHorizontal, PackagePlus, PackageSearch, Plus, ReceiptText, Settings, ShoppingBag, Star, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -42,6 +42,7 @@ const operaciones: NavItem[] = [
 ]
 const clientesProductos: NavItem[] = [
   { to: '/clientes', label: 'Clientes', icon: Users },
+  { to: '/resenas', label: 'Reseñas', icon: Star },
   { to: '/productos', label: 'Productos', icon: PackageSearch },
   { to: '/stock', label: 'Stock e inversiones', icon: HandCoins },
 ]
