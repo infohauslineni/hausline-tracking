@@ -1,6 +1,94 @@
 import { createClient } from '@supabase/supabase-js'
 import { registrarEnTrack17, pollGuiasActivas } from './_track17.js'
 import { obtenerCatalogoMergeado, mapearCatalogoAProductos } from './_catalogo.js'
+import { enviarCorreoBodega, enviarCorreoAbandono } from './_correo.js'
+
+const GRACIA_BODEGA = 2
+const CARGO_BODEGA_DIARIO = 5
+
+// Recordatorio automático de CARGO POR BODEGA. Busca los pedidos "disponible para
+// entrega" que ya pasaron los 2 días de gracia y le manda al cliente (con correo) un
+// aviso de cuánto se sumó a su factura. Dedup con `bodega_aviso_at`: máx. 1 correo por
+// pedido cada ~20 h, así corre a diario sin repetir. Best-effort por pedido.
+async function enviarRecordatoriosBodega(client) {
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) return 0
+  const { data: pedidos, error } = await client
+    .from('pedidos')
+    .select('id, codigo, bodega_aviso_at, clientes(nombre, correo), historial_pedidos(created_at, estado_nuevo)')
+    .eq('estado', 'disponible_entrega')
+    .limit(300)
+  if (error) { console.error('cron: leyendo pedidos bodega', error.message); return 0 }
+
+  // Tipo de cambio para incluir el equivalente en córdobas (redondeado a la decena).
+  let tc = 37
+  try {
+    const { data: cfg } = await client.from('configuracion').select('valor_json').eq('clave', 'moneda').maybeSingle()
+    const v = Number(cfg?.valor_json?.tipo_cambio)
+    if (v > 0) tc = v
+  } catch { /* usa 37 */ }
+
+  const ahora = Date.now()
+  let enviados = 0
+  for (const p of pedidos ?? []) {
+    const correo = String(p.clientes?.correo ?? '').trim()
+    if (!correo) continue
+    const inicios = (Array.isArray(p.historial_pedidos) ? p.historial_pedidos : [])
+      .filter((h) => h.estado_nuevo === 'disponible_entrega')
+      .map((h) => new Date(h.created_at).getTime())
+      .sort((a, b) => a - b)
+    const inicio = inicios[0]
+    if (!inicio) continue
+    const dias = Math.max(0, Math.floor((ahora - inicio) / 86_400_000))
+    const diasCobrados = Math.max(0, dias - GRACIA_BODEGA)
+    if (diasCobrados <= 0) continue // aún en gracia
+    // No reenviar si ya se avisó en las últimas ~20 h.
+    if (p.bodega_aviso_at && (ahora - new Date(p.bodega_aviso_at).getTime()) < 20 * 3_600_000) continue
+    const cargo = diasCobrados * CARGO_BODEGA_DIARIO
+    const cordobas = Math.round((cargo * tc) / 10) * 10
+    try {
+      await enviarCorreoBodega({ correo, nombre: p.clientes?.nombre ?? null, codigo: p.codigo, dias, diasCobrados, cargo, cordobas })
+      await client.from('pedidos').update({ bodega_aviso_at: new Date().toISOString() }).eq('id', p.id)
+      enviados++
+    } catch (e) {
+      console.error('cron: correo bodega falló', p.codigo, e?.message)
+    }
+  }
+  return enviados
+}
+
+// Recordatorio de ABANDONO DE CHECKOUT. Busca los encargos que siguen "pendiente"
+// (nunca se confirmó el pago), tienen correo, ya llevan al menos ~3 h creados, aún no
+// vencen y no se les mandó recordatorio (recordatorio_at nulo). Envía UN correo con el
+// enlace al pago y marca recordatorio_at. Best-effort por encargo.
+async function enviarRecordatoriosAbandono(client) {
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) return 0
+  const ahora = Date.now()
+  const haceTresHoras = new Date(ahora - 3 * 3_600_000).toISOString()
+  const { data: solicitudes, error } = await client
+    .from('solicitudes')
+    .select('id, codigo, cliente_nombre, cliente_correo, producto, created_at, vence_at, recordatorio_at, estado')
+    .eq('estado', 'pendiente')
+    .is('recordatorio_at', null)
+    .not('cliente_correo', 'is', null)
+    .lt('created_at', haceTresHoras)
+    .gt('vence_at', new Date(ahora).toISOString())
+    .limit(200)
+  if (error) { console.error('cron: leyendo encargos abandonados', error.message); return 0 }
+
+  let enviados = 0
+  for (const s of solicitudes ?? []) {
+    const correo = String(s.cliente_correo ?? '').trim()
+    if (!correo) continue
+    try {
+      await enviarCorreoAbandono({ correo, nombre: s.cliente_nombre ?? null, codigo: s.codigo, producto: s.producto ?? null })
+      await client.from('solicitudes').update({ recordatorio_at: new Date().toISOString() }).eq('id', s.id)
+      enviados++
+    } catch (e) {
+      console.error('cron: correo abandono falló', s.codigo, e?.message)
+    }
+  }
+  return enviados
+}
 
 // Sincroniza el catálogo web (tienda + feed + panel) → tabla `productos` del tracking.
 // Corre una vez al día para que los cambios de precio/foto de la web lleguen solos, sin
@@ -55,9 +143,28 @@ export default async function handler(request, response) {
   const { data, error } = await client.rpc('recalcular_fechas_estimadas')
   if (error) return response.status(500).json({ ok: false, error: 'Estimate recalculation failed' })
 
-  // Auto-avance: pedidos con 8+ días en "Despachado" pasan a "En tránsito internacional".
-  const { data: avanzados, error: avanzarError } = await client.rpc('avanzar_transito_internacional')
-  if (avanzarError) return response.status(500).json({ ok: false, error: 'Auto-advance failed' })
+  // Auto-avances de etapa. Van AISLADOS en try/catch: si una función todavía no existe
+  // (migración pendiente) o falla puntualmente, NO debe tumbar el resto del cron (17track,
+  // catálogo, bodega…). Antes un RPC faltante devolvía 500 y abortaba todo el trabajo diario.
+  let avanzados = 0
+  try {
+    // Pedidos con 8+ días en "Despachado" pasan a "En tránsito internacional".
+    const { data: n, error: e } = await client.rpc('avanzar_transito_internacional')
+    if (e) throw new Error(e.message)
+    avanzados = Number(n ?? 0)
+  } catch (avanzarError) {
+    console.error('cron: avanzar tránsito internacional falló', avanzarError?.message)
+  }
+
+  let avanzadosCalidad = 0
+  try {
+    // Pedidos con 1+ día en "Control de calidad" pasan a "En tránsito".
+    const { data: n, error: e } = await client.rpc('avanzar_control_calidad')
+    if (e) throw new Error(e.message)
+    avanzadosCalidad = Number(n ?? 0)
+  } catch (avanzarCalidadError) {
+    console.error('cron: avanzar control de calidad falló (¿migración 202608280001 sin aplicar?)', avanzarCalidadError?.message)
+  }
 
   // Registro automático de guías nuevas en 17TRACK. Va aislado en try/catch para que
   // un fallo de 17track nunca tumbe el recálculo de estimaciones (el trabajo principal).
@@ -96,14 +203,33 @@ export default async function handler(request, response) {
     console.error('cron: vencer encargos falló', vencerError?.message)
   }
 
+  // Recordatorio automático de cargo por bodega al cliente. Aislado para no tumbar lo principal.
+  let bodega = 0
+  try {
+    bodega = await enviarRecordatoriosBodega(client)
+  } catch (bodegaError) {
+    console.error('cron: recordatorio bodega falló', bodegaError?.message)
+  }
+
+  // Recordatorio de abandono de checkout (encargo pendiente sin pago). Aislado también.
+  let abandonos = 0
+  try {
+    abandonos = await enviarRecordatoriosAbandono(client)
+  } catch (abandonoError) {
+    console.error('cron: recordatorio abandono falló (¿migración 202608290003 sin aplicar?)', abandonoError?.message)
+  }
+
   return response.status(200).json({
     ok: true,
     updated: Number(data ?? 0),
     avanzados: Number(avanzados ?? 0),
+    avanzados_calidad: Number(avanzadosCalidad ?? 0),
     registrados,
     consultadas: track17.consultadas,
     avanzados_track17: track17.avanzados,
     catalogo,
     vencidas,
+    bodega,
+    abandonos,
   })
 }

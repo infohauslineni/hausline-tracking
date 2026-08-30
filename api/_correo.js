@@ -269,7 +269,27 @@ function bloqueWhatsapp() {
           </tr></table>`
 }
 
-export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, urlSeguimiento, esNuevo, factura, fotos }) {
+// Caja de "deja tu reseña" (se muestra en el correo de pedido entregado). El link va a
+// la tienda (/resena/?c=CODE), donde el cliente deja su reseña (queda pendiente de
+// aprobación). Base del sitio en CATALOGO_BASE_URL (mismo dominio del catálogo).
+function bloqueResena(codigo) {
+  const base = (process.env.CATALOGO_BASE_URL ?? 'https://hauslineshopni.es/').replace(/\/$/, '')
+  const url = `${base}/resena/?c=${encodeURIComponent(codigo)}`
+  return `
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr><td style="border:1px solid #e6e8ec;border-radius:8px;padding:20px;text-align:center;">
+              <div style="font-size:18px;letter-spacing:4px;color:#0b0f19;">★★★★★</div>
+              <div style="font-size:16px;font-weight:700;color:#0b0f19;margin-top:8px;">¿Cómo estuvo tu experiencia?</div>
+              <div style="font-size:13px;line-height:1.6;color:#8b93a7;margin:6px 0 14px;">Tu opinión ayuda a otros clientes a comprar con confianza.</div>
+              <a href="${url}" target="_blank" style="display:inline-block;border:1px solid #050505;color:#050505;text-decoration:none;font-weight:700;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;padding:12px 26px;border-radius:6px;">Dejar mi reseña</a>
+            </td></tr>
+          </table>`
+}
+
+export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, urlSeguimiento, esNuevo, factura, fotos, ctaTexto, ctaUrl }) {
+  const btnUrl = ctaUrl || urlSeguimiento
+  const btnTxt = ctaTexto || 'Ver seguimiento'
+  const esEntregado = (ETAPA_BASE[estado] || estado) === 'entregado'
   const intro = esNuevo
     ? `Gracias por tu compra. Confirmamos tu pedido y ya comenzamos a gestionarlo.`
     : `Tu pedido tiene una nueva actualización.`
@@ -334,10 +354,12 @@ export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, url
 
         ${extras ? `<tr><td style="padding:28px 36px 0;">${extras}</td></tr>` : ''}
 
+        ${esEntregado ? `<tr><td style="padding:28px 36px 0;">${bloqueResena(codigo)}</td></tr>` : ''}
+
         <!-- Botón -->
         <tr><td style="padding:28px 36px 0;">
-          <a href="${urlSeguimiento}" target="_blank" style="display:block;background-color:#050505;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:2px;text-transform:uppercase;text-align:center;padding:17px 20px;border-radius:6px;">Ver seguimiento</a>
-          <p style="margin:12px 0 0;font-size:11px;line-height:1.5;text-align:center;color:#b7bcc5;"><a href="${urlSeguimiento}" target="_blank" style="color:#b7bcc5;text-decoration:underline;word-break:break-all;">${urlSeguimiento}</a></p>
+          <a href="${btnUrl}" target="_blank" style="display:block;background-color:#050505;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:2px;text-transform:uppercase;text-align:center;padding:17px 20px;border-radius:6px;">${esc(btnTxt)}</a>
+          <p style="margin:12px 0 0;font-size:11px;line-height:1.5;text-align:center;color:#b7bcc5;"><a href="${btnUrl}" target="_blank" style="color:#b7bcc5;text-decoration:underline;word-break:break-all;">${btnUrl}</a></p>
         </td></tr>
 
         <!-- Ayuda -->
@@ -500,6 +522,33 @@ export async function enviarCorreoBodega({ correo, nombre, codigo, dias, diasCob
     to: correo,
     subject: `Pedido ${codigo}: cargo por bodega (${cargoTxt})`,
     html: plantillaCorreo({ nombre, codigo, estadoLabel: 'Cargo por bodega', nota, urlSeguimiento, esNuevo: false, factura: null, fotos: [] }),
+  })
+}
+
+// Recordatorio de ABANDONO DE CHECKOUT. Lo dispara el cron cuando un encargo lleva
+// varias horas "pendiente" (sin confirmar el pago) y aún no vence. Reusa la plantilla
+// base con CTA propio hacia la página de pago (/checkout/?c=CODE) del sitio.
+export async function enviarCorreoAbandono({ correo, nombre, codigo, producto }) {
+  const base = (process.env.CATALOGO_BASE_URL ?? 'https://hauslineshopni.es/').replace(/\/$/, '')
+  const checkoutUrl = `${base}/checkout/?c=${encodeURIComponent(codigo)}`
+  const nota = `Tu pedido ${codigo}${producto ? ` de <strong>${esc(producto)}</strong>` : ''} quedó a un paso de confirmarse. Completá tu pago para asegurarlo — recordá que el encargo se cancela solo a las 24 horas de creado.`
+
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
+    port: Number(process.env.SMTP_PORT ?? 465),
+    secure: true,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  })
+
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
+    to: correo,
+    subject: `${codigo}: completá tu pedido antes de que expire`,
+    html: plantillaCorreo({
+      nombre, codigo, estado: null, estadoLabel: 'Completa tu pedido', nota,
+      urlSeguimiento: checkoutUrl, esNuevo: false, factura: null, fotos: [],
+      ctaTexto: 'Completar mi pedido', ctaUrl: checkoutUrl,
+    }),
   })
 }
 
