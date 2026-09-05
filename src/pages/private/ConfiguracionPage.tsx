@@ -1,11 +1,11 @@
-import { CalendarClock, Check, Clock3, Cloud, Coins, Info, Power, RefreshCw, Save, ShieldCheck, Smartphone, UserPlus, Users } from 'lucide-react'
+import { CalendarClock, Check, Clock3, Cloud, Coins, Info, Power, RefreshCw, Save, ShieldCheck, Smartphone, Trash2, UserPlus, Users } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { ESTADOS_PEDIDO } from '../../constants/orders'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { guardarTipoCambio, obtenerTipoCambio } from '../../services/comercial.service'
-import { activarUsuario, crearOperador, listarEquipo, type MiembroEquipo } from '../../services/equipo.service'
+import { activarUsuario, crearOperador, eliminarUsuario, listarEquipo, type MiembroEquipo } from '../../services/equipo.service'
 import { DEFAULT_ESTIMACIONES, guardarConfiguracionEstimaciones, obtenerConfiguracionEstimaciones, recalcularEstimaciones, type ConfiguracionEstimaciones } from '../../services/estimaciones.service'
 import type { EstadoPedido } from '../../types/domain'
 
@@ -91,6 +91,15 @@ function EquipoSection() {
     finally { setBusy(null) }
   }
 
+  const borrar = async (m: MiembroEquipo) => {
+    if (m.id === user?.id) return toast.error('No podés eliminar tu propia cuenta.')
+    if (!window.confirm(`¿Eliminar a ${m.nombre || m.correo}? Esta acción no se puede deshacer.`)) return
+    setBusy(m.id)
+    try { await eliminarUsuario(m.id); toast.success('Usuario eliminado.'); recargar() }
+    catch (err) { toast.error(err instanceof Error ? err.message : 'No se pudo eliminar el usuario.') }
+    finally { setBusy(null) }
+  }
+
   return <section className="form-section mt-5">
     <div className="flex flex-col gap-1"><h2 className="flex items-center gap-2 font-semibold"><Users size={18} className="text-accent" /> Equipo</h2><p className="max-w-2xl text-xs leading-5 text-muted">Da acceso a un empleado como <strong>operador</strong>: ve y trabaja los pedidos (fotos, control de calidad, etapas) y los encargos web, <strong>sin ver finanzas, costos ni ganancias</strong>. Podés cortar su acceso cuando quieras.</p></div>
 
@@ -110,6 +119,7 @@ function EquipoSection() {
             <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${m.rol === 'admin' ? 'bg-accent/15 text-accent' : 'bg-white/[0.06] text-muted'}`}>{m.rol === 'admin' ? 'Administrador' : 'Operador'}</span>
             <span className={`hidden rounded-full px-2.5 py-1 text-[10px] font-semibold sm:inline ${m.activo ? 'bg-[#62eaa0]/12 text-[#62eaa0]' : 'bg-red-400/12 text-red-300'}`}>{m.activo ? 'Activo' : 'Inactivo'}</span>
             {m.id !== user?.id && <button className={`subtle-button min-h-9 px-3 ${m.activo ? 'text-red-300 hover:text-red-200' : 'text-[#62eaa0]'}`} disabled={busy === m.id} onClick={() => void toggle(m)} title={m.activo ? 'Desactivar acceso' : 'Activar acceso'}><Power size={15} /> {m.activo ? 'Desactivar' : 'Activar'}</button>}
+            {m.id !== user?.id && <button className="subtle-button min-h-9 px-3 text-red-300 hover:text-red-200" disabled={busy === m.id} onClick={() => void borrar(m)} title="Eliminar usuario" aria-label="Eliminar usuario"><Trash2 size={15} /></button>}
           </div>)}
     </div>
   </section>

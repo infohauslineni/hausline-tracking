@@ -56,3 +56,19 @@ export async function cambiarRol(id: string, rol: RolUsuario) {
   const { error } = await requireSupabase().from('perfiles').update({ rol }).eq('id', id)
   if (error) throw error
 }
+
+// Elimina la cuenta de un usuario (vía /api/eliminar-usuario, que valida que seas admin y no
+// deja borrarte a vos mismo). Borra el usuario de auth y su perfil. Es permanente.
+export async function eliminarUsuario(id: string) {
+  const client = requireSupabase()
+  const { data: sessionData } = await client.auth.getSession()
+  const token = sessionData.session?.access_token
+  if (!token) throw new Error('Sesión no disponible.')
+  const res = await fetch('/api/eliminar-usuario', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ id }),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok || !json.ok) throw new Error(json.error || 'No se pudo eliminar el usuario.')
+}
