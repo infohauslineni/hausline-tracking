@@ -1,10 +1,14 @@
 import { createClient } from '@supabase/supabase-js'
 import { registrarEnTrack17, pollGuiasActivas } from './_track17.js'
 import { obtenerCatalogoMergeado, mapearCatalogoAProductos } from './_catalogo.js'
-import { enviarCorreoBodega, enviarCorreoAbandono } from './_correo.js'
+import { enviarCorreoBodega, enviarCorreoAbandono, enviarCorreoRetraso } from './_correo.js'
 
 const GRACIA_BODEGA = 2
 const CARGO_BODEGA_DIARIO = 5
+// Aviso de retraso: estados que cuentan como "en tránsito internacional" (mismo grupo que
+// ve el cliente) y el umbral de días a partir del cual se avisa la demora.
+const ESTADOS_TRANSITO = ['etiqueta_creada', 'despachado', 'transito_internacional', 'recibido_estados_unidos', 'transito_nicaragua']
+const DIAS_RETRASO = 27
 
 // Recordatorio automático de CARGO POR BODEGA. Busca los pedidos "disponible para
 // entrega" que ya pasaron los 2 días de gracia y le manda al cliente (con correo) un
@@ -85,6 +89,46 @@ async function enviarRecordatoriosAbandono(client) {
       enviados++
     } catch (e) {
       console.error('cron: correo abandono falló', s.codigo, e?.message)
+    }
+  }
+  return enviados
+}
+
+// Aviso automático de RETRASO. Busca pedidos que SIGUEN en tránsito internacional y que
+// entraron a esa etapa hace más de 27 días, y le manda al cliente (con correo) un aviso
+// suave de demora. Dedup con `retraso_aviso_at`: se envía UNA sola vez por pedido (columna
+// nula = aún no avisado). El inicio del tránsito se toma del historial. Best-effort por pedido.
+async function enviarAvisosRetraso(client) {
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) return 0
+  const { data: pedidos, error } = await client
+    .from('pedidos')
+    .select('id, codigo, estado, retraso_aviso_at, clientes(nombre, correo), historial_pedidos(created_at, estado_nuevo)')
+    .in('estado', ESTADOS_TRANSITO)
+    .is('retraso_aviso_at', null)
+    .limit(300)
+  if (error) { console.error('cron: leyendo pedidos en tránsito', error.message); return 0 }
+
+  const ahora = Date.now()
+  let enviados = 0
+  for (const p of pedidos ?? []) {
+    const correo = String(p.clientes?.correo ?? '').trim()
+    if (!correo) continue
+    // Cuándo ENTRÓ por primera vez a la etapa de tránsito (el más antiguo del historial).
+    const inicios = (Array.isArray(p.historial_pedidos) ? p.historial_pedidos : [])
+      .filter((h) => ESTADOS_TRANSITO.includes(h.estado_nuevo))
+      .map((h) => new Date(h.created_at).getTime())
+      .filter((t) => Number.isFinite(t))
+      .sort((a, b) => a - b)
+    const inicio = inicios[0]
+    if (!inicio) continue
+    const dias = Math.floor((ahora - inicio) / 86_400_000)
+    if (dias <= DIAS_RETRASO) continue
+    try {
+      await enviarCorreoRetraso({ correo, nombre: p.clientes?.nombre ?? null, codigo: p.codigo, estado: p.estado })
+      await client.from('pedidos').update({ retraso_aviso_at: new Date().toISOString() }).eq('id', p.id)
+      enviados++
+    } catch (e) {
+      console.error('cron: correo retraso falló', p.codigo, e?.message)
     }
   }
   return enviados
@@ -219,6 +263,14 @@ export default async function handler(request, response) {
     console.error('cron: recordatorio abandono falló (¿migración 202608290003 sin aplicar?)', abandonoError?.message)
   }
 
+  // Aviso automático de retraso (>27 días en tránsito). Aislado para no tumbar lo principal.
+  let retrasos = 0
+  try {
+    retrasos = await enviarAvisosRetraso(client)
+  } catch (retrasoError) {
+    console.error('cron: aviso de retraso falló (¿migración 202609020001 sin aplicar?)', retrasoError?.message)
+  }
+
   return response.status(200).json({
     ok: true,
     updated: Number(data ?? 0),
@@ -231,5 +283,6 @@ export default async function handler(request, response) {
     vencidas,
     bodega,
     abandonos,
+    retrasos,
   })
 }

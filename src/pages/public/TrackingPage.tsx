@@ -7,20 +7,23 @@ import { isSupabaseConfigured } from '../../lib/supabase'
 import { buscarPedidoPublico } from '../../services/publicTracking.service'
 import type { EstadoPedido } from '../../types/domain'
 import type { PublicOrder } from '../../types/publicTracking'
-import { estimateAfterArrival, postponeUntilFuture } from '../../utils/estimates'
+import { estimateAfterArrival, postponeToMinFuture, postponeUntilFuture } from '../../utils/estimates'
 import { whatsappUrl } from '../../utils/whatsapp'
+import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { DELIVERY_OPCIONES } from '../../constants/pagos'
 import { estadoColor } from '../../constants/orders'
+import { CARGO_BODEGA_DIARIO, DIAS_GRACIA_BODEGA, calcularCargoBodega } from '../../utils/bodega'
 
 const STEPS: { code: EstadoPedido; label: string }[] = [
   { code: 'pedido_confirmado', label: 'Orden confirmada' }, { code: 'en_preparacion', label: 'En preparación' },
+  { code: 'control_calidad', label: 'Control de calidad' },
   { code: 'transito_internacional', label: 'En tránsito' },
   { code: 'llego_nicaragua', label: 'País de destino' }, { code: 'disponible_entrega', label: 'Disponible para entrega' },
+  { code: 'pagado', label: 'Pagado' },
   { code: 'entregado', label: 'Entregado' },
 ]
-// Etapas viejas / internas → una de las 6 visibles. "En tránsito" agrupa despacho y bodega.
+// Etapas viejas / internas → una de las 7 visibles. "En tránsito" agrupa despacho y bodega.
 const aliases: Partial<Record<EstadoPedido, EstadoPedido>> = {
-  control_calidad: 'en_preparacion',
   etiqueta_creada: 'transito_internacional',
   despachado: 'transito_internacional',
   recibido_estados_unidos: 'transito_internacional',
@@ -51,7 +54,7 @@ export function TrackingPage() {
     <div className="tracking-glow" />
     <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-6 sm:px-8"><Link to="/tracking" aria-label="Inicio de rastreo"><Brand /></Link><Link to="/login" className="subtle-button"><span className="hidden sm:inline">Acceso administrativo</span><ArrowRight size={16} /></Link></header>
     {!codigo ? <Landing input={input} setInput={setInput} submit={submit} notFound={notFound} /> : <ResultArea order={order} loading={loading} input={input} setInput={setInput} submit={submit} notFound={notFound} />}
-    <footer className="relative mx-auto flex w-full max-w-6xl flex-col gap-2 border-t border-line px-5 py-5 text-center text-xs text-muted sm:flex-row sm:justify-between sm:px-8"><span>© 2026 Hausline · King of Shoes</span><span>Los tiempos pueden variar por logística internacional.</span></footer>
+    <footer className="relative mx-auto flex w-full max-w-6xl flex-col gap-3 border-t border-line px-5 py-5 text-center text-xs text-muted sm:flex-row sm:items-center sm:justify-between sm:px-8"><span>© 2026 Hausline · King of Shoes</span><nav className="flex flex-wrap justify-center gap-x-4 gap-y-1"><Link to="/privacidad" className="hover:text-white">Política de privacidad</Link><Link to="/terminos" className="hover:text-white">Términos y condiciones</Link></nav></footer>
   </main>
 }
 
@@ -68,7 +71,8 @@ function ResultArea({ order, loading, input, setInput, submit, notFound }: Searc
   const currentIndex = Math.max(0, stepIndex)
   // La cuenta regresiva ("faltan X días") solo aparece cuando el pedido ya fue despachado.
   // Antes de eso mostramos solo la fecha estimada para no asustar al cliente con "faltan muchos días".
-  const mostrarCuenta = stepIndex >= STEPS.findIndex((step) => step.code === 'despachado')
+  // "Despachado" se agrupa en "En tránsito" (transito_internacional), que es el primer paso visible del envío.
+  const mostrarCuenta = stepIndex >= STEPS.findIndex((step) => step.code === 'transito_internacional')
   const isDelivered = order.estado_codigo === 'entregado'
   const isIssue = order.estado_codigo === 'incidencia' || order.estado_codigo === 'cancelado'
   // Tope del historial: nunca mostramos una etapa más avanzada que la actual.
@@ -92,7 +96,13 @@ function ResultArea({ order, loading, input, setInput, submit, notFound }: Searc
       ? order.fecha_estimada
       : llegadaPais && order.estado_codigo === 'llego_nicaragua'
         ? estimateAfterArrival(llegadaPais.fecha)
-        : order.fecha_estimada ? postponeUntilFuture(order.fecha_estimada, 3) : null
+        // Mientras sigue EN TRÁNSITO, la entrega no puede ser hoy/mañana: se empuja a
+        // varios días vista para no prometer una fecha imposible (aún viene en camino).
+        : order.fecha_estimada
+          ? statusCode === 'transito_internacional'
+            ? postponeToMinFuture(order.fecha_estimada, 3)
+            : postponeUntilFuture(order.fecha_estimada, 3)
+          : null
   const estimacion: Estimacion = {
     label: entregaRegistrada ? 'Entregado' : order.estado_codigo === 'disponible_entrega' ? 'Disponible desde' : 'Entrega estimada',
     value: fechaClave ? formatDate(fechaClave) : 'Por confirmar',
@@ -181,10 +191,10 @@ function Confetti() {
 }
 
 function Products({ order }: { order: PublicOrder }) {
-  // La página pública no resuelve la foto del catálogo (product.imagen suele venir vacío),
-  // así que como respaldo usamos las fotos del producto que se subieron al pedido.
+  // Foto del producto: se usa la del catálogo (product.imagen, resuelta a URL absoluta
+  // con resolverImagenCatalogo) y, como respaldo, las fotos del producto subidas al pedido.
   const fotos = (order.imagenes ?? []).filter((image) => image.tipo === 'producto' && image.url).map((image) => image.url as string)
-  return <section className="public-card"><h2 className="flex items-center gap-2 text-sm font-semibold"><Package size={17} className="text-accent" /> Tu pedido</h2><div className="mt-4 divide-y divide-line">{order.productos.map((product, index) => { const foto = product.imagen ?? fotos[index] ?? fotos[0]; return <div className="flex items-center gap-3 py-4" key={`${product.producto}-${index}`}><span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/[0.04] text-muted">{foto ? <img src={foto} alt="" className="size-full object-cover" /> : <Package size={19} />}</span><div className="min-w-0 flex-1"><strong className="block truncate text-sm">{product.producto}</strong><span className="mt-1 block text-xs text-muted">{[product.marca, product.talla, product.color].filter(Boolean).join(' · ') || 'Producto confirmado'}</span>{product.codigo && <span className="mt-0.5 block font-mono text-[11px] text-accent">Cód. {product.codigo}</span>}</div><span className="text-xs font-semibold">×{product.cantidad}</span></div> })}</div></section> }
+  return <section className="public-card"><h2 className="flex items-center gap-2 text-sm font-semibold"><Package size={17} className="text-accent" /> Tu pedido</h2><div className="mt-4 divide-y divide-line">{order.productos.map((product, index) => { const foto = resolverImagenCatalogo(product.imagen) || fotos[index] || fotos[0]; return <div className="flex items-center gap-3 py-4" key={`${product.producto}-${index}`}><span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/[0.04] text-muted">{foto ? <img src={foto} alt="" className="size-full object-cover" /> : <Package size={19} />}</span><div className="min-w-0 flex-1"><strong className="block truncate text-sm">{product.producto}</strong><span className="mt-1 block text-xs text-muted">{[product.marca, product.talla, product.color].filter(Boolean).join(' · ') || 'Producto confirmado'}</span>{product.codigo && <span className="mt-0.5 block font-mono text-[11px] text-accent">Cód. {product.codigo}</span>}</div><span className="text-xs font-semibold">×{product.cantidad}</span></div> })}</div></section> }
 function OrderImages({ order, type, title, description, fallback }: { order: PublicOrder; type: 'producto' | 'control_calidad' | 'recepcion_miami' | 'recibido_local'; title: string; description: string; fallback?: { url: string; storage_path: string }[] }) { const uploaded = (order.imagenes ?? []).filter((image) => image.tipo === type && image.url).map((image) => ({ url: image.url as string, storage_path: image.storage_path })); const images = uploaded.length ? uploaded : (fallback ?? []); if (!images.length) return null; return <section className="public-card"><h2 className="flex items-center gap-2 text-sm font-semibold"><Images size={17} className="text-accent" /> {title}</h2><p className="mt-2 text-xs leading-5 text-muted">{description}</p><div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">{images.map((image, index) => <button type="button" key={`${image.storage_path}-${index}`} className="group aspect-square overflow-hidden rounded-xl border border-line bg-white/[0.025]" onClick={() => image.url && window.open(image.url, '_blank', 'noopener,noreferrer')}><img src={image.url} alt={`${title} ${index + 1}`} className="size-full object-cover transition duration-300 group-hover:scale-[1.03]" /></button>)}</div></section> }
 // Limpia el historial: descarta retrocesos, etapas repetidas y cualquier etapa
 // posterior a la actual (errores de avance corregidos). Devuelve el avance real.
@@ -203,23 +213,19 @@ function historialLimpio(historial: PublicOrder['historial'], capIndex: number) 
 function Timeline({ order, capIndex }: { order: PublicOrder; capIndex: number }) { const entries = [...historialLimpio(order.historial, capIndex)].reverse(); return <section className="public-card"><h2 className="flex items-center gap-2 text-sm font-semibold"><Clock3 size={17} className="text-accent" /> Historial</h2><div className="relative mt-5 space-y-5 before:absolute before:bottom-3 before:left-[13px] before:top-3 before:w-px before:bg-line">{entries.map((entry, index) => <div className="relative flex gap-3" key={`${entry.fecha}-${index}`}><span className={`relative z-10 mt-0.5 size-7 shrink-0 rounded-full border-4 border-panel ${index === 0 ? 'bg-accent shadow-accent' : 'bg-[#48504b]'}`} /><div><strong className="block text-xs">{entry.estado}</strong>{entry.nota && <p className="mt-1 text-xs leading-5 text-muted">{entry.nota}</p>}<p className="mt-1 text-[10px] text-muted">{entry.ubicacion ? `${entry.ubicacion} · ` : ''}{formatDateTime(entry.fecha)}</p></div></div>)}</div></section> }
 function Journeys({ order }: { order: PublicOrder }) { if (!order.trayectos.length) return null; return <section className="public-card"><h2 className="flex items-center gap-2 text-sm font-semibold"><Truck size={17} className="text-accent" /> Trayectos visibles</h2><div className="mt-4 grid gap-3 sm:grid-cols-2">{order.trayectos.map((route, index) => <article className="rounded-xl border border-line bg-black/10 p-4" key={`${route.tracking}-${index}`}><span className="text-[10px] font-semibold uppercase tracking-wider text-accent">Trayecto {index + 1}</span><strong className="mt-2 block text-sm">{route.tipo}</strong><p className="mt-1 text-xs text-muted">{[route.origen, route.destino].filter(Boolean).join(' → ')}</p>{route.ultima_ubicacion && <p className="mt-3 flex items-center gap-1.5 text-xs text-muted"><MapPin size={13} /> {route.ultima_ubicacion}</p>}<p className="mt-2 text-[11px] text-muted">{route.ultimo_evento}</p></article>)}</div></section> }
 
-// Política de bodega: 2 días para confirmar o cancelar sin costo; después, USD 5 por cada día.
-const CARGO_BODEGA_DIARIO = 5
-const DIAS_GRACIA_BODEGA = 2
+// Política de bodega: 2 días para confirmar o cancelar sin costo; después, USD 5 por
+// cada día. La lógica vive en utils/bodega (compartida con el panel y el cobro final).
 function StoragePolicy({ disponibleDesde }: { disponibleDesde: string }) {
-  const inicio = new Date(disponibleDesde)
-  const dias = Math.max(0, Math.floor((new Date().getTime() - inicio.getTime()) / 86_400_000))
-  const diasCobrados = Math.max(0, dias - DIAS_GRACIA_BODEGA)
-  const cargo = diasCobrados * CARGO_BODEGA_DIARIO
-  const limite = new Date(inicio.getTime() + DIAS_GRACIA_BODEGA * 86_400_000)
-  if (diasCobrados > 0) return <div className="mt-4 rounded-xl border border-red-400/30 bg-red-400/[0.06] p-3.5">
+  const info = calcularCargoBodega(disponibleDesde)
+  if (!info) return null
+  if (info.activo) return <div className="mt-4 rounded-xl border border-red-400/30 bg-red-400/[0.06] p-3.5">
     <strong className="flex items-center gap-1.5 text-xs text-red-200"><AlertCircle size={14} /> Cargo por bodega activo</strong>
-    <p className="mt-1.5 text-[11px] leading-5 text-red-100/80">Pasaron {dias} días desde que tu pedido quedó disponible. Se aplica un cargo de USD {CARGO_BODEGA_DIARIO} por día después de los primeros {DIAS_GRACIA_BODEGA} días.</p>
-    <p className="mt-2 text-[11px] text-muted">Acumulado: <strong className="text-red-200">USD {cargo.toFixed(2)}</strong> ({diasCobrados} {diasCobrados === 1 ? 'día' : 'días'} × USD {CARGO_BODEGA_DIARIO})</p>
+    <p className="mt-1.5 text-[11px] leading-5 text-red-100/80">Pasaron {info.dias} días desde que tu pedido quedó disponible. Como superó los {DIAS_GRACIA_BODEGA} días de gracia, se cobran USD {CARGO_BODEGA_DIARIO} por cada día extra que sigue en bodega.</p>
+    <p className="mt-2 text-[11px] text-muted">Acumulado: <strong className="text-red-200">USD {info.cargo.toFixed(2)}</strong> ({info.diasCobrados} {info.diasCobrados === 1 ? 'día' : 'días'} × USD {CARGO_BODEGA_DIARIO})</p>
   </div>
   return <div className="mt-4 rounded-xl border border-amber-300/25 bg-amber-300/[0.06] p-3.5">
     <strong className="flex items-center gap-1.5 text-xs text-amber-200"><CalendarDays size={14} /> Tienes {DIAS_GRACIA_BODEGA} días para confirmar</strong>
-    <p className="mt-1.5 text-[11px] leading-5 text-amber-100/80">Puedes confirmar o cancelar sin costo hasta el <strong>{formatDate(limite.toISOString())}</strong>. Después se cobran USD {CARGO_BODEGA_DIARIO} por cada día que el pedido siga en bodega.</p>
+    <p className="mt-1.5 text-[11px] leading-5 text-amber-100/80">Puedes confirmar o cancelar sin costo hasta el <strong>{formatDate(info.limite)}</strong>. Después se cobran USD {CARGO_BODEGA_DIARIO} por cada día que el pedido siga en bodega.</p>
   </div>
 }
 function DeliveryCard({ codigo, whatsapp, disponibleDesde }: { codigo: string; whatsapp?: string; disponibleDesde: string }) {

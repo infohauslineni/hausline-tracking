@@ -15,7 +15,7 @@ export type Cliente = {
 export type EstadoPedido =
   | 'pedido_confirmado' | 'en_preparacion' | 'control_calidad' | 'etiqueta_creada' | 'despachado'
   | 'transito_internacional' | 'recibido_estados_unidos' | 'transito_nicaragua'
-  | 'llego_nicaragua' | 'disponible_entrega' | 'entregado' | 'cancelado' | 'incidencia'
+  | 'llego_nicaragua' | 'disponible_entrega' | 'pagado' | 'entregado' | 'cancelado' | 'incidencia'
 
 export type PedidoItem = {
   id?: string
@@ -48,15 +48,19 @@ export type Pedido = {
   total: number
   abono: number
   saldo: number
+  descuento?: number
+  cupon_id?: string | null
+  cupon_codigo?: string | null
   notas_internas?: string | null
   notas_publicas?: string | null
   metodo_pago?: string | null
   moneda?: string
   envio_rapido?: boolean
+  motivo_cancelacion?: string | null
   activo: boolean
   created_at: string
   updated_at: string
-  clientes?: Pick<Cliente, 'nombre' | 'whatsapp'> | null
+  clientes?: Pick<Cliente, 'nombre' | 'whatsapp' | 'departamento' | 'ciudad'> | null
   pedido_items?: PedidoItem[]
   gastos?: Gasto[]
 }
@@ -64,9 +68,29 @@ export type Pedido = {
 export type Proveedor = { id: string; nombre: string; contacto: string | null; whatsapp: string | null; notas: string | null; activo: boolean; created_at: string }
 export type Producto = { id: string; codigo: string; nombre: string; marca: string | null; categoria: string | null; proveedor_id: string | null; tallas: string[]; precio_compra: number; precio_venta: number; imagen: string | null; descripcion: string | null; activo: boolean; created_at: string; proveedores?: Pick<Proveedor, 'nombre'> | null }
 export type Moneda = 'USD' | 'NIO'
+export type Cupon = {
+  id: string
+  codigo: string
+  tipo: 'porcentaje' | 'monto'
+  valor: number
+  cliente_id: string | null
+  usos_max: number | null
+  usos_confirmados: number
+  vence_el: string | null
+  nota: string | null
+  activo: boolean
+  created_at: string
+  updated_at?: string
+  clientes?: Pick<Cliente, 'nombre' | 'whatsapp'> | null
+}
+export type CuponValidacion = { valido: boolean; motivo?: string; id?: string; codigo?: string; tipo?: 'porcentaje' | 'monto'; valor?: number; descuento?: number; cliente_id?: string | null }
 export type Pago = { id: string; pedido_id: string; cliente_id: string; fecha: string; tipo: 'abono_inicial' | 'abono' | 'pago_final' | 'reembolso'; monto: number; moneda?: Moneda; monto_original?: number | null; tipo_cambio?: number | null; metodo_pago: string | null; referencia: string | null; observaciones: string | null; created_at: string; pedidos?: Pick<Pedido, 'codigo' | 'saldo'> | null; clientes?: Pick<Cliente, 'nombre'> | null }
 export type Gasto = { id: string; fecha: string; categoria: string; monto: number; moneda?: Moneda; monto_original?: number | null; tipo_cambio?: number | null; metodo_pago: string | null; pedido_id: string | null; inversion_id: string | null; proveedor_id: string | null; descripcion: string; observaciones: string | null; created_at: string; pedidos?: Pick<Pedido, 'codigo'> | null; inversiones?: Pick<Inversion, 'producto' | 'codigo'> | null; proveedores?: Pick<Proveedor, 'nombre'> | null }
-export type MovimientoCuenta = { id: string; fecha: string; tipo: 'ingreso' | 'retiro' | 'pago_proveedor' | 'gasto' | 'inversion' | 'ajuste_entrada' | 'ajuste_salida'; descripcion: string; monto: number; moneda?: Moneda; monto_original?: number | null; tipo_cambio?: number | null; metodo: string | null; pedido_id: string | null; gasto_id?: string | null; pago_id?: string | null; inversion_id?: string | null; observaciones: string | null; created_at: string; pedidos?: Pick<Pedido, 'codigo'> | null }
+export type MovimientoCuenta = { id: string; fecha: string; tipo: 'ingreso' | 'retiro' | 'pago_proveedor' | 'gasto' | 'inversion' | 'ajuste_entrada' | 'ajuste_salida'; descripcion: string; monto: number; moneda?: Moneda; monto_original?: number | null; tipo_cambio?: number | null; metodo: string | null; pedido_id: string | null; gasto_id?: string | null; pago_id?: string | null; inversion_id?: string | null; cuenta_id?: string | null; monto_cuenta?: number | null; observaciones: string | null; created_at: string; pedidos?: Pick<Pedido, 'codigo'> | null }
+// Cuenta bancaria con saldo que se muestra como tarjeta (tipo la app del banco) y sube
+// cuando entra un pago hacia ella. moneda define si la tarjeta muestra C$ o US$.
+export type PropositoCuenta = 'comprar' | 'recibir' | 'ambos'
+export type CuentaBancaria = { id: string; nombre: string; banco: string | null; numero: string | null; titular: string | null; moneda: Moneda; emoji: string; saldo: number; orden: number; activo: boolean; proposito: PropositoCuenta; limite: number | null; created_at: string; updated_at: string }
 export type CajaMes = { periodo: string; sugerido: number; apertura: number | null; opening: number; movimientos_mes: number; saldo_mes: number; confirmada: boolean }
 export type Inversion = { id: string; fecha: string; producto_id: string | null; codigo: string | null; producto: string; marca: string | null; talla_color: string | null; cantidad: number; costo_unitario: number; gastos_adicionales: number; precio_venta_estimado: number; estado: 'en_inventario' | 'reservado' | 'vendido' | 'descartado'; notas: string | null; imagen?: string | null; tracking?: string | null; transportista?: string | null; url_tracking?: string | null; estado_tracking?: string | null; pedido_id?: string | null; created_at: string; productos?: Pick<Producto, 'nombre' | 'codigo'> | null; gastos?: Pick<Gasto, 'id' | 'monto' | 'categoria'>[] }
 export type Deuda = { id: string; acreedor: string; concepto: string; monto_total: number; monto_pagado: number; fecha_deuda: string; fecha_vencimiento: string | null; estado: 'pendiente' | 'pagada' | 'cancelada'; notas: string | null; created_at: string; pagos_deuda?: PagoDeuda[] }

@@ -131,5 +131,38 @@ export async function subirArchivo(pedidoId: string, tipo: TipoArchivo, file: Fi
   return { ...(data as ArchivoPedido), signed_url: signed?.signedUrl ?? undefined }
 }
 
+// Base64 (sin el prefijo data:) de un Blob, para mandarlo en JSON a la función serverless.
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '')
+    reader.onerror = () => reject(reader.error ?? new Error('No se pudo leer el archivo.'))
+    reader.readAsDataURL(blob)
+  })
+}
+
+// Sube el comprobante de pago a la carpeta de Google Drive del pedido (la misma donde
+// caen su factura y sus fotos). Comprime la imagen en el navegador (webp, sin marca de
+// agua) para no exceder el límite de tamaño de la función. Requiere sesión de admin: el
+// endpoint /api/archivar-comprobante valida el JWT. Lanza si no se pudo archivar.
+// `fecha` = fecha del PEDIDO (fecha_pedido), para que el comprobante caiga en la MISMA
+// carpeta de mes que la factura del pedido, aunque el pago se registre semanas después
+// (p. ej. pedido de agosto pagado en septiembre → va a "Agosto 2026", no a septiembre).
+export async function archivarComprobanteDrive(codigo: string, file: File, fecha?: string | null) {
+  const client = requireSupabase()
+  const { data: sessionData } = await client.auth.getSession()
+  const token = sessionData.session?.access_token
+  if (!token) throw new Error('Sesión no disponible.')
+  const blob = await comprimirImagen(file, false)
+  const dataBase64 = await blobToBase64(blob)
+  const res = await fetch('/api/archivar-comprobante', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ codigo, fecha: fecha || undefined, filename: `${codigo} - Comprobante de pago.webp`, mime: 'image/webp', dataBase64 }),
+  })
+  if (!res.ok) throw new Error('No se pudo archivar el comprobante en Drive.')
+  return res.json().catch(() => ({}))
+}
+
 export async function eliminarArchivo(file: ArchivoPedido) { const client = requireSupabase(); const { error: storageError } = await client.storage.from('pedidos').remove([file.storage_path]); if (storageError) throw storageError; const { error } = await client.from('archivos_pedido').delete().eq('id', file.id); if (error) throw error }
 export async function marcarPrincipal(file: ArchivoPedido) { const client = requireSupabase(); await client.from('archivos_pedido').update({ es_principal: false }).eq('pedido_id', file.pedido_id); const { error } = await client.from('archivos_pedido').update({ es_principal: true }).eq('id', file.id); if (error) throw error; await client.from('pedidos').update({ imagen_principal: file.storage_path }).eq('id', file.pedido_id) }

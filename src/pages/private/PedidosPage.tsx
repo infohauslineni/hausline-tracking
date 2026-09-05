@@ -1,30 +1,54 @@
-import { ArrowUpRight, Ban, Boxes, CalendarDays, CheckCircle2, ChevronDown, Download, Package, Plus, Search, Trash2, XCircle } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { ArrowUpRight, Ban, Boxes, CalendarDays, CheckCircle2, ChevronDown, CircleDollarSign, Download, Package, Plus, Search, Trash2, XCircle } from 'lucide-react'
+import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ESTADOS_PEDIDO, estadoLabel, estadoTone, etapaBase } from '../../constants/orders'
 import { DEMO_PEDIDOS } from '../../data/demo'
 import { isSupabaseConfigured } from '../../lib/supabase'
-import { actualizarEstadoPedido, eliminarPedido, listarPedidos } from '../../services/pedidos.service'
+import { eliminarPedido, listarPedidos, recargarPedidos, suscribirPedidos } from '../../services/pedidos.service'
+import { CancelarPedidoModal } from '../../components/pedidos/CancelarPedidoModal'
+import { useAuth } from '../../contexts/AuthContext'
 import type { EstadoPedido, Pedido } from '../../types/domain'
 
 export function PedidosPage() {
+  const { esAdmin } = useAuth()
   const [pedidos, setPedidos] = useState<Pedido[]>(isSupabaseConfigured ? [] : DEMO_PEDIDOS)
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [search, setSearch] = useState('')
   const [estado, setEstado] = useState<EstadoPedido | 'todos'>('todos')
+  const [cancelando, setCancelando] = useState<Pedido | null>(null)
   useEffect(() => { if (isSupabaseConfigured) void listarPedidos(setPedidos).then(setPedidos).catch(() => toast.error('No se pudieron cargar los pedidos.')).finally(() => setLoading(false)) }, [])
+  // Realtime: si se confirma un encargo (o cambia cualquier pedido) mientras esta pantalla
+  // está abierta, la lista se refresca sola sin recargar la web.
+  const refrescar = useCallback(() => { void recargarPedidos(setPedidos).then(setPedidos).catch(() => undefined) }, [])
+  useEffect(() => {
+    if (!isSupabaseConfigured) return
+    const unsub = suscribirPedidos(refrescar)
+    return () => unsub()
+  }, [refrescar])
 
-  const [mes, setMes] = useState(mesActual())
+  // Por defecto abrimos en "Pendientes": TODOS los pedidos activos, sin importar el mes, para
+  // no tener que cambiar el filtro cada vez. El selector de mes sigue disponible para revisar
+  // un mes concreto (incluye entregados/cancelados de ese mes).
+  const [mes, setMes] = useState('pendientes')
+  const enPendientes = mes === 'pendientes'
   // Meses que tienen pedidos, del más nuevo al más viejo; siempre incluye el mes actual.
   const meses = useMemo(() => { const s = new Set(pedidos.map(mesDe).filter(Boolean)); s.add(mesActual()); return [...s].sort().reverse() }, [pedidos])
-  // Todo lo del mes elegido: los indicadores y las listas se calculan sobre esto.
-  const delMes = useMemo(() => pedidos.filter((p) => mesDe(p) === mes), [pedidos, mes])
+  // Alcance: en "Pendientes" es todo el historial; con un mes elegido, solo ese mes.
+  const delMes = useMemo(() => enPendientes ? pedidos : pedidos.filter((p) => mesDe(p) === mes), [pedidos, mes, enPendientes])
 
-  // Lista principal: del mes, SIN entregados ni cancelados, aplicando estado y búsqueda.
+  // Lista principal. En la vista "Todos" ocultamos los terminales (entregado/cancelado)
+  // para que solo se vean pedidos activos; los cancelados tienen su apartado abajo. Pero
+  // si el usuario elige un estado en el filtro, mostramos EXACTAMENTE ese estado, incluidos
+  // "Entregado" y "Cancelado" (antes el filtro Entregado salía vacío por la exclusión fija).
   const filtered = useMemo(() => {
     const term = search.toLowerCase().trim()
-    return delMes.filter((p) => p.estado !== 'entregado' && p.estado !== 'cancelado' && (estado === 'todos' || etapaBase(p.estado) === estado) && coincide(p, term))
+    return delMes.filter((p) => {
+      if (!coincide(p, term)) return false
+      if (estado !== 'todos') return etapaBase(p.estado) === estado
+      return p.estado !== 'entregado' && p.estado !== 'cancelado'
+    })
   }, [estado, delMes, search])
 
   // Cancelados del mes: van en su propio apartado, abajo (fuera de la lista principal).
@@ -42,29 +66,31 @@ export function PedidosPage() {
     } catch { toast.error('No se pudo eliminar el pedido.') }
   }
 
-  // Cancela el pedido (lo deja en estado "Cancelado", sin borrar nada). No manda
-  // correo al cliente (los estados 'cancelado'/'incidencia' están exentos). Se puede
-  // revertir moviéndolo de nuevo a una etapa desde el detalle del pedido.
-  const cancelar = async (pedido: Pedido) => {
-    if (!window.confirm(`¿Cancelar el pedido ${pedido.codigo}? Quedará marcado como "Cancelado". Podrás reactivarlo desde el detalle si lo necesitas.`)) return
-    try {
-      if (isSupabaseConfigured) await actualizarEstadoPedido(pedido.id, 'cancelado')
-      setPedidos((current) => current.map((item) => item.id === pedido.id ? { ...item, estado: 'cancelado', updated_at: new Date().toISOString() } : item))
-      toast.success('Pedido cancelado.')
-    } catch { toast.error('No se pudo cancelar el pedido.') }
-  }
+  // Abre el modal de cancelación (con motivo y, si aplica, devolución del dinero). No borra
+  // nada ni avisa al cliente automáticamente; se puede reactivar desde el detalle.
+  const cancelar = (pedido: Pedido) => setCancelando(pedido)
 
   return <div>
     {!isSupabaseConfigured && <div className="preview-banner"><strong>Vista previa local:</strong> mostrando los pedidos de demostración de Hausline.</div>}
-    <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Operaciones</p><h1 className="page-title">Pedidos</h1><p className="page-subtitle">Gestiona todos tus pedidos en un solo lugar.</p></div><div className="flex flex-wrap gap-2"><button type="button" className="subtle-button px-4" onClick={() => exportarCSV(filtered)}><Download size={16} /> Exportar</button><Link to="/pedidos/nuevo" className="primary-button px-5"><Plus size={18} /> Nuevo pedido</Link></div></div>
-    <section className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-4"><MiniMetric label="Total del mes" value={delMes.length} icon={Boxes} /><MiniMetric label="Activos" value={delMes.filter((p) => !['entregado','cancelado'].includes(p.estado)).length} icon={CalendarDays} tone="blue" /><MiniMetric label="Completados" value={delMes.filter((p) => p.estado === 'entregado').length} icon={CheckCircle2} tone="emerald" /><MiniMetric label="Cancelados" value={delMes.filter((p) => p.estado === 'cancelado').length} icon={XCircle} tone="danger" /></section>
-    <div className="mt-6 flex flex-col gap-3 sm:flex-row"><div className="relative max-w-lg flex-1"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" size={18} /><input className="search-input" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Código, cliente, WhatsApp o producto" /></div><select className="select-input sm:w-52" value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Mes">{meses.map((m) => <option key={m} value={m}>{capitalizar(mesLabel(m))}</option>)}</select><select className="select-input sm:w-52" value={estado} onChange={(e) => setEstado(e.target.value as EstadoPedido | 'todos')}><option value="todos">Todos los estados</option>{ESTADOS_PEDIDO.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
+    <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Operaciones</p><h1 className="page-title">Pedidos</h1><p className="page-subtitle">Gestiona todos tus pedidos en un solo lugar.</p></div><div className="flex flex-wrap gap-2"><button type="button" className="subtle-button px-4" onClick={() => exportarCSV(filtered)}><Download size={16} /> Exportar</button>{esAdmin && <Link to="/pedidos/nuevo" className="primary-button px-5"><Plus size={18} /> Nuevo pedido</Link>}</div></div>
+    <section className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-4">{enPendientes ? <>
+        <MiniMetric label="Pendientes" value={delMes.filter((p) => !['entregado','cancelado'].includes(p.estado)).length} icon={Boxes} tone="blue" />
+        <MiniMetric label="Con saldo" value={delMes.filter((p) => !['entregado','cancelado'].includes(p.estado) && p.saldo > 0).length} icon={CircleDollarSign} tone="danger" />
+        <MiniMetric label="Pagados sin entregar" value={delMes.filter((p) => !['entregado','cancelado'].includes(p.estado) && p.saldo <= 0).length} icon={CheckCircle2} tone="emerald" />
+        <MiniMetric label="Total (histórico)" value={delMes.length} icon={CalendarDays} />
+      </> : <>
+        <MiniMetric label="Total del mes" value={delMes.length} icon={Boxes} />
+        <MiniMetric label="Activos" value={delMes.filter((p) => !['entregado','cancelado'].includes(p.estado)).length} icon={CalendarDays} tone="blue" />
+        <MiniMetric label="Completados" value={delMes.filter((p) => p.estado === 'entregado').length} icon={CheckCircle2} tone="emerald" />
+        <MiniMetric label="Cancelados" value={delMes.filter((p) => p.estado === 'cancelado').length} icon={XCircle} tone="danger" />
+      </>}</section>
+    <div className="mt-6 flex flex-col gap-3 sm:flex-row"><div className="relative max-w-lg flex-1"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" size={18} /><input className="search-input" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Código, cliente, WhatsApp o producto" /></div><select className="select-input sm:w-52" value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Filtro de pedidos"><option value="pendientes">🕐 Pendientes · todos los meses</option>{meses.map((m) => <option key={m} value={m}>{capitalizar(mesLabel(m))}</option>)}</select><select className="select-input sm:w-52" value={estado} onChange={(e) => setEstado(e.target.value as EstadoPedido | 'todos')}><option value="todos">Todos los estados</option>{ESTADOS_PEDIDO.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
     {loading ? <div className="mt-5 h-80 animate-pulse rounded-2xl border border-line bg-panel" /> : <>
-      {filtered.length === 0 ? <div className="mt-6 grid min-h-64 place-items-center rounded-2xl border border-dashed border-line text-center"><div><Boxes className="mx-auto text-muted" /><h2 className="mt-3 font-semibold">Sin pedidos activos en {capitalizar(mesLabel(mes))}</h2><p className="mt-1 text-sm text-muted">Prueba otro mes, término o filtro.</p></div></div> : <>
+      {filtered.length === 0 ? <div className="mt-6 grid min-h-64 place-items-center rounded-2xl border border-dashed border-line text-center"><div><Boxes className="mx-auto text-muted" /><h2 className="mt-3 font-semibold">{enPendientes ? 'No tienes pedidos pendientes' : `Sin pedidos en ${capitalizar(mesLabel(mes))}`}</h2><p className="mt-1 text-sm text-muted">{enPendientes ? 'Todo entregado 🎉 Elige un mes para ver el historial.' : 'Prueba otro mes, término o filtro.'}</p></div></div> : <>
         <div className="mt-5 grid gap-3 md:hidden">{filtered.map((pedido) => <OrderCard pedido={pedido} onDelete={() => void remove(pedido)} onCancel={() => void cancelar(pedido)} key={pedido.id} />)}</div>
         <div className="mt-5 hidden overflow-hidden rounded-2xl border border-line bg-panel md:block"><table className="data-table"><thead><tr><th>Pedido</th><th>Cliente</th><th>Estado</th><th>Total / saldo</th><th>Actualización</th><th>Acciones</th></tr></thead><tbody>{filtered.map((pedido) => <PedidoRow pedido={pedido} onDelete={() => void remove(pedido)} onCancel={() => void cancelar(pedido)} key={pedido.id} />)}</tbody></table></div>
       </>}
-      {cancelados.length > 0 && <details className="group mt-6 rounded-2xl border border-line bg-panel/60">
+      {estado === 'todos' && !enPendientes && cancelados.length > 0 && <details className="group mt-6 rounded-2xl border border-line bg-panel/60">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 text-sm font-semibold"><span className="flex items-center gap-2 text-muted"><Ban size={16} className="text-red-300" /> Cancelados de {capitalizar(mesLabel(mes))} <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-xs">{cancelados.length}</span></span><ChevronDown size={16} className="text-muted transition group-open:rotate-180" /></summary>
         <div className="border-t border-line p-3">
           <div className="grid gap-3 md:hidden">{cancelados.map((pedido) => <OrderCard pedido={pedido} onDelete={() => void remove(pedido)} onCancel={() => void cancelar(pedido)} key={pedido.id} />)}</div>
@@ -72,6 +98,7 @@ export function PedidosPage() {
         </div>
       </details>}
     </>}
+    {cancelando && <CancelarPedidoModal pedido={cancelando} open onClose={() => setCancelando(null)} onDone={(updated) => setPedidos((current) => current.map((item) => item.id === updated.id ? { ...item, ...updated } : item))} />}
   </div>
 }
 
@@ -92,7 +119,8 @@ const coincide = (p: Pedido, term: string) => !term || [p.codigo, p.clientes?.no
 
 // Fila de la tabla de pedidos (se reutiliza en la lista principal y en el apartado de cancelados).
 function PedidoRow({ pedido, onDelete, onCancel }: { pedido: Pedido; onDelete: () => void; onCancel: () => void }) {
-  return <tr><td><div className="flex items-center gap-3"><ProductThumb pedido={pedido} /><div className="min-w-0"><strong>{pedido.codigo}</strong><span>{nombreProducto(pedido)}</span>{primerItem(pedido)?.talla && <span>Talla: {primerItem(pedido)?.talla}</span>}</div></div></td><td><strong>{pedido.clientes?.nombre ?? 'Sin cliente'}</strong><span>{pedido.clientes?.whatsapp}</span></td><td><Status estado={pedido.estado} /></td><td><strong>${Number(pedido.total).toFixed(2)}</strong><span className={pedido.saldo > 0 ? 'text-amber-300!' : 'text-[#62eaa0]!'}>{pedido.saldo > 0 ? `Saldo $${Number(pedido.saldo).toFixed(2)}` : 'Pagado'}</span></td><td><span>{new Intl.DateTimeFormat('es-NI').format(new Date(pedido.updated_at))}</span></td><td><div className="flex justify-end gap-1.5"><Link to={`/pedidos/${pedido.id}`} className="table-action table-action-open" aria-label="Abrir pedido"><ArrowUpRight size={17} /></Link>{pedido.estado !== 'cancelado' && <button className="table-action" onClick={onCancel} aria-label="Cancelar pedido" title="Cancelar pedido"><Ban size={17} /></button>}<button className="table-action table-action-danger" onClick={onDelete} aria-label="Eliminar pedido"><Trash2 size={17} /></button></div></td></tr>
+  const { esAdmin } = useAuth()
+  return <tr><td><div className="flex items-center gap-3"><ProductThumb pedido={pedido} /><div className="min-w-0"><strong>{pedido.codigo}</strong><span>{nombreProducto(pedido)}</span>{primerItem(pedido)?.talla && <span>Talla: {primerItem(pedido)?.talla}</span>}</div></div></td><td><strong>{pedido.clientes?.nombre ?? 'Sin cliente'}</strong><span>{pedido.clientes?.whatsapp}</span></td><td><Status estado={pedido.estado} /></td><td><strong>${Number(pedido.total).toFixed(2)}</strong><span className={pedido.saldo > 0 ? 'text-amber-300!' : 'text-[#62eaa0]!'}>{pedido.saldo > 0 ? `Saldo $${Number(pedido.saldo).toFixed(2)}` : 'Pagado'}</span></td><td><span>{new Intl.DateTimeFormat('es-NI').format(new Date(pedido.updated_at))}</span></td><td><div className="flex justify-end gap-1.5"><Link to={`/pedidos/${pedido.id}`} className="table-action table-action-open" aria-label="Abrir pedido"><ArrowUpRight size={17} /></Link>{esAdmin && pedido.estado !== 'cancelado' && <button className="table-action" onClick={onCancel} aria-label="Cancelar pedido" title="Cancelar pedido"><Ban size={17} /></button>}{esAdmin && <button className="table-action table-action-danger" onClick={onDelete} aria-label="Eliminar pedido"><Trash2 size={17} /></button>}</div></td></tr>
 }
 
 // Exporta los pedidos que se están viendo (ya filtrados) a un CSV descargable.
@@ -111,7 +139,8 @@ function ProductThumb({ pedido, size = 44 }: { pedido: Pedido; size?: number }) 
   const item = pedido.pedido_items?.find((i) => i.imagen) ?? pedido.pedido_items?.[0]
   const cantidad = pedido.pedido_items?.reduce((sum, i) => sum + Number(i.cantidad || 1), 0) ?? 0
   const style = { width: size, height: size }
-  if (item?.imagen) return <div className="relative shrink-0 overflow-hidden rounded-xl bg-white/[0.04]" style={style}><img src={item.imagen} alt="" loading="lazy" className="size-full object-cover" />{cantidad > 1 && <span className="absolute bottom-0 right-0 rounded-tl-md bg-app/85 px-1 text-[10px] font-semibold leading-tight text-white">{cantidad}</span>}</div>
+  const foto = resolverImagenCatalogo(item?.imagen)
+  if (foto) return <div className="relative shrink-0 overflow-hidden rounded-xl bg-white/[0.04]" style={style}><img src={foto} alt="" loading="lazy" className="size-full object-cover" />{cantidad > 1 && <span className="absolute bottom-0 right-0 rounded-tl-md bg-app/85 px-1 text-[10px] font-semibold leading-tight text-white">{cantidad}</span>}</div>
   return <div className="grid shrink-0 place-items-center rounded-xl bg-white/[0.04] text-muted" style={style}><Package size={Math.round(size * 0.42)} /></div>
 }
-function OrderCard({ pedido, onDelete, onCancel }: { pedido: Pedido; onDelete: () => void; onCancel: () => void }) { return <article className="rounded-2xl border border-line bg-panel p-4"><div className="flex items-start justify-between gap-3"><Link to={`/pedidos/${pedido.id}`} className="flex min-w-0 flex-1 items-center gap-3"><ProductThumb pedido={pedido} size={40} /><div className="min-w-0"><strong className="text-sm tracking-wide">{pedido.codigo}</strong><p className="mt-1 truncate text-xs text-muted">{pedido.clientes?.nombre}</p></div></Link><div className="flex gap-1.5"><Link to={`/pedidos/${pedido.id}`} className="table-action table-action-open" aria-label="Abrir pedido"><ArrowUpRight size={17} /></Link>{pedido.estado !== 'cancelado' && <button className="table-action" onClick={onCancel} aria-label="Cancelar pedido" title="Cancelar pedido"><Ban size={17} /></button>}<button className="table-action table-action-danger" onClick={onDelete} aria-label="Eliminar pedido"><Trash2 size={17} /></button></div></div><Link to={`/pedidos/${pedido.id}`} className="block"><div className="mt-4"><Status estado={pedido.estado} /></div><div className="mt-4"><p className="truncate text-xs text-white/90">{nombreProducto(pedido)}</p>{primerItem(pedido)?.talla && <p className="mt-0.5 text-[11px] text-muted">Talla: {primerItem(pedido)?.talla}</p>}</div><div className="mt-3 flex items-end justify-between border-t border-line pt-3"><div><span className="block text-[10px] uppercase tracking-wider text-muted">Total</span><strong>${Number(pedido.total).toFixed(2)}</strong></div><div className="text-right"><span className="block text-[10px] uppercase tracking-wider text-muted">Saldo</span><strong className={pedido.saldo > 0 ? 'text-amber-300' : 'text-[#62eaa0]'}>${Number(pedido.saldo).toFixed(2)}</strong></div></div></Link></article> }
+function OrderCard({ pedido, onDelete, onCancel }: { pedido: Pedido; onDelete: () => void; onCancel: () => void }) { const { esAdmin } = useAuth(); return <article className="rounded-2xl border border-line bg-panel p-4"><div className="flex items-start justify-between gap-3"><Link to={`/pedidos/${pedido.id}`} className="flex min-w-0 flex-1 items-center gap-3"><ProductThumb pedido={pedido} size={40} /><div className="min-w-0"><strong className="text-sm tracking-wide">{pedido.codigo}</strong><p className="mt-1 truncate text-xs text-muted">{pedido.clientes?.nombre}</p></div></Link><div className="flex gap-1.5"><Link to={`/pedidos/${pedido.id}`} className="table-action table-action-open" aria-label="Abrir pedido"><ArrowUpRight size={17} /></Link>{esAdmin && pedido.estado !== 'cancelado' && <button className="table-action" onClick={onCancel} aria-label="Cancelar pedido" title="Cancelar pedido"><Ban size={17} /></button>}{esAdmin && <button className="table-action table-action-danger" onClick={onDelete} aria-label="Eliminar pedido"><Trash2 size={17} /></button>}</div></div><Link to={`/pedidos/${pedido.id}`} className="block"><div className="mt-4"><Status estado={pedido.estado} /></div><div className="mt-4"><p className="truncate text-xs text-white/90">{nombreProducto(pedido)}</p>{primerItem(pedido)?.talla && <p className="mt-0.5 text-[11px] text-muted">Talla: {primerItem(pedido)?.talla}</p>}</div><div className="mt-3 flex items-end justify-between border-t border-line pt-3"><div><span className="block text-[10px] uppercase tracking-wider text-muted">Total</span><strong>${Number(pedido.total).toFixed(2)}</strong></div><div className="text-right"><span className="block text-[10px] uppercase tracking-wider text-muted">Saldo</span><strong className={pedido.saldo > 0 ? 'text-amber-300' : 'text-[#62eaa0]'}>${Number(pedido.saldo).toFixed(2)}</strong></div></div></Link></article> }

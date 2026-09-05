@@ -1,7 +1,9 @@
 import { supabase } from '../lib/supabase'
-import { notaPublicaEstado } from '../constants/orders'
+import { notaPublicaEstado, type MotivoCancelacion } from '../constants/orders'
 import type { EstadoPedido, Pedido, PedidoItem } from '../types/domain'
-import { cachedQuery, invalidateComercial } from '../utils/queryCache'
+import { cachedQuery, invalidateCache, invalidateComercial } from '../utils/queryCache'
+import { etiquetaCargoBodega } from '../utils/bodega'
+import { ajustarSaldoCuenta } from './cuentas.service'
 
 export type NuevoPedidoInput = {
   cliente_id: string
@@ -13,6 +15,9 @@ export type NuevoPedidoInput = {
   notas_publicas: string | null
   metodo_pago?: string | null
   envio_rapido?: boolean
+  descuento?: number
+  cupon_id?: string | null
+  cupon_codigo?: string | null
   items: PedidoItem[]
 }
 
@@ -20,6 +25,9 @@ export type EditarPedidoInput = Pick<NuevoPedidoInput, 'fecha_estimada' | 'abono
   // Costo real / pago al proveedor. Se deja editable porque a veces al comprarle al
   // proveedor sale más caro (o más barato) de lo estimado al crear el pedido.
   costo_proveedor?: number | null
+  // Ajuste de la tarjeta de la cuenta por el cambio de costo: `ajuste` ya viene firmado y
+  // en la moneda de la cuenta (negativo si salió más plata, positivo si volvió).
+  cuentaAjuste?: { cuentaId: string; ajuste: number } | null
 }
 
 function requireSupabase() {
@@ -76,9 +84,12 @@ async function adjuntarFotosCatalogo(items: PedidoItem[]) {
   // Empareja por CÓDIGO y también por NOMBRE del producto. Así, si el ítem quedó sin
   // código (encargos viejos) pero su nombre coincide con un producto del catálogo, la
   // foto igual aparece en panel, factura y correos.
+  // Lee del catálogo por la vista `catalogo_fotos` (código/nombre/foto) en vez de la tabla
+  // `productos`: así el operador —que no puede leer productos, para no ver precio_compra—
+  // igual obtiene las fotos de los pedidos. El admin también la usa (mismos datos).
   const [porCod, porNom] = await Promise.all([
-    codigos.length ? supabase.from('productos').select('codigo, imagen').in('codigo', codigos) : Promise.resolve({ data: [] as { codigo: string; imagen: string | null }[] }),
-    nombres.length ? supabase.from('productos').select('nombre, imagen').in('nombre', nombres) : Promise.resolve({ data: [] as { nombre: string; imagen: string | null }[] }),
+    codigos.length ? supabase.from('catalogo_fotos').select('codigo, imagen').in('codigo', codigos) : Promise.resolve({ data: [] as { codigo: string; imagen: string | null }[] }),
+    nombres.length ? supabase.from('catalogo_fotos').select('nombre, imagen').in('nombre', nombres) : Promise.resolve({ data: [] as { nombre: string; imagen: string | null }[] }),
   ])
   const porCodigo = new Map<string, string>()
   for (const producto of (porCod.data ?? []) as { codigo: string; imagen: string | null }[]) if (producto.imagen) porCodigo.set(norm(producto.codigo), producto.imagen)
@@ -88,6 +99,42 @@ async function adjuntarFotosCatalogo(items: PedidoItem[]) {
   for (const item of sinFoto) {
     const foto = porCodigo.get(norm(item.codigo_producto || item.producto)) ?? porNombre.get(norm(item.producto))
     if (foto) item.imagen = foto
+  }
+}
+
+// Los costos por ítem viven en la tabla hermana solo-admin `pedido_item_costos` (blindaje:
+// el operador no los puede leer). Al leer un pedido, se APLANAN de vuelta sobre cada ítem
+// para que el costeo (pedidoCosto.ts) siga leyendo item.precio_compra igual que antes. Para
+// el operador el embed viene vacío por RLS → los ítems quedan sin costo, sin fuga.
+type ItemConCostos = PedidoItem & { pedido_item_costos?: unknown }
+function aplanarCostos(items: ItemConCostos[] | undefined) {
+  for (const item of items ?? []) {
+    const raw = item.pedido_item_costos
+    const costo = (Array.isArray(raw) ? raw[0] : raw) as Partial<PedidoItem> | undefined
+    if (costo) {
+      item.precio_compra = Number(costo.precio_compra || 0)
+      item.envio_internacional = Number(costo.envio_internacional || 0)
+      item.costo_delivery = Number(costo.costo_delivery || 0)
+      item.otros_gastos = Number(costo.otros_gastos || 0)
+    }
+    delete item.pedido_item_costos
+  }
+}
+
+// Guarda los costos por ítem en la tabla solo-admin, emparejando por índice con los ítems
+// recién insertados (PostgREST devuelve las filas en el mismo orden en que se enviaron).
+// Solo inserta filas con algún costo > 0 (los servicios como envío/delivery no llevan costo).
+async function guardarCostosItems(client: NonNullable<typeof supabase>, insertados: { id: string }[], origen: PedidoItem[]) {
+  const filas = insertados.map((row, i) => ({
+    item_id: row.id,
+    precio_compra: Number(origen[i]?.precio_compra || 0),
+    envio_internacional: Number(origen[i]?.envio_internacional || 0),
+    costo_delivery: Number(origen[i]?.costo_delivery || 0),
+    otros_gastos: Number(origen[i]?.otros_gastos || 0),
+  })).filter((f) => f.precio_compra || f.envio_internacional || f.costo_delivery || f.otros_gastos)
+  if (filas.length) {
+    const { error } = await client.from('pedido_item_costos').insert(filas)
+    if (error) throw error
   }
 }
 
@@ -138,23 +185,42 @@ export async function listarPedidos(onFresh?: (value: Pedido[]) => void) {
   return cachedQuery('pedidos', async () => {
     const { data, error } = await requireSupabase()
       .from('pedidos')
-      .select('*, clientes(nombre, whatsapp), pedido_items(*), gastos(id, monto, categoria)')
+      .select('*, clientes(nombre, whatsapp, departamento, ciudad), pedido_items(*, pedido_item_costos(*)), gastos(id, monto, categoria)')
       .order('created_at', { ascending: false })
     if (error) throw error
     const pedidos = data as unknown as Pedido[]
+    for (const pedido of pedidos) aplanarCostos(pedido.pedido_items)
     await adjuntarFotosCatalogo(pedidos.flatMap((pedido) => pedido.pedido_items ?? []))
     return pedidos
   }, 45_000, onFresh)
 }
 
+// Fuerza una recarga fresca de la lista de pedidos (ignora la caché). Se usa cuando llega
+// un cambio por realtime (p. ej. al confirmar un encargo desde otra sesión), para que la
+// lista se actualice sola sin recargar la página.
+export async function recargarPedidos(onFresh?: (value: Pedido[]) => void) {
+  invalidateCache('pedidos')
+  return listarPedidos(onFresh)
+}
+
+// Realtime: avisa cuando cambia la tabla de pedidos (nuevo encargo confirmado, cambio de
+// estado, borrado). El panel de Pedidos se suscribe para reflejarlo en vivo.
+export function suscribirPedidos(onChange: () => void) {
+  const client = supabase
+  if (!client) return () => undefined
+  const channel = client.channel('pedidos-panel').on('postgres_changes', { event: '*', schema: 'public', table: 'pedidos' }, onChange).subscribe()
+  return () => { void client.removeChannel(channel) }
+}
+
 export async function obtenerPedido(id: string) {
   const { data, error } = await requireSupabase()
     .from('pedidos')
-    .select('*, clientes(nombre, whatsapp), pedido_items(*), gastos(*)')
+    .select('*, clientes(nombre, whatsapp, departamento, ciudad), pedido_items(*, pedido_item_costos(*)), gastos(*)')
     .eq('id', id)
     .single()
   if (error) throw error
   const pedido = data as unknown as Pedido
+  aplanarCostos(pedido.pedido_items)
   await adjuntarFotosCatalogo(pedido.pedido_items ?? [])
   return pedido
 }
@@ -193,7 +259,7 @@ export async function actualizarEstadoPedido(id: string, estado: EstadoPedido) {
 const PROGRESO_ESTADOS: EstadoPedido[] = [
   'pedido_confirmado', 'en_preparacion', 'control_calidad', 'etiqueta_creada', 'despachado',
   'transito_internacional', 'recibido_estados_unidos', 'transito_nicaragua',
-  'llego_nicaragua', 'disponible_entrega', 'entregado',
+  'llego_nicaragua', 'disponible_entrega', 'pagado', 'entregado',
 ]
 
 // Al subir la foto "Recibido en bodega Miami", el pedido avanza solo a "Warehouse
@@ -213,28 +279,118 @@ export async function avanzarAWarehousePorMiami(id: string): Promise<Pedido | nu
   return actualizarEstadoPedido(id, destino)
 }
 
-export async function entregarPedidoConPago(id: string, montoRecibido: number, metodoPago: string) {
+// Fecha (ISO) en que el pedido entró por primera vez a "disponible_entrega", tomada del
+// historial de estados. Sirve para calcular el cargo por bodega en el panel. Devuelve
+// null si el pedido nunca estuvo disponible.
+export async function obtenerDisponibleDesde(pedidoId: string): Promise<string | null> {
+  const { data, error } = await requireSupabase()
+    .from('historial_pedidos')
+    .select('created_at')
+    .eq('pedido_id', pedidoId)
+    .eq('estado_nuevo', 'disponible_entrega')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  return data?.created_at ?? null
+}
+
+// Etiqueta de la línea de envío/delivery en el pedido (única, para poder actualizarla
+// sin duplicar). No colisiona con "Envío rápido (14–17 días)" que es otra cosa.
+const ENVIO_LOCAL_LABEL = 'Envío / delivery'
+
+// Agrega (o actualiza) el costo de envío/delivery del pedido como una línea real, para
+// que el total, el saldo, la factura y el mensaje al cliente lo incluyan. Así podés
+// calcular el delivery con la agencia y darle al cliente el total ya con envío. Si
+// `costo` es 0, quita la línea. Devuelve el pedido actualizado.
+export async function agregarEnvioPedido(id: string, costo: number, detalle?: string | null) {
   const client = requireSupabase()
+  const monto = Math.round(Math.max(0, Number(costo || 0)) * 100) / 100
+  await client.from('pedido_items').delete().eq('pedido_id', id).eq('producto', ENVIO_LOCAL_LABEL)
+  if (monto > 0) {
+    const { error } = await client.from('pedido_items').insert({ pedido_id: id, producto: ENVIO_LOCAL_LABEL, categoria: 'Servicio', talla: detalle?.trim() || null, cantidad: 1, precio_unitario: monto })
+    if (error) throw error
+  }
+  invalidateComercial()
+  return obtenerPedido(id)
+}
+
+// Cobra el pedido y avanza su estado (a 'pagado' cuando el cliente paga, o directo a
+// 'entregado'). Si `cargoBodega` > 0, primero lo agrega como una línea real del pedido
+// ("Cargo por bodega (N días)"), así total/saldo/factura/caja lo incluyen; luego calcula
+// el saldo ya con ese cargo dentro. `fecha_entrega` solo se setea al entregar.
+export async function cobrarPedido(id: string, montoRecibido: number, metodoPago: string, estadoDestino: EstadoPedido = 'entregado', cargoBodega = 0, diasBodega = 0, destino?: { cuentaId?: string | null; montoCuenta?: number }) {
+  const client = requireSupabase()
+  const cuentaId = destino?.cuentaId || null
+  const cargo = Math.round(Math.max(0, Number(cargoBodega || 0)) * 100) / 100
+  if (cargo > 0) {
+    const { error } = await client.from('pedido_items').insert({ pedido_id: id, producto: etiquetaCargoBodega(diasBodega), categoria: 'Servicio', cantidad: 1, precio_unitario: cargo })
+    if (error) throw error
+  }
   const { data: pedido, error: pedidoError } = await client.from('pedidos').select('id,codigo,cliente_id,saldo').eq('id', id).single()
   if (pedidoError) throw pedidoError
   const saldoActual = Math.max(0, Number(pedido.saldo || 0))
   const monto = Math.max(0, Number(montoRecibido || 0))
   const adicionalDelivery = Math.max(0, monto - saldoActual)
   if (adicionalDelivery > 0) {
-    const { error } = await client.from('pedido_items').insert({ pedido_id: id, producto: 'Delivery cobrado al cliente', categoria: 'Servicio', cantidad: 1, precio_unitario: adicionalDelivery, precio_compra: 0, envio_internacional: 0, costo_delivery: 0, otros_gastos: 0 })
+    const { error } = await client.from('pedido_items').insert({ pedido_id: id, producto: 'Delivery cobrado al cliente', categoria: 'Servicio', cantidad: 1, precio_unitario: adicionalDelivery })
     if (error) throw error
   }
   if (monto > 0) {
     const fecha = new Date().toISOString().slice(0, 10)
-    const { data: pago, error } = await client.from('pagos').insert({ pedido_id: id, cliente_id: pedido.cliente_id, fecha, tipo: 'pago_final', monto, metodo_pago: metodoPago || null, observaciones: adicionalDelivery > 0 ? `Incluye USD ${adicionalDelivery.toFixed(2)} cobrados por delivery` : 'Saldo cobrado al entregar' }).select('id').single()
+    const { data: pago, error } = await client.from('pagos').insert({ pedido_id: id, cliente_id: pedido.cliente_id, fecha, tipo: 'pago_final', monto, metodo_pago: metodoPago || null, observaciones: adicionalDelivery > 0 ? `Incluye USD ${adicionalDelivery.toFixed(2)} cobrados por delivery` : 'Saldo cobrado' }).select('id').single()
     if (error) throw error
-    const { error: movementError } = await client.from('movimientos_cuenta').insert({ fecha: `${fecha}T12:00:00`, tipo: 'ingreso', descripcion: `Pago final ${pedido.codigo}`, monto, metodo: metodoPago || null, pedido_id: id, pago_id: pago.id })
+    // Un pago final SUMA a la cuenta: delta positivo (se guarda para poder revertirlo si se borra).
+    const deltaCuenta = cuentaId ? Math.abs(Number(destino?.montoCuenta ?? monto)) : null
+    const { error: movementError } = await client.from('movimientos_cuenta').insert({ fecha: `${fecha}T12:00:00`, tipo: 'ingreso', descripcion: `Pago final ${pedido.codigo}`, monto, metodo: metodoPago || null, pedido_id: id, pago_id: pago.id, cuenta_id: cuentaId, monto_cuenta: deltaCuenta })
     if (movementError) throw movementError
+    if (deltaCuenta) await ajustarSaldoCuenta(cuentaId!, deltaCuenta)
   }
-  const { data, error } = await client.from('pedidos').update({ estado: 'entregado', notas_publicas: notaPublicaEstado('entregado'), fecha_entrega: new Date().toISOString() }).eq('id', id).select('*').single()
+  const { data, error } = await client.from('pedidos').update({ estado: estadoDestino, notas_publicas: notaPublicaEstado(estadoDestino), fecha_entrega: estadoDestino === 'entregado' ? new Date().toISOString() : null }).eq('id', id).select('*').single()
   if (error) throw error
   invalidateComercial()
   return data as Pedido
+}
+
+// Cancela el pedido guardando el motivo (cliente canceló / no entregado-devolución / otro).
+// La devolución del dinero, si aplica, se registra aparte con registrarReembolso.
+export async function cancelarPedido(id: string, motivo: MotivoCancelacion) {
+  const client = requireSupabase()
+  const { data, error } = await client.from('pedidos').update({ estado: 'cancelado', notas_publicas: notaPublicaEstado('cancelado'), motivo_cancelacion: motivo }).eq('id', id).select('*').single()
+  if (error) throw error
+  invalidateComercial()
+  return data as Pedido
+}
+
+// Manda los productos de un pedido (cancelado, pero el paquete apareció) al inventario /
+// stock. No mueve dinero: el capital ya quedó contabilizado en su momento. Crea una
+// entrada de inventario por cada producto real del pedido y devuelve cuántas creó.
+export async function pasarPedidoAStock(id: string) {
+  const client = requireSupabase()
+  const pedido = await obtenerPedido(id)
+  const productos = itemsProducto(pedido.pedido_items ?? [])
+  const base = productos.length ? productos : (pedido.pedido_items ?? []).filter((it) => !esLineaEnvioRapido(it) && it.producto !== 'Envío / delivery')
+  if (!base.length) throw new Error('El pedido no tiene productos para pasar a stock.')
+  const fecha = fechaNicaragua()
+  const registros = base.map((item) => ({
+    fecha,
+    producto_id: item.producto_id || null,
+    codigo: item.codigo_producto || null,
+    producto: item.producto,
+    marca: item.marca || null,
+    talla_color: [item.talla, item.color].filter(Boolean).join(' · ') || null,
+    cantidad: Number(item.cantidad || 1),
+    costo_unitario: Number(item.precio_compra || 0),
+    gastos_adicionales: 0,
+    precio_venta_estimado: Number(item.precio_unitario || 0),
+    estado: 'en_inventario' as const,
+    notas: `Del pedido ${pedido.codigo} · el paquete apareció tras la cancelación`,
+    imagen: item.imagen || null,
+  }))
+  const { error } = await client.from('inversiones').insert(registros)
+  if (error) throw error
+  invalidateComercial()
+  return registros.length
 }
 
 export async function eliminarPedido(id: string) {
@@ -248,14 +404,17 @@ export async function eliminarPedido(id: string) {
   if (paths.length) await client.storage.from('pedidos').remove(paths)
 }
 
-export async function crearPedido(input: NuevoPedidoInput) {
+// caja: a qué cuenta bancaria afectar. `proveedor` resta de una cuenta el pago al
+// proveedor; `abono` suma a una cuenta el abono inicial que pagó el cliente. Opcional.
+type CajaPedido = { proveedor?: { cuentaId: string | null; montoCuenta: number }; abono?: { cuentaId: string | null; montoCuenta: number } }
+export async function crearPedido(input: NuevoPedidoInput, caja?: CajaPedido) {
   const client = requireSupabase()
   const { items: itemsBase, ...pedido } = input
   const items = conLineaEnvioRapido(itemsBase, input.envio_rapido)
   const { data: created, error } = await client.from('pedidos').insert(pedido).select('*').single()
   if (error) throw error
 
-  const { error: itemsError } = await client.from('pedido_items').insert(
+  const { data: itemsCreados, error: itemsError } = await client.from('pedido_items').insert(
     items.map((item) => ({
       pedido_id: created.id,
       producto: item.producto,
@@ -269,29 +428,41 @@ export async function crearPedido(input: NuevoPedidoInput) {
       producto_id: item.producto_id || null,
       codigo_producto: item.codigo_producto || null,
       proveedor_id: item.proveedor_id || null,
-      precio_compra: item.precio_compra || 0,
-      envio_internacional: item.envio_internacional || 0,
-      costo_delivery: item.costo_delivery || 0,
-      otros_gastos: item.otros_gastos || 0,
       imagen: item.imagen || null,
     })),
-  )
+  ).select('id')
   if (itemsError) {
     await client.from('pedidos').delete().eq('id', created.id)
     throw itemsError
+  }
+  // Los costos por ítem van a la tabla solo-admin (blindaje). Emparejados por índice con
+  // `items` (mismo orden que el insert de arriba).
+  try {
+    await guardarCostosItems(client, (itemsCreados ?? []) as { id: string }[], items)
+  } catch (costosError) {
+    await client.from('pedidos').delete().eq('id', created.id)
+    throw costosError
   }
   const costoProveedor = items.reduce((sum, item) => sum + Number(item.precio_compra || 0) * Number(item.cantidad || 1), 0)
   if (costoProveedor > 0) {
     const proveedores = [...new Set(items.map((item) => item.proveedor_id).filter(Boolean))]
     const { data: expense, error: expenseError } = await client.from('gastos').insert({ fecha: input.fecha_pedido, categoria: 'Proveedor', monto: costoProveedor, metodo_pago: input.metodo_pago || null, pedido_id: created.id, proveedor_id: proveedores.length === 1 ? proveedores[0] : null, descripcion: `Pago a proveedor · ${created.codigo}`, observaciones: 'Generado automáticamente al registrar el pedido' }).select('id').single()
     if (expenseError) { await client.from('pedidos').delete().eq('id', created.id); throw expenseError }
-    const { error: movementError } = await client.from('movimientos_cuenta').insert({ fecha: `${input.fecha_pedido}T12:00:00`, tipo: 'pago_proveedor', descripcion: `Pago a proveedor · ${created.codigo}`, monto: costoProveedor, metodo: input.metodo_pago || null, pedido_id: created.id, gasto_id: expense.id })
+    const cuentaProv = caja?.proveedor?.cuentaId || null
+    // El pago al proveedor SALE de la cuenta: delta negativo (guardado para revertirlo si se borra).
+    const deltaProv = cuentaProv ? -Math.abs(Number(caja?.proveedor?.montoCuenta ?? costoProveedor)) : null
+    const { error: movementError } = await client.from('movimientos_cuenta').insert({ fecha: `${input.fecha_pedido}T12:00:00`, tipo: 'pago_proveedor', descripcion: `Pago a proveedor · ${created.codigo}`, monto: costoProveedor, metodo: input.metodo_pago || null, pedido_id: created.id, gasto_id: expense.id, cuenta_id: cuentaProv, monto_cuenta: deltaProv })
     if (movementError) { await client.from('gastos').delete().eq('id', expense.id); await client.from('pedidos').delete().eq('id', created.id); throw movementError }
+    if (deltaProv) await ajustarSaldoCuenta(cuentaProv!, deltaProv)
   }
   if (input.abono > 0) {
+    const cuentaAbono = caja?.abono?.cuentaId || null
     const { data: payment, error: paymentError } = await client.from('pagos').insert({ pedido_id: created.id, cliente_id: input.cliente_id, fecha: input.fecha_pedido, tipo: 'abono_inicial', monto: input.abono, metodo_pago: input.metodo_pago || null, observaciones: 'Abono inicial registrado con la venta' }).select('id').single()
     if (paymentError) { await client.from('pedidos').delete().eq('id', created.id); throw paymentError }
-    await client.from('movimientos_cuenta').insert({ fecha: `${input.fecha_pedido}T12:00:00`, tipo: 'ingreso', descripcion: `Abono inicial ${created.codigo}`, monto: input.abono, metodo: input.metodo_pago || null, pedido_id: created.id, pago_id: payment.id })
+    // El abono inicial SUMA a la cuenta: delta positivo (guardado para revertirlo si se borra).
+    const deltaAbono = cuentaAbono ? Math.abs(Number(caja?.abono?.montoCuenta ?? input.abono)) : null
+    await client.from('movimientos_cuenta').insert({ fecha: `${input.fecha_pedido}T12:00:00`, tipo: 'ingreso', descripcion: `Abono inicial ${created.codigo}`, monto: input.abono, metodo: input.metodo_pago || null, pedido_id: created.id, pago_id: payment.id, cuenta_id: cuentaAbono, monto_cuenta: deltaAbono })
+    if (deltaAbono) await ajustarSaldoCuenta(cuentaAbono!, deltaAbono)
   }
   // Aprende el costo del producto si el pedido es de un solo producto y ese producto
   // aún no tiene costo en el catálogo (mismo criterio que al ajustar el costo real).
@@ -310,7 +481,8 @@ export async function actualizarPedidoCompleto(id: string, input: EditarPedidoIn
   const { data: anteriores, error: anterioresError } = await client.from('pedido_items').select('*').eq('pedido_id', id)
   if (anterioresError) throw anterioresError
 
-  const nuevos = conLineaEnvioRapido(input.items, input.envio_rapido).map((item) => ({
+  const itemsConEnvio = conLineaEnvioRapido(input.items, input.envio_rapido)
+  const nuevos = itemsConEnvio.map((item) => ({
     pedido_id: id,
     producto: item.producto.trim(),
     marca: item.marca?.trim() || null,
@@ -323,22 +495,21 @@ export async function actualizarPedidoCompleto(id: string, input: EditarPedidoIn
     producto_id: item.producto_id || null,
     codigo_producto: item.codigo_producto?.trim() || null,
     proveedor_id: item.proveedor_id || null,
-    precio_compra: item.precio_compra || 0,
-    envio_internacional: item.envio_internacional || 0,
-    costo_delivery: item.costo_delivery || 0,
-    otros_gastos: item.otros_gastos || 0,
     imagen: item.imagen || null,
   }))
 
+  // Borrar los ítems viejos arrastra sus costos por la FK on delete cascade.
   const { error: deleteError } = await client.from('pedido_items').delete().eq('pedido_id', id)
   if (deleteError) throw deleteError
 
-  const { error: insertError } = await client.from('pedido_items').insert(nuevos)
+  const { data: itemsCreados, error: insertError } = await client.from('pedido_items').insert(nuevos).select('id')
   if (insertError) {
     const respaldo = (anteriores ?? []).map(({ id: _id, subtotal: _subtotal, created_at: _createdAt, updated_at: _updatedAt, ...item }) => item)
     if (respaldo.length) await client.from('pedido_items').insert(respaldo)
     throw insertError
   }
+  // Reescribir los costos por ítem en la tabla solo-admin (mismo orden que `nuevos`).
+  await guardarCostosItems(client, (itemsCreados ?? []) as { id: string }[], itemsConEnvio)
 
   const { error: pedidoError } = await client.from('pedidos').update({
     fecha_estimada: input.fecha_estimada,
@@ -350,6 +521,8 @@ export async function actualizarPedidoCompleto(id: string, input: EditarPedidoIn
   if (pedidoError) throw pedidoError
 
   if (input.costo_proveedor != null) await ajustarCostoProveedor(client, id, Number(input.costo_proveedor))
+  // Baja/sube la tarjeta de la cuenta por la diferencia de costo (si se eligió una).
+  if (input.cuentaAjuste?.cuentaId && Number(input.cuentaAjuste.ajuste)) await ajustarSaldoCuenta(input.cuentaAjuste.cuentaId, Number(input.cuentaAjuste.ajuste))
 
   invalidateComercial()
   return obtenerPedido(id)

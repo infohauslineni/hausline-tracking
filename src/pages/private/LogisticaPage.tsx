@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Check, CheckCircle2, ChevronDown, ChevronUp, Edit3, ExternalLink, Eye, MapPin, Package, Plus, RefreshCw, Search, Trash2, Truck } from 'lucide-react'
+import { CheckCircle2, ChevronDown, ChevronUp, Edit3, ExternalLink, Package, Plus, RefreshCw, Search, Trash2, Truck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
@@ -11,8 +11,7 @@ import { isSupabaseConfigured, supabase } from '../../lib/supabase'
 import { actualizarInversion, listarInversiones } from '../../services/comercial.service'
 import { eliminarTrayecto, guardarTrayecto, listarTransportistas, listarTrayectos, marcarTrayectoEntregado, reabrirTrayecto, type TrayectoInput } from '../../services/logistica.service'
 import { listarPedidos } from '../../services/pedidos.service'
-import type { EstadoPedido, Inversion, Pedido, Transportista, Trayecto } from '../../types/domain'
-import { etapaBase } from '../../constants/orders'
+import type { Inversion, Pedido, Transportista, Trayecto } from '../../types/domain'
 import { trayectoEstancado } from '../../utils/alertas'
 
 const trackingSchema = z.object({
@@ -129,7 +128,7 @@ function RouteCard({ route, onEdit, onDelete, onDelivered, onReopen }: { route: 
   const carrierName = route.transportistas?.nombre ?? 'Sin paquetería'
   const estancado = trayectoEstancado(route)
   const border = route.estado === 'entregado' ? 'border-emerald-300/20' : estancado ? 'border-amber-300/45' : 'border-line'
-  return <article className={`rounded-2xl border bg-panel p-4 sm:p-5 ${border}`}><div className="flex items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><strong className="tracking-wide">{route.pedidos?.codigo}</strong>{route.estado === 'entregado' && <span className="status-badge status-success">Recibido en USA</span>}{estancado && <span className="status-badge status-preparacion">Sin novedad</span>}</div><p className="mt-1 text-xs">Pedido · <span className="font-semibold text-sky-300">{route.pedidos?.clientes?.nombre}</span></p></div><CardActions onEdit={onEdit} onDelete={onDelete} /></div><TrackingBox tracking={route.tracking ?? ''} carrier={carrierName} /><TrackingProgress route={route} /><EnvioInfo route={route} /><div className="mt-5 flex flex-wrap gap-2 border-t border-line pt-4"><TrackingButtons tracking={route.tracking ?? ''} />{route.pedidos?.codigo && <a className="subtle-button text-[#c4b5fd]" href={`/tracking/${route.pedidos.codigo}`} target="_blank" rel="noopener noreferrer"><Eye size={15} /> Ver seguimiento</a>}{route.estado !== 'entregado' ? <DeliveredButton onClick={onDelivered} label="Recibido en USA" /> : <button className="subtle-button ml-auto text-amber-200" onClick={onReopen}>Corregir entrega</button>}</div></article>
+  return <article className={`rounded-2xl border bg-panel p-4 sm:p-5 ${border}`}><div className="flex items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><strong className="tracking-wide">{route.pedidos?.codigo}</strong>{route.estado === 'entregado' && <span className="status-badge status-success">Recibido en USA</span>}{estancado && <span className="status-badge status-preparacion">Sin novedad</span>}</div><p className="mt-1 text-xs">Pedido · <span className="font-semibold text-sky-300">{route.pedidos?.clientes?.nombre}</span></p></div><CardActions onEdit={onEdit} onDelete={onDelete} /></div><TrackingBox tracking={route.tracking ?? ''} carrier={carrierName} /><EnvioInfo route={route} /><div className="mt-5 flex flex-wrap gap-2 border-t border-line pt-4"><TrackingButtons tracking={route.tracking ?? ''} />{route.estado !== 'entregado' ? <DeliveredButton onClick={onDelivered} label="Recibido en USA" /> : <button className="subtle-button ml-auto text-amber-200" onClick={onReopen}>Corregir entrega</button>}</div></article>
 }
 
 function EnvioInfo({ route }: { route: Trayecto }) {
@@ -194,61 +193,6 @@ function TrackingModal({ open, editing, pedidos, stock, carriers, onClose, onRou
   </form></Modal>
 }
 
-// Barra de progreso del tracking en la tarjeta. Se alimenta de lo que 17TRACK ya
-// guardó (estado del trayecto + última ubicación/evento), así ves dónde va cada
-// paquete sin entrar a 17track ni preguntarle al cliente.
-// La barra refleja el estado REAL del pedido (no solo la pata de 17track), para que
-// siempre coincida con lo que ves en Pedidos, tenga o no datos de 17track todavía.
-const ETAPAS_ENVIO = ['Orden confirmada', 'En preparación', 'En tránsito', 'País de destino', 'Disponible para entrega', 'Entregado']
-const ORDEN_ETAPAS: EstadoPedido[] = ['pedido_confirmado', 'en_preparacion', 'transito_internacional', 'llego_nicaragua', 'disponible_entrega', 'entregado']
-function pasoPedido(estado?: string) {
-  if (!estado) return 0
-  const idx = ORDEN_ETAPAS.indexOf(etapaBase(estado as EstadoPedido))
-  return idx < 0 ? 0 : idx
-}
-function haceCuanto(iso?: string | null) {
-  if (!iso) return null
-  const diff = Date.now() - new Date(iso).getTime()
-  if (Number.isNaN(diff)) return null
-  const min = Math.floor(diff / 60000)
-  if (min < 1) return 'hace un momento'
-  if (min < 60) return `hace ${min} min`
-  const h = Math.floor(min / 60)
-  if (h < 24) return `hace ${h} h`
-  const d = Math.floor(h / 24)
-  return `hace ${d} día${d === 1 ? '' : 's'}`
-}
-function TrackingProgress({ route }: { route: Trayecto }) {
-  const pedidoEstado = route.pedidos?.estado
-  if (pedidoEstado === 'cancelado' || route.estado === 'cancelado') return <div className="mt-4 rounded-xl border border-line bg-black/10 p-3 text-[11px] text-muted">Pedido cancelado.</div>
-  const alerta = pedidoEstado === 'incidencia' || route.estado === 'incidencia' || route.estado === 'entrega_fallida'
-  // Si marcaste el tracking como "Entregado" en la tarjeta, la barra llega al final,
-  // aunque el estado del pedido sea otro (entrega logística ya completada).
-  const paso = route.estado === 'entregado' ? ETAPAS_ENVIO.length - 1 : pasoPedido(pedidoEstado)
-  const auto = (route.tracking_eventos ?? []).some((evento) => evento.fuente === 'track17')
-  const detalle = [route.ultima_ubicacion, route.ultimo_evento].filter(Boolean).join(' · ')
-  const cuando = haceCuanto(route.updated_at)
-  return <div className="mt-4 rounded-xl border border-line bg-black/10 p-3">
-    <div className="flex gap-0.5">
-      {ETAPAS_ENVIO.map((label, i) => {
-        const done = i < paso
-        const current = i === paso && !alerta
-        return <div key={label} className="flex min-w-0 flex-1 flex-col items-center text-center">
-          <div className="flex w-full items-center">
-            <span className={`h-px flex-1 ${i === 0 ? 'opacity-0' : i <= paso ? 'bg-accent/60' : 'bg-line'}`} />
-            <span className={`grid size-5 shrink-0 place-items-center rounded-full text-[9px] font-bold ${alerta ? 'bg-amber-300/20 text-amber-200' : i <= paso ? 'bg-accent text-black' : 'bg-white/10 text-muted'}`}>{done ? <Check size={11} /> : i + 1}</span>
-            <span className={`h-px flex-1 ${i === ETAPAS_ENVIO.length - 1 ? 'opacity-0' : i < paso ? 'bg-accent/60' : 'bg-line'}`} />
-          </div>
-          <span className={`mt-1 text-[9px] leading-tight ${current ? 'font-semibold text-white' : i <= paso ? 'text-white' : 'text-muted'}`}>{label}</span>
-        </div>
-      })}
-    </div>
-    {alerta && <p className="mt-2 text-[11px] font-medium text-amber-200">Requiere atención</p>}
-    {detalle && <p className="mt-2 flex min-w-0 items-center gap-1.5 text-[11px] text-muted"><MapPin size={12} className="shrink-0" /><span className="truncate">{detalle}</span></p>}
-    <p className="mt-1.5 flex items-center gap-1.5 text-[10px] text-muted"><RefreshCw size={10} className="shrink-0" />{auto ? 'Se actualiza solo vía 17TRACK' : 'Aún sin datos de 17TRACK'}{cuando ? ` · ${cuando}` : ''}</p>
-    {trayectoEstancado(route) && <p className="mt-1.5 flex items-center gap-1.5 text-[11px] font-medium text-amber-200">⚠️ Sin movimiento {cuando ?? ''} — revisá el envío.</p>}
-  </div>
-}
 function TrackingBox({ tracking, carrier, stock = false }: { tracking: string; carrier: string; stock?: boolean }) { return <div className="mt-5 flex items-center gap-3 rounded-xl border border-line bg-black/15 p-3"><span className="grid size-10 shrink-0 place-items-center rounded-lg bg-white/[0.04] text-muted">{stock ? <Package size={19} /> : <Truck size={19} />}</span><div className="min-w-0 flex-1"><strong className="block truncate text-sm">{tracking}</strong><p className="mt-1 truncate text-xs text-muted">{carrier}</p></div></div> }
 function CardActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) { return <div className="flex"><button className="table-action" onClick={onEdit} aria-label="Editar tracking"><Edit3 size={16} /></button><button className="table-action hover:text-red-300" onClick={onDelete} aria-label="Eliminar tracking"><Trash2 size={16} /></button></div> }
 function DeliveredButton({ onClick, label }: { onClick: () => void; label: string }) { return <button className="subtle-button ml-auto text-[#62eaa0]" onClick={onClick}><CheckCircle2 size={15} /> {label}</button> }

@@ -1,5 +1,16 @@
 import type { Pedido } from '../types/domain'
 
+// Líneas de envío/delivery que el cliente paga pero que NO se queda el negocio: se le
+// entregan al mensajero/agencia (el dinero pasa de largo). No son ganancia. Se cobran al
+// cliente como una línea del pedido (así el total y la factura las incluyen), pero al
+// calcular la ganancia se descuentan para que no la inflen.
+const ENVIO_CLIENTE_LABELS = ['Envío / delivery', 'Delivery cobrado al cliente']
+export function envioClientePasaLargo(pedido: Pedido): number {
+  return (pedido.pedido_items ?? [])
+    .filter((item) => ENVIO_CLIENTE_LABELS.includes((item.producto ?? '').trim()))
+    .reduce((sum, item) => sum + Number(item.cantidad || 1) * Number(item.precio_unitario || 0), 0)
+}
+
 // Costo real de un pedido = costo del/los productos + todos los gastos asociados
 // (envío internacional, delivery, etc. que agregues después y asocies al pedido).
 //
@@ -55,9 +66,12 @@ export function desglosePedido(pedido: Pedido) {
   const costoTotal = costoRealPedido(pedido)
   const costoDirecto = costoDirectoPedido(pedido)
   const gastosAdicionales = Math.max(0, costoTotal - costoDirecto)
-  const gananciaBruta = venta - costoDirecto
-  const gananciaNeta = venta - costoTotal
-  const margen = venta > 0 ? (gananciaNeta / venta) * 100 : 0
+  // El envío que paga el cliente pasa de largo (no es ingreso del negocio): se descuenta
+  // de la venta para la ganancia, así no aparece como si fuera utilidad.
+  const ventaNeta = venta - envioClientePasaLargo(pedido)
+  const gananciaBruta = ventaNeta - costoDirecto
+  const gananciaNeta = ventaNeta - costoTotal
+  const margen = ventaNeta > 0 ? (gananciaNeta / ventaNeta) * 100 : 0
   // La ganancia SOLO se realiza cuando el pedido está entregado. Antes de eso es una
   // estimación (el cliente puede haber abonado el 50%, pero todavía no hay ganancia).
   return { venta, costoTotal, costoDirecto, gastosAdicionales, gananciaBruta, gananciaNeta, margen, pendiente: !tieneCostoRegistrado(pedido), entregado: pedido.estado === 'entregado' }

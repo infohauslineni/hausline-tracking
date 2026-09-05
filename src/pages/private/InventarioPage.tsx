@@ -2,8 +2,9 @@ import { Boxes, CircleDollarSign, Eye, ImagePlus, Link2, PackageCheck, Pencil, P
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { Modal } from '../../components/ui/Modal'
+import { CuentaSelect, type DestinoPago } from '../../components/finanzas/CuentaSelect'
 import { subirImagenCatalogo } from '../../services/catalogoImagenes.service'
-import { actualizarInversion, cambiarEstadoInversion, eliminarInversion, listarInversiones, listarProductos, registrarInversion, venderStockInmediato } from '../../services/comercial.service'
+import { actualizarInversion, cambiarEstadoInversion, eliminarInversion, listarInversiones, listarProductos, obtenerTipoCambio, registrarInversion, venderStockInmediato } from '../../services/comercial.service'
 import type { Inversion, Producto } from '../../types/domain'
 
 const empty = { fecha: new Date().toISOString().slice(0, 10), producto_id: '', codigo: '', producto: '', marca: '', talla_color: '', cantidad: '1', costo_unitario: '', gastos_adicionales: '', precio_venta_estimado: '', metodo: 'Transferencia', notas: '', tracking: '', transportista: '', url_tracking: '', yaRegistrada: false }
@@ -61,16 +62,19 @@ export function InventarioPage() {
 
 function SellModal({ item, onClose, onSold }: { item: Inversion | null; onClose: () => void; onSold: (item: Inversion) => void }) {
   const [form, setForm] = useState({ fecha: new Date().toISOString().slice(0, 10), cliente: '', precio_venta: '', monto_recibido: '', metodo: 'Transferencia', observaciones: '' })
+  const [destino, setDestino] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
+  const [tipoCambio, setTipoCambio] = useState(37)
   const [saving, setSaving] = useState(false)
-  useEffect(() => { if (item) { const precio = (Number(item.precio_venta_estimado) * Number(item.cantidad)).toFixed(2); setForm({ fecha: new Date().toISOString().slice(0, 10), cliente: '', precio_venta: precio, monto_recibido: precio, metodo: 'Transferencia', observaciones: '' }) } }, [item])
+  useEffect(() => { if (item) { const precio = (Number(item.precio_venta_estimado) * Number(item.cantidad)).toFixed(2); setForm({ fecha: new Date().toISOString().slice(0, 10), cliente: '', precio_venta: precio, monto_recibido: precio, metodo: 'Transferencia', observaciones: '' }); setDestino({ cuentaId: null, montoCuenta: 0 }); void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined) } }, [item])
   if (!item) return null
   const precio = Number(form.precio_venta), recibido = Number(form.monto_recibido), costo = totalCost(item)
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     if (precio <= 0) return toast.error('Indica el precio de venta.')
+    if (recibido > 0 && !destino.cuentaId) return toast.error('Elegí a qué cuenta entra la venta.')
     setSaving(true)
     try {
-      const sold = await venderStockInmediato(item, { fecha: form.fecha, precio_venta: precio / Number(item.cantidad), monto_recibido: Math.max(0, recibido), metodo: form.metodo, cliente: form.cliente, observaciones: form.observaciones })
+      const sold = await venderStockInmediato(item, { fecha: form.fecha, precio_venta: precio / Number(item.cantidad), monto_recibido: Math.max(0, recibido), metodo: form.metodo, cliente: form.cliente, observaciones: form.observaciones }, destino)
       onSold(sold)
       toast.success('Venta registrada. El producto salió del inventario.')
     } catch { toast.error('No se pudo registrar la venta.') } finally { setSaving(false) }
@@ -83,6 +87,7 @@ function SellModal({ item, onClose, onSold }: { item: Inversion | null; onClose:
       <Field label="Monto recibido"><input type="number" min="0" step=".01" value={form.monto_recibido} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setForm({ ...form, monto_recibido: event.target.value })} /></Field>
       <Field label="Método de pago"><input value={form.metodo} onChange={(event) => setForm({ ...form, metodo: event.target.value })} /></Field>
       <Field label="Nota (opcional)"><input value={form.observaciones} onChange={(event) => setForm({ ...form, observaciones: event.target.value })} /></Field>
+      {recibido > 0 && <CuentaSelect requerido proposito="recibir" montoUsd={recibido} tipoCambio={tipoCambio} value={destino} onChange={setDestino} />}
       <div className="col-span-full grid grid-cols-3 gap-3 rounded-xl border border-line bg-white/[.02] p-4 text-center"><div><span className="text-[10px] uppercase text-muted">Costo</span><strong className="mt-1 block text-sm">USD {costo.toFixed(2)}</strong></div><div><span className="text-[10px] uppercase text-muted">Venta</span><strong className="mt-1 block text-sm text-accent">USD {(precio || 0).toFixed(2)}</strong></div><div><span className="text-[10px] uppercase text-muted">Ganancia</span><strong className="mt-1 block text-sm text-green-300">USD {Math.max(0, (precio || 0) - costo).toFixed(2)}</strong></div></div>
       {recibido < precio && recibido >= 0 && <p className="col-span-full rounded-xl border border-amber-300/20 bg-amber-300/[.05] p-3 text-[11px] leading-5 text-amber-200/90">Se registrará como ingreso solo el monto recibido (USD {Math.max(0, recibido).toFixed(2)}). El resto queda como acuerdo directo con el cliente, sin tracking.</p>}
       <div className="col-span-full flex justify-end gap-2"><button type="button" className="subtle-button" onClick={onClose}>Cancelar</button><button className="primary-button px-5" disabled={saving}>{saving ? 'Registrando…' : 'Registrar venta'}</button></div>
@@ -93,8 +98,10 @@ function SellModal({ item, onClose, onSold }: { item: Inversion | null; onClose:
 function ProductModal({ open, item, products, onClose, onSaved }: { open: boolean; item: Inversion | null; products: Producto[]; onClose: () => void; onSaved: (item: Inversion) => void }) {
   const [form, setForm] = useState(empty)
   const [file, setFile] = useState<File | null>(null)
+  const [destino, setDestino] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
+  const [tipoCambio, setTipoCambio] = useState(37)
   const [saving, setSaving] = useState(false)
-  useEffect(() => { if (!open) return; setFile(null); setForm(item ? { fecha: item.fecha.slice(0, 10), producto_id: item.producto_id ?? '', codigo: item.codigo ?? '', producto: item.producto, marca: item.marca ?? '', talla_color: item.talla_color ?? '', cantidad: String(item.cantidad), costo_unitario: String(item.costo_unitario), gastos_adicionales: String(item.gastos_adicionales), precio_venta_estimado: String(item.precio_venta_estimado), metodo: 'Transferencia', notas: item.notas ?? '', tracking: item.tracking ?? '', transportista: item.transportista ?? '', url_tracking: item.url_tracking ?? '', yaRegistrada: true } : empty) }, [item, open])
+  useEffect(() => { if (!open) return; setFile(null); setDestino({ cuentaId: null, montoCuenta: 0 }); void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined); setForm(item ? { fecha: item.fecha.slice(0, 10), producto_id: item.producto_id ?? '', codigo: item.codigo ?? '', producto: item.producto, marca: item.marca ?? '', talla_color: item.talla_color ?? '', cantidad: String(item.cantidad), costo_unitario: String(item.costo_unitario), gastos_adicionales: String(item.gastos_adicionales), precio_venta_estimado: String(item.precio_venta_estimado), metodo: 'Transferencia', notas: item.notas ?? '', tracking: item.tracking ?? '', transportista: item.transportista ?? '', url_tracking: item.url_tracking ?? '', yaRegistrada: true } : empty) }, [item, open])
 
   const choose = (id: string) => {
     const product = products.find((entry) => entry.id === id)
@@ -105,10 +112,12 @@ function ProductModal({ open, item, products, onClose, onSaved }: { open: boolea
     event.preventDefault()
     const cantidad = Number(form.cantidad), costoUnitario = Number(form.costo_unitario), gastosAdicionales = Number(form.gastos_adicionales), precioVenta = Number(form.precio_venta_estimado)
     if (!form.producto.trim() || cantidad < 1 || precioVenta <= 0) return toast.error('Completa producto, cantidad y precio de venta.')
+    const descuenta = !item && !form.yaRegistrada
+    if (descuenta && !destino.cuentaId) return toast.error('Elegí de qué cuenta sale la inversión.')
     setSaving(true)
     try {
       const input = { fecha: form.fecha, producto_id: form.producto_id || null, codigo: form.codigo || null, producto: form.producto.trim(), marca: form.marca || null, talla_color: form.talla_color || null, cantidad, costo_unitario: costoUnitario, gastos_adicionales: gastosAdicionales, precio_venta_estimado: precioVenta, estado: item?.estado ?? 'en_inventario' as Inversion['estado'], notas: form.notas || null, tracking: form.tracking || null, transportista: form.transportista || null, url_tracking: form.url_tracking || null, estado_tracking: form.tracking ? (item?.estado_tracking ?? 'Registrado') : null, pedido_id: item?.pedido_id ?? null }
-      let saved = item ? await actualizarInversion(item.id, input) : await registrarInversion(input, form.metodo, !form.yaRegistrada)
+      let saved = item ? await actualizarInversion(item.id, input) : await registrarInversion(input, form.metodo, !form.yaRegistrada, destino)
       const catalogImage = products.find((product) => product.id === form.producto_id)?.imagen
       if (file) saved = await actualizarInversion(saved.id, { imagen: await subirImagenCatalogo('inversiones', saved.id, file) })
       else if (!saved.imagen && catalogImage) saved = await actualizarInversion(saved.id, { imagen: catalogImage })
@@ -132,6 +141,7 @@ function ProductModal({ open, item, products, onClose, onSaved }: { open: boolea
     <Field label="Método de pago"><input value={form.metodo} onChange={(event) => setForm({ ...form, metodo: event.target.value })} /></Field><Field label="Notas"><input value={form.notas} onChange={(event) => setForm({ ...form, notas: event.target.value })} /></Field>
     <label className="form-field col-span-full"><span>Foto del producto</span><span className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-line p-4 text-sm text-muted"><ImagePlus size={20} className="text-accent" />{file ? file.name : item?.imagen ? 'Cambiar foto actual' : 'Seleccionar foto'}<input className="hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></span></label>
     {!item && <label className="col-span-full flex items-center gap-3 rounded-xl border border-line p-4 text-sm"><input type="checkbox" className="size-5 accent-[#b7ff00]" checked={form.yaRegistrada} onChange={(event) => setForm({ ...form, yaRegistrada: event.target.checked })} /><span><strong>¿Esta inversión ya estaba pagada/registrada?</strong><small className="mt-1 block text-muted">Márcalo para no descontarla nuevamente de Mi cuenta.</small></span></label>}
+    {!item && !form.yaRegistrada && <CuentaSelect requerido proposito="comprar" montoUsd={total} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" />}
     <div className="col-span-full rounded-xl border border-accent/20 bg-accent/[.05] p-4 text-sm">{item ? 'Se actualizará este producto sin registrar una inversión nueva.' : <>Se registrará una inversión de <strong className="text-accent">USD {total.toFixed(2)}</strong>{form.yaRegistrada ? ' sin descontarla nuevamente de Mi cuenta.' : ' y se descontará de Mi cuenta.'}</>}</div>
     <div className="col-span-full flex justify-end gap-2"><button type="button" className="subtle-button" onClick={onClose}>Cancelar</button><button className="primary-button px-5" disabled={saving}>{saving ? 'Guardando…' : item ? 'Guardar cambios' : 'Registrar producto'}</button></div>
   </form></Modal>

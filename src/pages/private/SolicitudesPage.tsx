@@ -1,11 +1,15 @@
-import { AlertCircle, ArrowRight, Check, Clock3, Inbox, Mail, MapPin, MessageCircle, PackagePlus, Trash2, Zap } from 'lucide-react'
+import { AlertCircle, ArrowRight, Check, Clock3, Inbox, Mail, MapPin, MessageCircle, PackagePlus, Trash2, Upload, X, Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Modal } from '../../components/ui/Modal'
+import { CuentaSelect, type DestinoPago } from '../../components/finanzas/CuentaSelect'
 import { DEMO_SOLICITUDES } from '../../data/demoSolicitudes'
 import { isSupabaseConfigured } from '../../lib/supabase'
+import { archivarComprobanteDrive } from '../../services/archivos.service'
 import { confirmarSolicitud, descartarSolicitud, eliminarSolicitud, listarSolicitudes, suscribirSolicitudes, type Solicitud } from '../../services/solicitudes.service'
+import { useAuth } from '../../contexts/AuthContext'
 import { whatsappUrl } from '../../utils/whatsapp'
+import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 
 // Cuánto falta para que la solicitud se venza (color según urgencia). ≤3 h = crítico.
 function tiempoRestante(venceAt: string): { texto: string; tono: 'ok' | 'warn' | 'crit'; vencida: boolean; horas: number } {
@@ -49,17 +53,23 @@ export function SolicitudesPage() {
   const vencidas = useMemo(() => items.filter((s) => s.estado === 'vencida'), [items])
   const porVencer = useMemo(() => pendientes.filter((s) => tiempoRestante(s.vence_at).tono === 'crit').length, [pendientes])
 
-  // Confirma con el MONTO REAL pagado (lo elige el admin en el modal).
-  const confirmar = async (s: Solicitud, abono: number) => {
+  // Confirma con el MONTO REAL pagado (lo elige el admin en el modal). Si el admin subió
+  // un comprobante, se archiva en la carpeta de Drive del pedido (best-effort: si falla,
+  // el pedido igual queda creado).
+  const confirmar = async (s: Solicitud, abono: number, comprobante: File | null, destino: DestinoPago) => {
     setBusy(s.id)
     try {
       if (isSupabaseConfigured) {
-        const codigo = await confirmarSolicitud(s.id, abono)
+        const codigo = await confirmarSolicitud(s.id, abono, destino.cuentaId, destino.montoCuenta)
+        if (comprobante) {
+          try { await archivarComprobanteDrive(codigo, comprobante) }
+          catch { toast.error('El pedido se creó, pero no se pudo archivar el comprobante en Drive.') }
+        }
         // Avisar al cliente por WhatsApp con su código y el enlace de seguimiento.
         const link = `${window.location.origin}/tracking/${codigo}`
         const msg = `¡Hola ${s.cliente_nombre}! Confirmamos tu pago ✅. Tu pedido ya está en proceso.\n\nCódigo de pedido: ${codigo}\nSeguí tu pedido aquí: ${link}\n\n¡Gracias por comprar en HAUSLINE!`
         window.open(whatsappUrl(s.cliente_whatsapp, msg), '_blank', 'noopener,noreferrer')
-        toast.success(`Pedido ${codigo} creado. Abrimos WhatsApp para avisarle al cliente.`)
+        toast.success(`Pedido ${codigo} creado${comprobante ? ' y comprobante archivado' : ''}. Abrimos WhatsApp para avisarle al cliente.`)
       } else { toast.success('Encargo confirmado (vista previa).') }
       setItems((all) => all.map((x) => x.id === s.id ? { ...x, estado: 'confirmada' } : x))
       setConfirmando(null)
@@ -99,7 +109,7 @@ export function SolicitudesPage() {
       {pendientes.map((s) => <SolicitudCard key={s.id} s={s} busy={busy === s.id} onConfirm={() => setConfirmando(s)} onDiscard={() => void descartar(s)} />)}
     </div>}
 
-    {confirmando && <ConfirmarModal s={confirmando} busy={busy === confirmando.id} onClose={() => setConfirmando(null)} onConfirm={(abono) => void confirmar(confirmando, abono)} />}
+    {confirmando && <ConfirmarModal s={confirmando} busy={busy === confirmando.id} onClose={() => setConfirmando(null)} onConfirm={(abono, comprobante, destino) => void confirmar(confirmando, abono, comprobante, destino)} />}
 
     {vencidas.length > 0 && <div className="mt-8">
       <h2 className="flex items-center gap-2 text-sm font-semibold text-muted"><Trash2 size={15} /> Vencidas · nunca pagaron (no gastaron código)</h2>
@@ -109,10 +119,12 @@ export function SolicitudesPage() {
 }
 
 // Modal para confirmar el pago indicando el MONTO REAL que pagó el cliente.
-function ConfirmarModal({ s, busy, onClose, onConfirm }: { s: Solicitud; busy: boolean; onClose: () => void; onConfirm: (abono: number) => void }) {
+function ConfirmarModal({ s, busy, onClose, onConfirm }: { s: Solicitud; busy: boolean; onClose: () => void; onConfirm: (abono: number, comprobante: File | null, destino: DestinoPago) => void }) {
   const total = Number(s.total)
   const mitad = Math.round(total * 50) / 100
   const [monto, setMonto] = useState<string>((Number(s.abono) || total).toFixed(2))
+  const [comprobante, setComprobante] = useState<File | null>(null)
+  const [destino, setDestino] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
   const abono = Math.min(total, Math.max(0, Number(monto) || 0))
   const saldo = Math.max(0, total - abono)
   return <Modal open title="Confirmar pago" description={`${s.codigo} · ${s.cliente_nombre} · ${s.producto}`} onClose={onClose}>
@@ -126,9 +138,25 @@ function ConfirmarModal({ s, busy, onClose, onConfirm }: { s: Solicitud; busy: b
       <input type="number" min="0" step="0.01" value={monto} onChange={(e) => setMonto(e.target.value)} className="simple-input mt-1.5" />
     </label>
     <div className="mt-4 flex items-center justify-between rounded-xl border border-line bg-white/[0.02] p-3 text-sm"><span className="text-muted">Quedará como saldo pendiente</span><strong className={`font-mono ${saldo > 0.01 ? 'text-amber-300' : 'text-[#62eaa0]'}`}>{usd(saldo)}</strong></div>
+
+    {abono > 0 && <div className="mt-4"><CuentaSelect montoUsd={abono} tipoCambio={Number(s.tipo_cambio) || 37} value={destino} onChange={setDestino} modo="suma" proposito="recibir" requerido label="¿A qué cuenta entró el abono?" /></div>}
+
+    <p className="mt-5 text-xs font-semibold text-muted">Comprobante de pago {abono > 0 ? <span className="font-normal text-accent">(obligatorio)</span> : <span className="font-normal">(opcional)</span>}</p>
+    {comprobante
+      ? <div className="mt-1.5 flex items-center gap-3 rounded-xl border border-accent/40 bg-accent/[0.06] p-2.5 text-sm">
+          <img src={URL.createObjectURL(comprobante)} alt="Comprobante" className="size-11 shrink-0 rounded-lg object-cover" />
+          <div className="min-w-0 flex-1"><p className="flex items-center gap-1 text-xs font-medium text-accent"><Check size={14} /> Comprobante listo</p><p className="truncate text-[11px] text-muted">{comprobante.name}</p></div>
+          <button type="button" className="table-action" onClick={() => setComprobante(null)} aria-label="Quitar comprobante"><X size={16} /></button>
+        </div>
+      : <label className={`mt-1.5 flex cursor-pointer items-center gap-2.5 rounded-xl border border-dashed px-3 py-3 text-sm transition ${abono > 0 ? 'border-accent/50 bg-accent/[0.04] hover:border-accent hover:bg-accent/[0.08]' : 'border-line bg-white/[0.02] hover:border-accent/40'}`}>
+          <Upload size={17} className="shrink-0 text-accent" />
+          <span className="min-w-0 flex-1 text-xs text-muted">Subir imagen del comprobante — se guarda en la carpeta de Drive del pedido</span>
+          <input type="file" accept="image/*" className="hidden" onChange={(e) => setComprobante(e.target.files?.[0] ?? null)} />
+        </label>}
+
     <div className="mt-6 flex justify-end gap-2">
       <button className="subtle-button" onClick={onClose}>Cancelar</button>
-      <button className="primary-button px-5" disabled={busy} onClick={() => onConfirm(abono)}>{busy ? 'Creando…' : <><Check size={16} /> Confirmar y crear pedido</>}</button>
+      <button className="primary-button px-5" disabled={busy || (abono > 0 && !comprobante)} onClick={() => { if (abono > 0 && !comprobante) return toast.error('Subí la foto del comprobante para confirmar el encargo.'); onConfirm(abono, comprobante, destino) }}>{busy ? 'Creando…' : <><Check size={16} /> Confirmar y crear pedido</>}</button>
     </div>
   </Modal>
 }
@@ -139,6 +167,7 @@ function Count({ value, label, tone }: { value: number; label: string; tone: 'ac
 }
 
 function SolicitudCard({ s, busy, onConfirm, onDiscard }: { s: Solicitud; busy: boolean; onConfirm: () => void; onDiscard: () => void }) {
+  const { esAdmin } = useAuth()
   const t = tiempoRestante(s.vence_at)
   const urgente = t.tono === 'crit'
   const tonoTexto = t.tono === 'crit' ? 'text-red-300' : t.tono === 'warn' ? 'text-amber-300' : 'text-muted'
@@ -153,7 +182,7 @@ function SolicitudCard({ s, busy, onConfirm, onDiscard }: { s: Solicitud; busy: 
   return <article className={`panel-card ${urgente ? 'border-red-400/40' : ''}`}>
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex items-start gap-3">
-        <span className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/[0.04] text-muted">{s.imagen ? <img src={s.imagen} alt="" className="size-full object-cover" /> : <PackagePlus size={20} />}</span>
+        <span className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/[0.04] text-muted">{resolverImagenCatalogo(s.imagen) ? <img src={resolverImagenCatalogo(s.imagen)} alt="" className="size-full object-cover" /> : <PackagePlus size={20} />}</span>
         <div>
           <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm font-bold">{s.codigo}</span><span className="rounded-full bg-[#8ec5ff]/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#8ec5ff]">Web</span>{rapido && <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300"><Zap size={10} /> Rápido</span>}</div>
           <p className="mt-1 text-sm font-semibold">{s.cliente_nombre}</p>
@@ -177,8 +206,10 @@ function SolicitudCard({ s, busy, onConfirm, onDiscard }: { s: Solicitud; busy: 
       <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200"><AlertCircle size={12} /> Verificá la transferencia antes de confirmar</span>
       <a href={whatsappUrl(s.cliente_whatsapp, mensaje)} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1.5 text-[11px] font-semibold hover:underline ${urgente ? 'text-red-300' : 'text-[#62eaa0]'}`}><MessageCircle size={13} /> {urgente ? 'Avisar que vence' : 'Recordar por WhatsApp'}</a>
       <div className="ml-auto flex gap-2">
-        <button className="subtle-button min-h-10" disabled={busy} onClick={onDiscard}><Trash2 size={15} /> Descartar</button>
-        <button className="primary-button min-h-10 px-4" disabled={busy} onClick={onConfirm}>{busy ? 'Procesando…' : <><Check size={16} /> Confirmar pago <ArrowRight size={14} /></>}</button>
+        {esAdmin ? <>
+          <button className="subtle-button min-h-10" disabled={busy} onClick={onDiscard}><Trash2 size={15} /> Descartar</button>
+          <button className="primary-button min-h-10 px-4" disabled={busy} onClick={onConfirm}>{busy ? 'Procesando…' : <><Check size={16} /> Confirmar pago <ArrowRight size={14} /></>}</button>
+        </> : <span className="text-[11px] text-muted">El administrador confirma el pago.</span>}
       </div>
     </div>
   </article>

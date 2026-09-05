@@ -1,9 +1,11 @@
-import { CalendarClock, Check, Clock3, Cloud, Coins, Info, RefreshCw, Save, ShieldCheck, Smartphone } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { CalendarClock, Check, Clock3, Cloud, Coins, Info, Power, RefreshCw, Save, ShieldCheck, Smartphone, UserPlus, Users } from 'lucide-react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { ESTADOS_PEDIDO } from '../../constants/orders'
 import { isSupabaseConfigured } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 import { guardarTipoCambio, obtenerTipoCambio } from '../../services/comercial.service'
+import { activarUsuario, crearOperador, listarEquipo, type MiembroEquipo } from '../../services/equipo.service'
 import { DEFAULT_ESTIMACIONES, guardarConfiguracionEstimaciones, obtenerConfiguracionEstimaciones, recalcularEstimaciones, type ConfiguracionEstimaciones } from '../../services/estimaciones.service'
 import type { EstadoPedido } from '../../types/domain'
 
@@ -49,5 +51,66 @@ export function ConfiguracionPage() {
 
       <aside className="space-y-5"><section className="form-section"><Cloud size={20} className="text-accent" /><h2 className="mt-3 font-semibold">Actualización diaria</h2><p className="mt-2 text-xs leading-5 text-muted">Vercel ejecutará una revisión cada mañana aunque tu computadora esté apagada. También se recalcula inmediatamente cuando cambias el estado.</p><div className="mt-4 flex items-center gap-2 text-xs text-[#62eaa0]"><Check size={15} /> Programación preparada</div></section><section className="form-section"><Smartphone size={20} className="text-accent" /><h2 className="mt-3 font-semibold">Web tradicional responsive</h2><p className="mt-2 text-xs leading-5 text-muted">Optimizada para iPhone, Android, tablet y computadora. No incluye instalación, modo offline, manifest ni Service Worker.</p></section><section className="form-section"><ShieldCheck size={20} className="text-accent" /><h2 className="mt-3 font-semibold">Estimación honesta</h2><p className="mt-2 text-xs leading-5 text-muted">La página pública la identifica como estimada y explica que puede variar. Nunca se presenta como una fecha confirmada por la paquetería.</p></section></aside>
     </div>
+
+    <EquipoSection />
   </div>
+}
+
+// Gestión de EMPLEADOS (rol operador): crear la cuenta y activar/desactivar el acceso. El
+// operador ve solo la parte operativa (pedidos, encargos, logística, fotos), nunca finanzas
+// ni costos. El blindaje real está en el RLS de Supabase; esta pantalla es el control.
+function EquipoSection() {
+  const { user } = useAuth()
+  const [equipo, setEquipo] = useState<MiembroEquipo[]>([])
+  const [loading, setLoading] = useState(isSupabaseConfigured)
+  const [form, setForm] = useState({ nombre: '', correo: '', password: '' })
+  const [saving, setSaving] = useState(false)
+  const [busy, setBusy] = useState<string | null>(null)
+
+  const recargar = () => { void listarEquipo().then(setEquipo).catch(() => undefined).finally(() => setLoading(false)) }
+  useEffect(() => { if (isSupabaseConfigured) recargar(); else setLoading(false) }, [])
+
+  const crear = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!form.correo.trim() || form.password.length < 8) return toast.error('Correo válido y contraseña de al menos 8 caracteres.')
+    setSaving(true)
+    try {
+      await crearOperador({ nombre: form.nombre.trim(), correo: form.correo.trim(), password: form.password })
+      toast.success('Empleado creado. Pásale su correo y contraseña temporal.')
+      setForm({ nombre: '', correo: '', password: '' })
+      recargar()
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'No se pudo crear el usuario.') }
+    finally { setSaving(false) }
+  }
+
+  const toggle = async (m: MiembroEquipo) => {
+    if (m.id === user?.id) return toast.error('No podés desactivar tu propia cuenta.')
+    setBusy(m.id)
+    try { await activarUsuario(m.id, !m.activo); toast.success(m.activo ? 'Acceso desactivado.' : 'Acceso activado.'); recargar() }
+    catch { toast.error('No se pudo actualizar el acceso.') }
+    finally { setBusy(null) }
+  }
+
+  return <section className="form-section mt-5">
+    <div className="flex flex-col gap-1"><h2 className="flex items-center gap-2 font-semibold"><Users size={18} className="text-accent" /> Equipo</h2><p className="max-w-2xl text-xs leading-5 text-muted">Da acceso a un empleado como <strong>operador</strong>: ve y trabaja los pedidos (fotos, control de calidad, etapas) y los encargos web, <strong>sin ver finanzas, costos ni ganancias</strong>. Podés cortar su acceso cuando quieras.</p></div>
+
+    <form onSubmit={(e) => void crear(e)} className="mt-5 grid gap-3 sm:grid-cols-4">
+      <label className="form-field"><span>Nombre</span><input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} placeholder="Nombre del empleado" /></label>
+      <label className="form-field"><span>Correo</span><input type="email" autoComplete="off" value={form.correo} onChange={(e) => setForm({ ...form, correo: e.target.value })} placeholder="empleado@correo.com" /></label>
+      <label className="form-field"><span>Contraseña temporal</span><input type="text" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Mínimo 8 caracteres" /></label>
+      <div className="flex items-end"><button className="primary-button min-h-11 w-full px-4" disabled={saving}><UserPlus size={16} /> {saving ? 'Creando…' : 'Agregar empleado'}</button></div>
+    </form>
+
+    <div className="mt-6 divide-y divide-line">
+      {loading ? <p className="py-4 text-xs text-muted">Cargando equipo…</p>
+        : equipo.length === 0 ? <p className="py-4 text-xs text-muted">Todavía no hay usuarios.</p>
+        : equipo.map((m) => <div key={m.id} className="flex items-center gap-3 py-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-accent/15 text-sm font-bold text-accent">{(m.nombre || m.correo).charAt(0).toUpperCase()}</span>
+            <div className="min-w-0 flex-1"><strong className="block truncate text-sm">{m.nombre || m.correo}</strong><span className="block truncate text-[11px] text-muted">{m.correo}</span></div>
+            <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${m.rol === 'admin' ? 'bg-accent/15 text-accent' : 'bg-white/[0.06] text-muted'}`}>{m.rol === 'admin' ? 'Administrador' : 'Operador'}</span>
+            <span className={`hidden rounded-full px-2.5 py-1 text-[10px] font-semibold sm:inline ${m.activo ? 'bg-[#62eaa0]/12 text-[#62eaa0]' : 'bg-red-400/12 text-red-300'}`}>{m.activo ? 'Activo' : 'Inactivo'}</span>
+            {m.id !== user?.id && <button className={`subtle-button min-h-9 px-3 ${m.activo ? 'text-red-300 hover:text-red-200' : 'text-[#62eaa0]'}`} disabled={busy === m.id} onClick={() => void toggle(m)} title={m.activo ? 'Desactivar acceso' : 'Activar acceso'}><Power size={15} /> {m.activo ? 'Desactivar' : 'Activar'}</button>}
+          </div>)}
+    </div>
+  </section>
 }

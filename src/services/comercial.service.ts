@@ -3,6 +3,7 @@ import catalogoInicial from '../data/catalogo-productos.json'
 import type { CajaMes, Deuda, Gasto, Inversion, MovimientoCuenta, Pago, Producto, Proveedor, ResumenComercial } from '../types/domain'
 import { cachedQuery, invalidateCache, invalidateComercial } from '../utils/queryCache'
 import { obtenerGananciaDisponibleActual } from './finanzas.service'
+import { ajustarSaldoCuenta } from './cuentas.service'
 
 function client() { if (!supabase) throw new Error('Supabase no está configurado.'); return supabase }
 
@@ -109,20 +110,49 @@ export async function listarProveedores() { return cachedQuery('proveedores', as
 export async function guardarProveedor(nombre: string) { const { data, error } = await client().from('proveedores').upsert({ nombre: nombre.trim(), activo: true }, { onConflict: 'nombre' }).select('*').single(); if (error) throw error; invalidateCache('proveedores'); return data as Proveedor }
 
 export async function listarPagos(onFresh?: (value: Pago[]) => void) { return cachedQuery('pagos', async () => { const { data, error } = await client().from('pagos').select('*, pedidos(codigo,saldo), clientes(nombre)').order('fecha', { ascending: false }).limit(300); if (error) throw error; return data as unknown as Pago[] }, 45_000, onFresh) }
-export async function registrarPago(input: Omit<Pago, 'id' | 'created_at' | 'pedidos' | 'clientes'>) {
+// A qué cuenta bancaria entró el pago y cuánto (en la moneda de la cuenta), para sumarlo
+// a la tarjeta de saldo. Opcional: si no se elige cuenta, todo funciona como antes.
+export type DestinoCuenta = { cuentaId?: string | null; montoCuenta?: number }
+export async function registrarPago(input: Omit<Pago, 'id' | 'created_at' | 'pedidos' | 'clientes'>, destino?: DestinoCuenta) {
+  const cuentaId = destino?.cuentaId || null
+  // Un cobro SUMA a la cuenta: delta positivo, en la moneda de la cuenta.
+  const deltaCuenta = cuentaId ? Math.abs(Number(destino?.montoCuenta ?? input.monto)) : null
   const { data, error } = await client().from('pagos').insert(input).select('*, pedidos(codigo,saldo), clientes(nombre)').single(); if (error) throw error
-  if (input.tipo !== 'reembolso') await client().from('movimientos_cuenta').insert({ fecha: `${input.fecha}T12:00:00`, tipo: 'ingreso', descripcion: `Pago de cliente`, monto: input.monto, moneda: input.moneda ?? 'USD', monto_original: input.monto_original ?? input.monto, tipo_cambio: input.tipo_cambio ?? null, metodo: input.metodo_pago, pedido_id: input.pedido_id, pago_id: data.id, observaciones: input.observaciones })
+  if (input.tipo !== 'reembolso') await client().from('movimientos_cuenta').insert({ fecha: `${input.fecha}T12:00:00`, tipo: 'ingreso', descripcion: `Pago de cliente`, monto: input.monto, moneda: input.moneda ?? 'USD', monto_original: input.monto_original ?? input.monto, tipo_cambio: input.tipo_cambio ?? null, metodo: input.metodo_pago, pedido_id: input.pedido_id, pago_id: data.id, cuenta_id: cuentaId, monto_cuenta: deltaCuenta, observaciones: input.observaciones })
+  if (deltaCuenta && input.tipo !== 'reembolso') await ajustarSaldoCuenta(cuentaId!, deltaCuenta)
   invalidateComercial()
   return data as unknown as Pago
+}
+
+// Devolución del dinero al cliente (p. ej. la agencia no entregó el paquete). Registra el
+// reembolso como pago negativo en el historial, lo saca de la caja (movimiento de retiro)
+// y, si se indica, baja el saldo de la cuenta desde la que se devolvió.
+export async function registrarReembolso(input: { pedido_id: string; cliente_id: string; codigo: string; fecha: string; monto: number; metodo_pago: string | null; observaciones?: string | null }, destino?: DestinoCuenta) {
+  const monto = Math.round(Math.max(0, Number(input.monto || 0)) * 100) / 100
+  if (!(monto > 0)) throw new Error('Indica un monto de devolución válido.')
+  const cuentaId = destino?.cuentaId || null
+  // Un reembolso SALE de la cuenta: delta negativo.
+  const deltaCuenta = cuentaId ? -Math.abs(Number(destino?.montoCuenta ?? monto)) : null
+  const { data: pago, error } = await client().from('pagos').insert({ pedido_id: input.pedido_id, cliente_id: input.cliente_id, fecha: input.fecha, tipo: 'reembolso', monto, metodo_pago: input.metodo_pago, observaciones: input.observaciones ?? `Devolución · ${input.codigo}` }).select('id').single()
+  if (error) throw error
+  const { error: movError } = await client().from('movimientos_cuenta').insert({ fecha: `${input.fecha}T12:00:00`, tipo: 'retiro', descripcion: `Reembolso · ${input.codigo}`, monto, metodo: input.metodo_pago, pedido_id: input.pedido_id, pago_id: pago.id, cuenta_id: cuentaId, monto_cuenta: deltaCuenta, observaciones: input.observaciones ?? 'Devolución al cliente' })
+  if (movError) throw movError
+  if (deltaCuenta) await ajustarSaldoCuenta(cuentaId!, deltaCuenta)
+  invalidateComercial()
+  return pago.id as string
 }
 
 export async function listarGastos(onFresh?: (value: Gasto[]) => void) { return cachedQuery('gastos', async () => { const { data, error } = await client().from('gastos').select('*, pedidos(codigo), inversiones(producto,codigo), proveedores(nombre)').order('fecha', { ascending: false }).limit(300); if (error) throw error; return data as unknown as Gasto[] }, 45_000, onFresh) }
 // Un gasto de categoría "Deuda" es un pago de deuda hecho directamente desde Gastos:
 // baja el saldo de caja (como cualquier gasto) y además consume ganancia disponible.
 const esDeuda = (categoria: string) => categoria.trim().toLowerCase() === 'deuda'
-export async function registrarGasto(input: Omit<Gasto, 'id' | 'created_at' | 'pedidos' | 'proveedores'>) {
+export async function registrarGasto(input: Omit<Gasto, 'id' | 'created_at' | 'pedidos' | 'proveedores'>, destino?: DestinoCuenta) {
+  const cuentaId = destino?.cuentaId || null
+  // Un gasto SALE de la cuenta: delta negativo.
+  const deltaCuenta = cuentaId ? -Math.abs(Number(destino?.montoCuenta ?? input.monto)) : null
   const { data, error } = await client().from('gastos').insert(input).select('*, pedidos(codigo), inversiones(producto,codigo), proveedores(nombre)').single(); if (error) throw error
-  await client().from('movimientos_cuenta').insert({ fecha: `${input.fecha}T12:00:00`, tipo: input.categoria.toLowerCase().includes('proveedor') ? 'pago_proveedor' : 'gasto', descripcion: input.descripcion, monto: input.monto, moneda: input.moneda ?? 'USD', monto_original: input.monto_original ?? input.monto, tipo_cambio: input.tipo_cambio ?? null, metodo: input.metodo_pago, pedido_id: input.pedido_id, inversion_id: input.inversion_id, gasto_id: data.id, observaciones: input.observaciones })
+  await client().from('movimientos_cuenta').insert({ fecha: `${input.fecha}T12:00:00`, tipo: input.categoria.toLowerCase().includes('proveedor') ? 'pago_proveedor' : 'gasto', descripcion: input.descripcion, monto: input.monto, moneda: input.moneda ?? 'USD', monto_original: input.monto_original ?? input.monto, tipo_cambio: input.tipo_cambio ?? null, metodo: input.metodo_pago, pedido_id: input.pedido_id, inversion_id: input.inversion_id, gasto_id: data.id, cuenta_id: cuentaId, monto_cuenta: deltaCuenta, observaciones: input.observaciones })
+  if (deltaCuenta) await ajustarSaldoCuenta(cuentaId!, deltaCuenta)
   // Deuda: además de bajar el saldo, descuenta la misma cantidad de la ganancia disponible.
   // Se enlaza con gasto_id para revertirla sola al eliminar el gasto (ON DELETE CASCADE).
   if (esDeuda(input.categoria)) {
@@ -154,25 +184,74 @@ export async function actualizarGasto(id: string, input: Omit<Gasto, 'id' | 'cre
 // (gasto_id es on delete set null, así que hay que quitarlo a mano para devolver el monto).
 // La asignación de ganancia de una deuda se borra sola por ON DELETE CASCADE en gasto_id.
 export async function eliminarGasto(id: string) {
+  const { data: filas } = await client().from('movimientos_cuenta').select('cuenta_id, monto_cuenta').eq('gasto_id', id)
   const { error: movError } = await client().from('movimientos_cuenta').delete().eq('gasto_id', id)
   if (movError) throw movError
+  await revertirSaldosDeCuenta(filas as Array<{ cuenta_id: string | null; monto_cuenta: number | null }> | null)
   const { error } = await client().from('gastos').delete().eq('id', id)
   if (error) throw error
   invalidateComercial()
 }
 
 export async function listarMovimientos(onFresh?: (value: MovimientoCuenta[]) => void) { return cachedQuery('movimientos', async () => { const { data, error } = await client().from('movimientos_cuenta').select('*, pedidos(codigo)').order('fecha', { ascending: false }).limit(300); if (error) throw error; return data as unknown as MovimientoCuenta[] }, 45_000, onFresh) }
-export async function registrarMovimiento(input: Omit<MovimientoCuenta, 'id' | 'created_at' | 'pedidos'>) { const { data, error } = await client().from('movimientos_cuenta').insert(input).select('*, pedidos(codigo)').single(); if (error) throw error; invalidateComercial(); return data as unknown as MovimientoCuenta }
-export async function eliminarMovimiento(id: string) { const { error } = await client().from('movimientos_cuenta').delete().eq('id', id); if (error) throw error; invalidateComercial() }
+// Un movimiento suma a la cuenta cuando es entrada (ingreso/ajuste_entrada) y resta en el
+// resto (retiro, ajuste_salida, gasto, etc.). Sirve para saber el signo del delta a la tarjeta.
+const esEntrada = (tipo: MovimientoCuenta['tipo']) => tipo === 'ingreso' || tipo === 'ajuste_entrada'
+// Devuelve a cada cuenta el saldo que estos movimientos habían movido (delta con signo
+// contrario), para que las tarjetas no queden descuadradas al borrarlos. Best-effort por fila.
+async function revertirSaldosDeCuenta(filas: Array<{ cuenta_id: string | null; monto_cuenta: number | null }> | null) {
+  for (const row of filas ?? []) {
+    if (row.cuenta_id && row.monto_cuenta) await ajustarSaldoCuenta(row.cuenta_id, -Number(row.monto_cuenta))
+  }
+}
+// Registra un ingreso/retiro/ajuste manual y, si se indica cuenta, mueve su saldo (en la
+// moneda de la cuenta) con el signo correcto, para que caja y tarjetas queden sincronizadas.
+export async function registrarMovimiento(input: Omit<MovimientoCuenta, 'id' | 'created_at' | 'pedidos'>, destino?: DestinoCuenta) {
+  const cuentaId = destino?.cuentaId || null
+  // Entrada suma; retiro/ajuste_salida restan. Delta con signo en la moneda de la cuenta.
+  const magnitud = Math.abs(Number(destino?.montoCuenta ?? input.monto))
+  const deltaCuenta = cuentaId ? (esEntrada(input.tipo) ? magnitud : -magnitud) : null
+  const { data, error } = await client().from('movimientos_cuenta').insert({ ...input, cuenta_id: cuentaId, monto_cuenta: deltaCuenta }).select('*, pedidos(codigo)').single(); if (error) throw error
+  if (deltaCuenta) await ajustarSaldoCuenta(cuentaId!, deltaCuenta)
+  invalidateComercial(); return data as unknown as MovimientoCuenta
+}
+export async function eliminarMovimiento(id: string) {
+  const { data: filas } = await client().from('movimientos_cuenta').select('cuenta_id, monto_cuenta').eq('id', id)
+  const { error } = await client().from('movimientos_cuenta').delete().eq('id', id); if (error) throw error
+  await revertirSaldosDeCuenta(filas as Array<{ cuenta_id: string | null; monto_cuenta: number | null }> | null)
+  invalidateComercial()
+}
+// Corrige a qué cuenta bancaria quedó asignado un movimiento (p. ej. el pago entró al BAC
+// pero lo registraste en LAFISE). Revierte el saldo de la cuenta anterior y aplica el monto
+// a la nueva, con el mismo signo del movimiento. `nuevoMontoCuenta` va en la MONEDA de la
+// nueva cuenta (córdobas o dólares), igual que en el resto de formularios.
+export async function reasignarCuentaMovimiento(movimiento: Pick<MovimientoCuenta, 'id' | 'tipo' | 'cuenta_id' | 'monto_cuenta' | 'monto'>, nuevaCuentaId: string, nuevoMontoCuenta: number) {
+  if (!nuevaCuentaId) throw new Error('Elegí la cuenta destino.')
+  const magnitud = Math.abs(Number(nuevoMontoCuenta || movimiento.monto))
+  if (!(magnitud > 0)) throw new Error('Indicá un monto válido.')
+  const nuevoDelta = esEntrada(movimiento.tipo) ? magnitud : -magnitud
+  // 1) Deshace lo que este movimiento había sumado/restado en la cuenta anterior.
+  if (movimiento.cuenta_id && movimiento.monto_cuenta) await ajustarSaldoCuenta(movimiento.cuenta_id, -Number(movimiento.monto_cuenta))
+  // 2) Aplica el monto a la nueva cuenta.
+  await ajustarSaldoCuenta(nuevaCuentaId, nuevoDelta)
+  // 3) Deja el movimiento apuntando a la nueva cuenta.
+  const { error } = await client().from('movimientos_cuenta').update({ cuenta_id: nuevaCuentaId, monto_cuenta: nuevoDelta }).eq('id', movimiento.id)
+  if (error) throw error
+  invalidateCache('movimientos'); invalidateCache('recibido-mes'); invalidateComercial()
+}
 
 export async function listarInversiones(onFresh?: (value: Inversion[]) => void) { return cachedQuery('inversiones', async () => { const { data, error } = await client().from('inversiones').select('*, productos(nombre,codigo), gastos(id,monto,categoria)').order('fecha', { ascending: false }); if (error) throw error; return data as unknown as Inversion[] }, 45_000, onFresh) }
-export async function registrarInversion(input: Omit<Inversion, 'id' | 'created_at' | 'productos'>, metodo: string, descontarDeCuenta = true) {
+export async function registrarInversion(input: Omit<Inversion, 'id' | 'created_at' | 'productos'>, metodo: string, descontarDeCuenta = true, destino?: DestinoCuenta) {
   const { data, error } = await client().from('inversiones').insert(input).select('*, productos(nombre,codigo)').single()
   if (error) throw error
   if (descontarDeCuenta) {
     const monto = Number(input.costo_unitario) * Number(input.cantidad) + Number(input.gastos_adicionales)
-    const { error: movementError } = await client().from('movimientos_cuenta').insert({ fecha: `${input.fecha}T12:00:00`, tipo: 'inversion', descripcion: `InversiÃ³n en ${input.producto}`, monto, metodo: metodo || null, inversion_id: data.id, observaciones: input.notas })
+    const cuentaId = destino?.cuentaId || null
+    // La inversión SALE de la cuenta: delta negativo.
+    const deltaCuenta = cuentaId ? -Math.abs(Number(destino?.montoCuenta ?? monto)) : null
+    const { error: movementError } = await client().from('movimientos_cuenta').insert({ fecha: `${input.fecha}T12:00:00`, tipo: 'inversion', descripcion: `Inversión en ${input.producto}`, monto, metodo: metodo || null, inversion_id: data.id, cuenta_id: cuentaId, monto_cuenta: deltaCuenta, observaciones: input.notas })
     if (movementError) { await client().from('inversiones').delete().eq('id', data.id); throw movementError }
+    if (deltaCuenta) await ajustarSaldoCuenta(cuentaId!, deltaCuenta)
   }
   invalidateComercial()
   return data as unknown as Inversion
@@ -181,13 +260,17 @@ export async function cambiarEstadoInversion(id: string, estado: Inversion['esta
 
 // Venta directa de stock inmediato: registra el ingreso y marca el producto como vendido,
 // SIN crear un pedido de importación ni pasar por el flujo de tracking.
-export async function venderStockInmediato(item: Inversion, opts: { fecha: string; precio_venta: number; monto_recibido: number; metodo: string; cliente: string; observaciones: string }) {
+export async function venderStockInmediato(item: Inversion, opts: { fecha: string; precio_venta: number; monto_recibido: number; metodo: string; cliente: string; observaciones: string }, destino?: DestinoCuenta) {
   const { data, error } = await client().from('inversiones').update({ precio_venta_estimado: opts.precio_venta, estado: 'vendido' }).eq('id', item.id).select('*, productos(nombre,codigo)').single()
   if (error) throw error
   if (opts.monto_recibido > 0) {
     const detalle = opts.cliente.trim() ? ` · ${opts.cliente.trim()}` : ''
-    const { error: movError } = await client().from('movimientos_cuenta').insert({ fecha: `${opts.fecha}T12:00:00`, tipo: 'ingreso', descripcion: `Venta de stock · ${item.producto}${detalle}`, monto: opts.monto_recibido, metodo: opts.metodo || null, inversion_id: item.id, observaciones: opts.observaciones || null })
+    const cuentaId = destino?.cuentaId || null
+    // La venta de stock SUMA a la cuenta: delta positivo.
+    const deltaCuenta = cuentaId ? Math.abs(Number(destino?.montoCuenta ?? opts.monto_recibido)) : null
+    const { error: movError } = await client().from('movimientos_cuenta').insert({ fecha: `${opts.fecha}T12:00:00`, tipo: 'ingreso', descripcion: `Venta de stock · ${item.producto}${detalle}`, monto: opts.monto_recibido, metodo: opts.metodo || null, inversion_id: item.id, cuenta_id: cuentaId, monto_cuenta: deltaCuenta, observaciones: opts.observaciones || null })
     if (movError) throw movError
+    if (deltaCuenta) await ajustarSaldoCuenta(cuentaId!, deltaCuenta)
   }
   invalidateComercial()
   return data as unknown as Inversion
@@ -209,7 +292,9 @@ export async function listarVentasStock(): Promise<VentaStock[]> {
 // Elimina un producto de stock/inversión y revierte el capital: borra el movimiento
 // automático de inversión (si lo hubo) para devolver ese monto al saldo de Mi cuenta.
 export async function eliminarInversion(id: string) {
+  const { data: filas } = await client().from('movimientos_cuenta').select('cuenta_id, monto_cuenta').eq('inversion_id', id).eq('tipo', 'inversion')
   await client().from('movimientos_cuenta').delete().eq('inversion_id', id).eq('tipo', 'inversion')
+  await revertirSaldosDeCuenta(filas as Array<{ cuenta_id: string | null; monto_cuenta: number | null }> | null)
   const { error } = await client().from('inversiones').delete().eq('id', id)
   if (error) throw error
   invalidateComercial()
@@ -227,7 +312,7 @@ export async function actualizarInversion(id: string, input: Partial<Omit<Invers
 
 export async function listarDeudas() { const { data, error } = await client().from('deudas').select('*, pagos_deuda(*)').order('created_at', { ascending: false }); if (error) throw error; return data as unknown as Deuda[] }
 export async function registrarDeuda(input: Omit<Deuda, 'id' | 'monto_pagado' | 'estado' | 'created_at' | 'pagos_deuda'>) { const { data, error } = await client().from('deudas').insert({ ...input, monto_pagado: 0, estado: 'pendiente' }).select('*, pagos_deuda(*)').single(); if (error) throw error; return data as unknown as Deuda }
-export async function registrarPagoDeuda(deuda: Deuda, montoSolicitado: number, fecha: string, metodo: string, notas: string, desdeGanancia = 0) {
+export async function registrarPagoDeuda(deuda: Deuda, montoSolicitado: number, fecha: string, metodo: string, notas: string, desdeGanancia = 0, destino?: DestinoCuenta) {
   const saldo = Math.max(0, Number(deuda.monto_total) - Number(deuda.monto_pagado))
   const monto = Math.min(saldo, Math.max(0, Number(montoSolicitado)))
   if (!monto) throw new Error('Indica un monto válido.')
@@ -239,8 +324,12 @@ export async function registrarPagoDeuda(deuda: Deuda, montoSolicitado: number, 
   const nuevoPagado = Number(deuda.monto_pagado) + monto
   const { error: updateError } = await client().from('deudas').update({ monto_pagado: nuevoPagado, estado: nuevoPagado >= Number(deuda.monto_total) ? 'pagada' : 'pendiente' }).eq('id', deuda.id)
   if (updateError) { await client().from('pagos_deuda').delete().eq('id', pago.id); throw updateError }
-  const { error: movementError } = await client().from('movimientos_cuenta').insert({ fecha: `${fecha}T12:00:00`, tipo: 'gasto', descripcion: `Pago de deuda · ${deuda.acreedor}`, monto, metodo: metodo || null, observaciones: deuda.concepto })
+  const cuentaId = destino?.cuentaId || null
+  // El pago de deuda SALE de la cuenta: delta negativo.
+  const deltaCuenta = cuentaId ? -Math.abs(Number(destino?.montoCuenta ?? monto)) : null
+  const { error: movementError } = await client().from('movimientos_cuenta').insert({ fecha: `${fecha}T12:00:00`, tipo: 'gasto', descripcion: `Pago de deuda · ${deuda.acreedor}`, monto, metodo: metodo || null, cuenta_id: cuentaId, monto_cuenta: deltaCuenta, observaciones: deuda.concepto })
   if (movementError) throw movementError
+  if (deltaCuenta) await ajustarSaldoCuenta(cuentaId!, deltaCuenta)
   if (ganancia > 0) {
     const { error: allocationError } = await client().from('asignaciones_ganancia').insert({ fecha, tipo: 'pago_deuda', monto: ganancia, descripcion: `Ganancia usada para deuda · ${deuda.acreedor}`, deuda_id: deuda.id })
     if (allocationError) throw allocationError

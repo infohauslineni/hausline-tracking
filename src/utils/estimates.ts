@@ -5,7 +5,7 @@ export function estimateDateForPreview(estado: EstadoPedido, margin = 2) {
   if (estado === 'cancelado') return null
   const date = new Date()
   date.setHours(12, 0, 0, 0)
-  date.setDate(date.getDate() + (estado === 'disponible_entrega' || estado === 'entregado' ? 0 : (DAYS_BY_STATE[estado] ?? 7) + margin))
+  date.setDate(date.getDate() + (estado === 'disponible_entrega' || estado === 'pagado' || estado === 'entregado' ? 0 : (DAYS_BY_STATE[estado] ?? 7) + margin))
   return toISODate(date)
 }
 
@@ -54,6 +54,27 @@ export function postponeUntilFuture(estimateISO: string, stepDays = 3, now = new
   today.setHours(0, 0, 0, 0)
   let guard = 0
   while (estimate.getTime() < today.getTime() && guard < 200) {
+    estimate.setDate(estimate.getDate() + stepDays)
+    guard += 1
+  }
+  return toISODate(estimate)
+}
+
+/**
+ * Como postponeUntilFuture, pero garantiza que la fecha quede al menos `minDays` días en
+ * el futuro (no solo "a futuro"). Se usa mientras el pedido sigue EN TRÁNSITO: un paquete
+ * en camino no puede entregarse mañana, así que si la estimación cae dentro de esos días
+ * se empuja en pasos de `stepDays` hasta quedar a varios días vista. Así nunca se muestra
+ * "llega hoy/mañana" cuando el paquete todavía está en tránsito.
+ */
+export function postponeToMinFuture(estimateISO: string, minDays = 3, stepDays = 3, now = new Date()) {
+  const estimate = new Date(estimateISO.includes('T') ? estimateISO : `${estimateISO}T12:00:00`)
+  estimate.setHours(12, 0, 0, 0)
+  const floor = new Date(now)
+  floor.setHours(0, 0, 0, 0)
+  floor.setDate(floor.getDate() + minDays)
+  let guard = 0
+  while (estimate.getTime() < floor.getTime() && guard < 200) {
     estimate.setDate(estimate.getDate() + stepDays)
     guard += 1
   }

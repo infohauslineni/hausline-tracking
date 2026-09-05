@@ -1,22 +1,18 @@
-import { enviarCorreoEncargoAdmin } from './_correo.js'
+import { enviarCorreoEncargoAdmin, enviarCorreoEsperandoPago } from './_correo.js'
+import { obtenerCatalogoMergeado } from './_catalogo.js'
 
-// Catálogo público de la TIENDA (proyecto Supabase distinto al del tracking). Ahí
-// vive la foto de cada producto (catalogo_web.datos.imagen) por código. La llave es
-// "publishable" (solo lectura pública, la misma que usa el sitio), no un secreto.
-const TIENDA_URL = 'https://xgdijumnmaqfirmckugw.supabase.co'
-const TIENDA_KEY = 'sb_publishable_NwpQth6G3qhpvtnRan3Xfg_8EqPM4Pw'
-
-// Trae la foto del producto por su código, para mostrarla en el correo. Best-effort:
-// si el producto no está en el catálogo del panel o falla la red, devuelve ''.
+// Trae la foto del producto por su código, para mostrarla en el correo. Usa el catálogo
+// UNIDO (tienda productos.js + feed + panel), no solo catalogo_web, para que también
+// encuentre la foto de los códigos viejos (p.ej. CL0007) que solo viven en la tienda.
+// Best-effort: si no está o falla la red, devuelve ''.
 async function fotoProducto(codigo) {
   if (!codigo) return ''
   try {
-    const url = `${TIENDA_URL}/rest/v1/catalogo_web?select=datos&codigo=eq.${encodeURIComponent(codigo)}&limit=1`
-    const r = await fetch(url, { headers: { apikey: TIENDA_KEY, authorization: `Bearer ${TIENDA_KEY}` } })
-    if (!r.ok) return ''
-    const filas = await r.json()
-    const datos = Array.isArray(filas) && filas[0] ? filas[0].datos : null
-    return (datos && (datos.imagen || (Array.isArray(datos.imagenes) && datos.imagenes[0]))) || ''
+    const clave = String(codigo).trim().toUpperCase()
+    const catalogo = await obtenerCatalogoMergeado()
+    const item = catalogo.find((p) => String(p.codigo || '').trim().toUpperCase() === clave)
+    if (!item) return ''
+    return item.imagen || (Array.isArray(item.imagenes) && item.imagenes[0]) || ''
   } catch { return '' }
 }
 
@@ -76,5 +72,24 @@ export default async function handler(request, response) {
     return response.status(502).json({ ok: false, error: 'No se pudo enviar el correo' })
   }
 
-  return response.status(200).json({ ok: true, sent: destino, codigo: record.codigo })
+  // Correo automático AL CLIENTE: "recibimos tu pedido, esperamos tu pago" + botón para
+  // pagar/enviar comprobante. Best-effort: si el cliente no dejó correo o el envío falla,
+  // no rompemos el aviso interno (que es lo crítico) — solo lo registramos.
+  let avisoCliente = false
+  const correoCliente = String(record.cliente_correo || '').trim()
+  if (correoCliente) {
+    try {
+      await enviarCorreoEsperandoPago({
+        correo: correoCliente,
+        nombre: record.cliente_nombre,
+        codigo: record.codigo,
+        producto: record.producto,
+      })
+      avisoCliente = true
+    } catch (clienteError) {
+      console.error('notificar-encargo: no se pudo avisar al cliente', clienteError?.message)
+    }
+  }
+
+  return response.status(200).json({ ok: true, sent: destino, codigo: record.codigo, avisoCliente })
 }

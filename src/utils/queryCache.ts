@@ -132,6 +132,6 @@ export function invalidateCachePrefix(...prefixes: string[]) {
 // gastos, movimientos, inversiones o aperturas de caja, para que saldos y resúmenes nunca
 // queden desactualizados.
 export function invalidateComercial() {
-  invalidateCache('pedidos', 'inversiones', 'movimientos', 'pagos', 'gastos')
+  invalidateCache('pedidos', 'inversiones', 'movimientos', 'pagos', 'gastos', 'cuentas', 'recibido-mes')
   invalidateCachePrefix('resumen:', 'caja:')
 }

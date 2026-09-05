@@ -1,6 +1,7 @@
 import { CalendarRange, CircleDollarSign, Download, MessageCircle, Plus } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
+import { CuentaSelect, type DestinoPago } from '../../components/finanzas/CuentaSelect'
 import { Modal } from '../../components/ui/Modal'
 import { MoneyField } from '../../components/ui/MoneyField'
 import { listarPagos, obtenerTipoCambio, registrarPago } from '../../services/comercial.service'
@@ -30,16 +31,18 @@ export function PagosPage() {
 export function PagoModal({ open, pedidos, tipoCambio, onClose, onSaved, fijarPedido }: { open: boolean; pedidos: Pedido[]; tipoCambio: number; onClose: () => void; onSaved: (p: Pago) => void; fijarPedido?: string }) {
   const vacio = () => ({ pedido_id: fijarPedido ?? '', fecha: new Date().toISOString().slice(0, 10), tipo: 'abono' as Pago['tipo'], monto: 0, moneda: 'USD' as Moneda, metodo_pago: 'Transferencia', referencia: '', observaciones: '' })
   const [form, setForm] = useState(vacio())
+  const [destino, setDestino] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
   const [saving, setSaving] = useState(false)
-  useEffect(() => { if (open) setForm(vacio()) }, [open, fijarPedido])
+  useEffect(() => { if (open) { setForm(vacio()); setDestino({ cuentaId: null, montoCuenta: 0 }) } }, [open, fijarPedido])
   const pedidoFijo = fijarPedido ? pedidos.find((p) => p.id === fijarPedido) : null
+  const montoUsd = aUsd(form.monto, form.moneda, tipoCambio)
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     const order = pedidos.find((p) => p.id === form.pedido_id)
-    const montoUsd = aUsd(form.monto, form.moneda, tipoCambio)
     if (!order || montoUsd <= 0) return toast.error('Selecciona el pedido e indica el monto.')
+    if (form.tipo !== 'reembolso' && !destino.cuentaId) return toast.error('Elegí a qué cuenta entra el pago.')
     setSaving(true)
-    try { const saved = await registrarPago({ pedido_id: form.pedido_id, fecha: form.fecha, tipo: form.tipo, monto: montoUsd, moneda: form.moneda, monto_original: form.monto, tipo_cambio: form.moneda === 'NIO' ? tipoCambio : null, metodo_pago: form.metodo_pago, cliente_id: order.cliente_id, referencia: form.referencia || null, observaciones: form.observaciones || null }); onSaved(saved); toast.success('Abono registrado y saldo actualizado.') }
+    try { const saved = await registrarPago({ pedido_id: form.pedido_id, fecha: form.fecha, tipo: form.tipo, monto: montoUsd, moneda: form.moneda, monto_original: form.monto, tipo_cambio: form.moneda === 'NIO' ? tipoCambio : null, metodo_pago: form.metodo_pago, cliente_id: order.cliente_id, referencia: form.referencia || null, observaciones: form.observaciones || null }, destino); onSaved(saved); toast.success('Abono registrado y saldo actualizado.') }
     catch { toast.error('No se pudo registrar el pago.') } finally { setSaving(false) }
   }
   return <Modal open={open} onClose={onClose} title={pedidoFijo ? `Registrar abono · ${pedidoFijo.codigo}` : 'Registrar pago'}><form onSubmit={(e) => void submit(e)} className="form-grid">
@@ -51,6 +54,7 @@ export function PagoModal({ open, pedidos, tipoCambio, onClose, onSaved, fijarPe
     <MoneyField moneda={form.moneda} montoOriginal={form.monto} tipoCambio={tipoCambio} onMoneda={(moneda) => setForm({ ...form, moneda })} onMonto={(monto) => setForm({ ...form, monto })} />
     <Field label="Método"><input value={form.metodo_pago} onChange={(e) => setForm({ ...form, metodo_pago: e.target.value })} /></Field>
     <Field label="Referencia"><input value={form.referencia} onChange={(e) => setForm({ ...form, referencia: e.target.value })} placeholder="N° de transferencia, etc." /></Field>
+    {form.tipo !== 'reembolso' && <CuentaSelect requerido proposito="recibir" montoUsd={montoUsd} tipoCambio={tipoCambio} value={destino} onChange={setDestino} />}
     <label className="form-field col-span-full"><span>Nota</span><textarea rows={2} value={form.observaciones} onChange={(e) => setForm({ ...form, observaciones: e.target.value })} /></label>
     <Actions saving={saving} onClose={onClose} />
   </form></Modal>

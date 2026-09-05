@@ -37,8 +37,8 @@ export const ESTADO_NOTA = {
   transito_nicaragua: 'Tu pedido va en tránsito rumbo a Nicaragua.',
   llego_nicaragua: 'Tu pedido llegó a Nicaragua. Pronto estará disponible para entrega.',
   disponible_entrega: 'Tu pedido ya está disponible para entrega. Escríbenos para coordinar el envío o retiro.',
-  pagado: 'Confirmamos el pago de tu pedido. Coordinamos la entrega y te avisamos.',
-  entregado: 'Tu pedido fue entregado. Gracias por confiar en Hausline.',
+  pagado: '¡Recibimos tu pago! Tu pedido ya quedó apartado y está a la espera de ser entregado. Muy pronto coordinamos la entrega contigo. ¡Muchas gracias por tu compra!',
+  entregado: '¡Tu pedido fue entregado! Esperamos que lo disfrutes muchísimo. Fue un gusto atenderte y te esperamos en tu próxima compra.',
   cancelado: 'Tu pedido fue cancelado. Si tienes dudas, escríbenos.',
   incidencia: 'Tenemos una novedad con tu pedido y ya la estamos gestionando. Te contactaremos pronto.',
 }
@@ -73,6 +73,12 @@ function montoUSD(valor) {
   return `USD ${(Number(valor) || 0).toFixed(2)}`
 }
 
+// Versión corta ("$165.00") para las columnas de las líneas de la factura, donde el
+// ancho importa en el teléfono. En los totales se sigue usando "USD …" (tienen espacio).
+function montoUSDcorto(valor) {
+  return `$${(Number(valor) || 0).toFixed(2)}`
+}
+
 // Tabla de factura dentro del correo (estilo recibo). Se muestra solo cuando llegan
 // los productos: en la creación del pedido (variante 'compra', con saldo) y al
 // entregarlo (variante 'pago', marcado como PAGADO).
@@ -91,47 +97,48 @@ export function bloqueFactura(factura) {
     // que se vea igual en todos los clientes de correo.
     const fotoUrl = absolutizarImagen(item.imagen)
     const foto = fotoUrl
-      ? `<img src="${esc(fotoUrl)}" width="52" height="52" alt="" style="display:block;width:52px;height:52px;border-radius:8px;object-fit:cover;border:1px solid #eef0f2;background-color:#f6f7f9;">`
-      : `<div style="width:52px;height:52px;border-radius:8px;border:1px solid #eef0f2;background-color:#f6f7f9;"></div>`
+      ? `<img src="${esc(fotoUrl)}" width="46" height="46" alt="" style="display:block;width:46px;height:46px;border-radius:8px;object-fit:cover;border:1px solid #eef0f2;background-color:#f6f7f9;">`
+      : `<div style="width:46px;height:46px;border-radius:8px;border:1px solid #eef0f2;background-color:#f6f7f9;"></div>`
     return `<tr>
-      <td style="padding:13px 0;border-bottom:1px solid #eef0f2;">
+      <td class="rowline" style="padding:13px 0;border-bottom:1px solid #eef0f2;">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-          <td style="padding:0 12px 0 0;vertical-align:top;width:52px;">${foto}</td>
-          <td style="vertical-align:top;font-size:14px;color:#0b0f19;line-height:1.4;">${esc(item.producto)}${codigo}${detalle}</td>
+          <td style="padding:0 10px 0 0;vertical-align:top;width:46px;">${foto}</td>
+          <td class="t-primary" style="vertical-align:top;font-size:14px;color:#0b0f19;line-height:1.4;">${esc(item.producto)}${codigo}${detalle}</td>
         </tr></table>
       </td>
-      <td style="padding:13px 0;border-bottom:1px solid #eef0f2;font-size:14px;color:#4b5563;text-align:center;white-space:nowrap;vertical-align:top;">${Number(item.cantidad) || 1}</td>
-      <td style="padding:13px 0;border-bottom:1px solid #eef0f2;font-size:14px;color:#4b5563;text-align:right;white-space:nowrap;vertical-align:top;">${montoUSD(item.precioUnitario)}</td>
-      <td style="padding:13px 0 13px 14px;border-bottom:1px solid #eef0f2;font-size:14px;font-weight:600;color:#0b0f19;text-align:right;white-space:nowrap;vertical-align:top;">${montoUSD(item.subtotal)}</td>
+      <td class="rowline t-body" style="padding:13px 4px;border-bottom:1px solid #eef0f2;font-size:13px;color:#4b5563;text-align:center;white-space:nowrap;vertical-align:top;">${Number(item.cantidad) || 1}</td>
+      <td class="rowline t-body" style="padding:13px 0;border-bottom:1px solid #eef0f2;font-size:13px;color:#4b5563;text-align:right;white-space:nowrap;vertical-align:top;">${montoUSDcorto(item.precioUnitario)}</td>
+      <td class="rowline t-primary" style="padding:13px 0 13px 10px;border-bottom:1px solid #eef0f2;font-size:13px;font-weight:600;color:#0b0f19;text-align:right;white-space:nowrap;vertical-align:top;">${montoUSDcorto(item.subtotal)}</td>
     </tr>`
   }).join('')
 
-  const totalFila = (label, valor, { strong = false, color = '#0b0f19' } = {}) => `<tr>
+  const totalFila = (label, valor, { strong = false, color = '#0b0f19', cls = '' } = {}) => `<tr>
     <td colspan="2" style="border:0;"></td>
-    <td style="padding:5px 0;font-size:13px;color:#6b7280;text-align:right;white-space:nowrap;">${label}</td>
-    <td style="padding:5px 0 5px 14px;font-size:${strong ? '17px' : '13px'};font-weight:${strong ? 800 : 600};color:${color};text-align:right;white-space:nowrap;">${valor}</td>
+    <td style="padding:5px 6px 5px 0;font-size:13px;color:#6b7280;text-align:right;line-height:1.3;">${label}</td>
+    <td class="${cls}" style="padding:5px 0 5px 10px;font-size:${strong ? '17px' : '13px'};font-weight:${strong ? 800 : 600};color:${color};text-align:right;white-space:nowrap;">${valor}</td>
   </tr>`
 
+  const pendiente = !esPago && (Number(factura.saldo) || 0) > 0.01
   const saldoFila = esPago
-    ? totalFila('Saldo pendiente', 'PAGADO', { strong: true, color: '#2f8f2f' })
-    : totalFila('Saldo pendiente', montoUSD(factura.saldo), { strong: true, color: (Number(factura.saldo) || 0) > 0.01 ? '#b26a00' : '#2f8f2f' })
+    ? totalFila('Saldo pendiente', 'PAGADO', { strong: true, cls: 't-primary' })
+    : totalFila('Saldo pendiente', montoUSDcorto(factura.saldo), { strong: true, color: pendiente ? '#b26a00' : '#0b0f19', cls: pendiente ? '' : 't-primary' })
 
   return `
           <!-- Factura -->
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 30px;">
-            <tr><td style="border:1px solid #e6e8ec;border-radius:12px;padding:22px 22px 18px;">
+            <tr><td class="card" style="border:1px solid #e6e8ec;border-radius:12px;padding:20px 18px 16px;">
               <div style="font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#8b93a7;margin-bottom:14px;">${esPago ? 'Comprobante de pago' : 'Detalle de tu compra'}</div>
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td style="padding:0 0 10px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#8b93a7;">Producto</td>
                   <td style="padding:0 0 10px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#8b93a7;text-align:center;">Cant.</td>
                   <td style="padding:0 0 10px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#8b93a7;text-align:right;">Precio</td>
-                  <td style="padding:0 0 10px 14px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#8b93a7;text-align:right;">Subtotal</td>
+                  <td style="padding:0 0 10px 10px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#8b93a7;text-align:right;">Subtotal</td>
                 </tr>
                 ${filas}
                 <tr><td colspan="4" style="height:14px;font-size:0;line-height:0;">&nbsp;</td></tr>
-                ${totalFila('Total del pedido', montoUSD(factura.total))}
-                ${totalFila(esPago ? 'Pago recibido' : 'Abono recibido', montoUSD(factura.abono))}
+                ${totalFila('Total del pedido', montoUSDcorto(factura.total), { cls: 't-primary' })}
+                ${totalFila(esPago ? 'Pago recibido' : 'Abono recibido', montoUSDcorto(factura.abono), { cls: 't-primary' })}
                 ${saldoFila}
               </table>
             </td></tr>
@@ -171,9 +178,9 @@ export function bloqueFotos(fotos) {
   return `
           <!-- Foto(s) de control de calidad -->
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 30px;">
-            <tr><td style="border:1px solid #e6e8ec;border-radius:12px;padding:20px 18px;">
+            <tr><td class="card" style="border:1px solid #e6e8ec;border-radius:12px;padding:20px 18px;">
               <div style="font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#8b93a7;margin-bottom:6px;text-align:center;">${titulo}</div>
-              <div style="font-size:13px;line-height:1.6;color:#4b5563;margin:0 0 14px;text-align:center;">${subtitulo}</div>
+              <div class="t-body" style="font-size:13px;line-height:1.6;color:#4b5563;margin:0 0 14px;text-align:center;">${subtitulo}</div>
               ${galeria}
             </td></tr>
           </table>`
@@ -221,42 +228,34 @@ export function tituloEstado(estado) {
   return HEADLINE[base] || 'Actualización de tu pedido'
 }
 
-// Timeline de progreso vertical: un punto + etiqueta por etapa, unidos por una línea.
-// Completadas = punto negro; etapa actual = punto verde neón con la etiqueta subrayada
-// en neón; futuras = punto hueco gris. Se dibuja vertical (igual en escritorio y móvil)
-// porque es lo que renderiza fiable en TODOS los clientes de correo. Devuelve '' en
-// cancelado/incidencia y cuando no hay etapa (p.ej. el aviso de bodega): índice -1.
+// Progreso del pedido como BARRA (no puntos): los clientes de correo (Gmail/iOS)
+// deforman los puntos+líneas hechos con mini-tablas (salían óvalos torcidos). Una barra
+// —track claro + relleno oscuro proporcional a la etapa— se renderiza bien en todos.
+// Arriba: etiqueta de la etapa actual + "Etapa N / M". Los colores llevan clases para
+// invertirse en modo oscuro (ver el <style>). Devuelve '' en cancelado/incidencia y
+// cuando no hay etapa (p.ej. el aviso de bodega): índice -1.
 export function bloqueTimeline(estado) {
   const idx = indiceEtapa(estado)
   if (idx < 0) return ''
-  const ultimo = TIMELINE.length - 1
-  const filas = TIMELINE.map((t, i) => {
-    const done = i < idx
-    const current = i === idx
-    const dot = current
-      ? 'background-color:#b7ff00;border:1px solid #a6e600;'
-      : done
-        ? 'background-color:#050505;border:1px solid #050505;'
-        : 'background-color:#ffffff;border:2px solid #d7dade;'
-    const conector = i < ultimo
-      ? `<div style="width:2px;height:22px;margin:3px auto 0;background-color:${i < idx ? '#050505' : '#d7dade'};font-size:0;line-height:0;">&nbsp;</div>`
-      : ''
-    const labelColor = current ? '#0b0f19' : done ? '#3a3f46' : '#aeb4bb'
-    const label = current
-      ? `<span style="border-bottom:2px solid #b7ff00;padding-bottom:2px;">${esc(t.label)}</span>`
-      : esc(t.label)
-    return `<tr>
-      <td width="24" valign="top" style="padding:0;">
-        <div style="width:14px;height:14px;border-radius:50%;margin:1px auto 0;${dot}">&nbsp;</div>
-        ${conector}
-      </td>
-      <td valign="top" style="padding:0 0 ${i < ultimo ? '13px' : '0'} 12px;">
-        <div style="font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:${labelColor};font-weight:${current ? 800 : 600};line-height:1.35;">${label}</div>
-      </td>
-    </tr>`
-  }).join('')
+  const total = TIMELINE.length
+  const pasos = idx + 1
+  const pct = Math.max(6, Math.round((pasos / total) * 100)) // mínimo visible en la 1.ª etapa
   return `
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${filas}</table>`
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td class="t-primary" style="font-size:12px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#0b0f19;line-height:1.3;">${esc(TIMELINE[idx].label)}</td>
+              <td style="text-align:right;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#aeb4bb;white-space:nowrap;vertical-align:bottom;">Etapa ${pasos} / ${total}</td>
+            </tr>
+            <tr><td colspan="2" style="padding-top:11px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+                <td class="bar-track" style="background-color:#e8eaed;border-radius:99px;padding:0;font-size:0;line-height:0;">
+                  <table role="presentation" width="${pct}%" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td class="bar-fill" height="9" style="height:9px;background-color:#0b0f19;border-radius:99px;font-size:0;line-height:0;">&nbsp;</td>
+                  </tr></table>
+                </td>
+              </tr></table>
+            </td></tr>
+          </table>`
 }
 
 // Fila de ayuda por WhatsApp (número configurable con WHATSAPP_NUMERO).
@@ -264,8 +263,8 @@ function bloqueWhatsapp() {
   const wa = String(process.env.WHATSAPP_NUMERO || '50578995116').replace(/[^0-9]/g, '')
   return `
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-            <td style="vertical-align:middle;font-size:14px;font-weight:700;color:#0b0f19;line-height:1.5;">¿Necesitas ayuda?<br><span style="font-size:13px;font-weight:400;color:#8b93a7;">Habla con nosotros por WhatsApp</span></td>
-            <td style="vertical-align:middle;text-align:right;white-space:nowrap;"><a href="https://wa.me/${wa}" target="_blank" style="font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#0b0f19;text-decoration:none;border-bottom:2px solid #b7ff00;padding-bottom:2px;">Escribir</a></td>
+            <td class="t-primary" style="vertical-align:middle;font-size:14px;font-weight:700;color:#0b0f19;line-height:1.5;">¿Necesitas ayuda?<br><span style="font-size:13px;font-weight:400;color:#8b93a7;">Habla con nosotros por WhatsApp</span></td>
+            <td style="vertical-align:middle;text-align:right;white-space:nowrap;"><a class="t-primary underline-accent" href="https://wa.me/${wa}" target="_blank" style="font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#0b0f19;text-decoration:none;border-bottom:2px solid #0b0f19;padding-bottom:2px;">Escribir</a></td>
           </tr></table>`
 }
 
@@ -277,19 +276,22 @@ function bloqueResena(codigo) {
   const url = `${base}/resena/?c=${encodeURIComponent(codigo)}`
   return `
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-            <tr><td style="border:1px solid #e6e8ec;border-radius:8px;padding:20px;text-align:center;">
-              <div style="font-size:18px;letter-spacing:4px;color:#0b0f19;">★★★★★</div>
-              <div style="font-size:16px;font-weight:700;color:#0b0f19;margin-top:8px;">¿Cómo estuvo tu experiencia?</div>
+            <tr><td class="card" style="border:1px solid #e6e8ec;border-radius:8px;padding:20px;text-align:center;">
+              <div class="t-primary" style="font-size:18px;letter-spacing:4px;color:#0b0f19;">★★★★★</div>
+              <div class="t-primary" style="font-size:16px;font-weight:700;color:#0b0f19;margin-top:8px;">¿Cómo estuvo tu experiencia?</div>
               <div style="font-size:13px;line-height:1.6;color:#8b93a7;margin:6px 0 14px;">Tu opinión ayuda a otros clientes a comprar con confianza.</div>
-              <a href="${url}" target="_blank" style="display:inline-block;border:1px solid #050505;color:#050505;text-decoration:none;font-weight:700;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;padding:12px 26px;border-radius:6px;">Dejar mi reseña</a>
+              <a class="btn-outline" href="${url}" target="_blank" style="display:inline-block;border:1px solid #050505;color:#050505;text-decoration:none;font-weight:700;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;padding:12px 26px;border-radius:6px;">Dejar mi reseña</a>
             </td></tr>
           </table>`
 }
 
-export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, urlSeguimiento, esNuevo, factura, fotos, ctaTexto, ctaUrl }) {
+export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, urlSeguimiento, esNuevo, factura, fotos, ctaTexto, ctaUrl, pedirResena }) {
   const btnUrl = ctaUrl || urlSeguimiento
   const btnTxt = ctaTexto || 'Ver seguimiento'
   const esEntregado = (ETAPA_BASE[estado] || estado) === 'entregado'
+  // Caja "deja tu reseña": la decide quien llama (pagado y/o entregado); si no lo indica,
+  // se conserva el comportamiento histórico de mostrarla al entregar.
+  const mostrarResena = pedirResena ?? esEntregado
   const intro = esNuevo
     ? `Gracias por tu compra. Confirmamos tu pedido y ya comenzamos a gestionarlo.`
     : `Tu pedido tiene una nueva actualización.`
@@ -304,7 +306,8 @@ export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, url
   const telContacto = process.env.CONTACT_PHONE || '+505 7899 5116'
 
   const timeline = bloqueTimeline(estado)
-  const extras = `${bloqueFotos(fotos)}${bloqueFactura(factura)}`
+  const datos = bloqueFactura(factura)          // datos del pedido: foto, talla, código, precio
+  const fotosBloque = bloqueFotos(fotos)        // fotos de control de calidad (cuando aplica)
   const font = `-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif`
   const serif = `Georgia,'Times New Roman',Times,serif`
 
@@ -314,68 +317,100 @@ export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, url
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <meta name="color-scheme" content="light only">
-  <meta name="supported-color-schemes" content="light only">
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
   <title>Pedido ${codigo}</title>
   <!--[if mso]><style>body,table,td,a{font-family:Arial,Helvetica,sans-serif !important;}</style><![endif]-->
+  <style>
+    :root { color-scheme: light dark; supported-color-schemes: light dark; }
+    /* Modo oscuro: el correo sigue el tema del dispositivo (Apple Mail / iOS Mail lo
+       respetan; Gmail lo ignora y se queda en claro, que también se ve bien). */
+    @media (prefers-color-scheme: dark) {
+      .email-bg { background-color:#0a0c10 !important; }
+      .shell { background-color:#111319 !important; }
+      .edge { background-color:#f2f4f7 !important; }
+      .brand, .t-primary { color:#f2f4f7 !important; }
+      .t-body { color:#c7ccd4 !important; }
+      .hr { background-color:#262a32 !important; }
+      .card { background-color:#171a20 !important; border-color:#2b303a !important; }
+      .note { background-color:#171a20 !important; border-color:#2b303a !important; }
+      .note-accent { border-left-color:#f2f4f7 !important; }
+      .rowline { border-bottom-color:#2b303a !important; }
+      .btn { background-color:#f2f4f7 !important; color:#0a0c10 !important; }
+      .btn-outline { border-color:#f2f4f7 !important; color:#f2f4f7 !important; }
+      .underline-accent { border-bottom-color:#f2f4f7 !important; }
+      .bar-track { background-color:#2b303a !important; }
+      .bar-fill { background-color:#f2f4f7 !important; }
+    }
+    /* Teléfono: reduce los márgenes laterales para que la factura y todo el contenido
+       quepan sin recortarse en pantallas angostas (Gmail Android, teléfonos de 360px). */
+    @media only screen and (max-width:480px) {
+      .pad { padding-left:16px !important; padding-right:16px !important; }
+      .card { padding-left:14px !important; padding-right:14px !important; }
+    }
+  </style>
 </head>
-<body style="margin:0;padding:0;background-color:#ffffff;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;font-family:${font};">
+<body class="email-bg" style="margin:0;padding:0;background-color:#ffffff;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;font-family:${font};">
   <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;font-size:1px;line-height:1px;color:#ffffff;">${preheader}</div>
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="email-bg" style="background-color:#ffffff;">
     <tr><td align="center" style="padding:0;">
-      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="shell" style="width:100%;max-width:600px;background-color:#ffffff;">
 
-        <!-- Filo negro superior -->
-        <tr><td style="height:4px;background-color:#050505;font-size:0;line-height:0;">&nbsp;</td></tr>
+        <!-- Filo superior -->
+        <tr><td class="edge" style="height:4px;background-color:#050505;font-size:0;line-height:0;">&nbsp;</td></tr>
 
         <!-- Encabezado: marca + kicker -->
-        <tr><td style="padding:26px 36px 18px;">
+        <tr><td class="pad" style="padding:26px 24px 18px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-            <td style="font-size:16px;font-weight:800;letter-spacing:4px;color:#0b0f19;">HAUS<span style="color:#b7ff00;">LINE</span></td>
+            <td class="brand" style="font-size:16px;font-weight:800;letter-spacing:4px;color:#0b0f19;">HAUSLINE</td>
             <td style="text-align:right;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#aeb4bb;">${esc(kicker)}</td>
           </tr></table>
         </td></tr>
-        <tr><td style="padding:0 36px;"><div style="height:1px;background-color:#eef0f2;font-size:0;line-height:0;">&nbsp;</div></td></tr>
+        <tr><td class="pad" style="padding:0 24px;"><div class="hr" style="height:1px;background-color:#eef0f2;font-size:0;line-height:0;">&nbsp;</div></td></tr>
 
         <!-- Titular editorial -->
-        <tr><td style="padding:36px 36px 0;">
-          <h1 style="margin:0;font-family:${serif};font-weight:400;font-size:30px;line-height:1.18;color:#0b0f19;">${esc(titulo)}</h1>
+        <tr><td class="pad" style="padding:36px 24px 0;">
+          <h1 class="t-primary" style="margin:0;font-family:${serif};font-weight:400;font-size:30px;line-height:1.18;color:#0b0f19;">${esc(titulo)}</h1>
           <p style="margin:14px 0 0;font-size:12px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#aeb4bb;">Pedido #${codigo}</p>
         </td></tr>
 
-        ${timeline ? `<tr><td style="padding:30px 36px 0;">${timeline}</td></tr>` : ''}
+        <!-- Datos del pedido primero (foto, talla, código, precio) -->
+        ${datos ? `<tr><td class="pad" style="padding:28px 24px 0;">${datos}</td></tr>` : ''}
+
+        <!-- Línea de seguimiento horizontal -->
+        ${timeline ? `<tr><td class="pad" style="padding:${datos ? '4px' : '30px'} 24px 0;">${timeline}</td></tr>` : ''}
 
         <!-- Nota del estado -->
-        <tr><td style="padding:${timeline ? '30px' : '28px'} 36px 0;">
+        <tr><td class="pad" style="padding:${timeline || datos ? '30px' : '28px'} 24px 0;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-            <tr><td style="border:1px solid #e6e8ec;border-left:4px solid #b7ff00;border-radius:8px;padding:15px 18px;font-size:14px;line-height:1.6;color:#4b5563;">${nota || intro}</td></tr>
+            <tr><td class="note note-accent t-body" style="border:1px solid #e6e8ec;border-left:4px solid #0b0f19;border-radius:8px;padding:15px 18px;font-size:14px;line-height:1.6;color:#4b5563;">${nota || intro}</td></tr>
           </table>
         </td></tr>
 
-        ${extras ? `<tr><td style="padding:28px 36px 0;">${extras}</td></tr>` : ''}
+        ${fotosBloque ? `<tr><td class="pad" style="padding:28px 24px 0;">${fotosBloque}</td></tr>` : ''}
 
-        ${esEntregado ? `<tr><td style="padding:28px 36px 0;">${bloqueResena(codigo)}</td></tr>` : ''}
+        ${mostrarResena ? `<tr><td class="pad" style="padding:28px 24px 0;">${bloqueResena(codigo)}</td></tr>` : ''}
 
         <!-- Botón -->
-        <tr><td style="padding:28px 36px 0;">
-          <a href="${btnUrl}" target="_blank" style="display:block;background-color:#050505;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:2px;text-transform:uppercase;text-align:center;padding:17px 20px;border-radius:6px;">${esc(btnTxt)}</a>
+        <tr><td class="pad" style="padding:28px 24px 0;">
+          <a class="btn" href="${btnUrl}" target="_blank" style="display:block;background-color:#050505;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:2px;text-transform:uppercase;text-align:center;padding:17px 20px;border-radius:6px;">${esc(btnTxt)}</a>
           <p style="margin:12px 0 0;font-size:11px;line-height:1.5;text-align:center;color:#b7bcc5;"><a href="${btnUrl}" target="_blank" style="color:#b7bcc5;text-decoration:underline;word-break:break-all;">${btnUrl}</a></p>
         </td></tr>
 
         <!-- Ayuda -->
-        <tr><td style="padding:26px 36px 0;"><div style="height:1px;background-color:#eef0f2;font-size:0;line-height:0;">&nbsp;</div></td></tr>
-        <tr><td style="padding:22px 36px 0;">${bloqueWhatsapp()}</td></tr>
+        <tr><td class="pad" style="padding:26px 24px 0;"><div class="hr" style="height:1px;background-color:#eef0f2;font-size:0;line-height:0;">&nbsp;</div></td></tr>
+        <tr><td class="pad" style="padding:22px 24px 0;">${bloqueWhatsapp()}</td></tr>
 
         <!-- Confianza -->
-        <tr><td style="padding:26px 36px 0;text-align:center;">
+        <tr><td class="pad" style="padding:26px 24px 0;text-align:center;">
           <div style="font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#aeb4bb;">Compra segura&nbsp;&nbsp;·&nbsp;&nbsp;Seguimiento de pedido&nbsp;&nbsp;·&nbsp;&nbsp;Atención personalizada</div>
         </td></tr>
 
         <!-- Pie -->
-        <tr><td style="padding:26px 36px 36px;">
-          <div style="height:1px;background-color:#eef0f2;font-size:0;line-height:0;margin-bottom:20px;">&nbsp;</div>
+        <tr><td class="pad" style="padding:26px 24px 36px;">
+          <div class="hr" style="height:1px;background-color:#eef0f2;font-size:0;line-height:0;margin-bottom:20px;">&nbsp;</div>
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-            <td style="font-size:13px;font-weight:800;letter-spacing:3px;color:#0b0f19;">HAUSLINE</td>
+            <td class="t-primary" style="font-size:13px;font-weight:800;letter-spacing:3px;color:#0b0f19;">HAUSLINE</td>
             <td style="text-align:right;font-size:11px;color:#9aa0ab;line-height:1.6;">${esc(correoContacto)}<br>${esc(telContacto)}</td>
           </tr></table>
           <p style="margin:14px 0 0;font-size:10px;color:#c4c9d0;">© ${anio} Hausline · King of Shoes · Aviso automático de tu pedido</p>
@@ -531,7 +566,7 @@ export async function enviarCorreoBodega({ correo, nombre, codigo, dias, diasCob
 export async function enviarCorreoAbandono({ correo, nombre, codigo, producto }) {
   const base = (process.env.CATALOGO_BASE_URL ?? 'https://hauslineshopni.es/').replace(/\/$/, '')
   const checkoutUrl = `${base}/checkout/?c=${encodeURIComponent(codigo)}`
-  const nota = `Tu pedido ${codigo}${producto ? ` de <strong>${esc(producto)}</strong>` : ''} quedó a un paso de confirmarse. Completá tu pago para asegurarlo — recordá que el encargo se cancela solo a las 24 horas de creado.`
+  const nota = `Tu pedido ${codigo}${producto ? ` de <strong>${esc(producto)}</strong>` : ''} quedó a un paso de confirmarse. Completá tu pago y lo mandamos a pedir enseguida — recordá que el encargo se cancela solo a las 24 horas de creado.`
 
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
@@ -552,10 +587,65 @@ export async function enviarCorreoAbandono({ correo, nombre, codigo, producto })
   })
 }
 
+// Correo automático de "ESPERAMOS TU PAGO". Se dispara al instante en que el cliente
+// crea un encargo desde la web (mismo webhook que avisa al admin). Le confirma su código
+// temporal SOL-####, le dice que estamos esperando el pago y le da un botón para pagar y
+// enviar el comprobante (la página /checkout/?c=CODE, que ya trae cuentas y WhatsApp).
+// Así, aunque haya escrito mal su teléfono, el cliente tiene su código y cómo continuar.
+export async function enviarCorreoEsperandoPago({ correo, nombre, codigo, producto }) {
+  const base = (process.env.CATALOGO_BASE_URL ?? 'https://hauslineshopni.es/').replace(/\/$/, '')
+  const checkoutUrl = `${base}/checkout/?c=${encodeURIComponent(codigo)}`
+  const nota = `¡Recibimos tu pedido <strong>${esc(codigo)}</strong>!${producto ? ` de <strong>${esc(producto)}</strong>` : ''} Estamos <strong>esperando tu pago</strong> para confirmarlo. Realizá la transferencia y enviá tu comprobante desde el botón de abajo. Guardá tu código: es tu referencia para cualquier consulta. Tenemos tu pedido en espera por <strong>24 horas</strong>; si no recibimos el pago, se cancela solo.<br><br><span style="font-size:12px;color:#8b93a7;">Importante: los pedidos por encargo <strong>no admiten devoluciones de dinero ni cambios</strong>.</span>`
+
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
+    port: Number(process.env.SMTP_PORT ?? 465),
+    secure: true,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  })
+
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
+    to: correo,
+    subject: `${codigo}: recibimos tu pedido — esperamos tu pago`,
+    html: plantillaCorreo({
+      nombre, codigo, estado: null, estadoLabel: 'Esperando tu pago', nota,
+      urlSeguimiento: checkoutUrl, esNuevo: false, factura: null, fotos: [],
+      ctaTexto: 'Pagar y enviar comprobante', ctaUrl: checkoutUrl,
+    }),
+  })
+}
+
+// Aviso automático de RETRASO: se manda solo (desde el cron) cuando un pedido lleva más
+// de 27 días en tránsito internacional. Mensaje suave de disculpa; muestra el timeline en
+// la etapa de tránsito y un botón al seguimiento. Sin factura ni reseña. Lanza si SMTP falla.
+export async function enviarCorreoRetraso({ correo, nombre, codigo, estado }) {
+  const appUrl = (process.env.APP_URL ?? process.env.VITE_PUBLIC_APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
+  const urlSeguimiento = `${appUrl}/tracking/${codigo}`
+  const nota = `Queremos contarte que tu pedido <strong>${esc(codigo)}</strong> está tardando un poco más de lo habitual en su tránsito internacional. Los envíos internacionales a veces tienen demoras en aduana o transporte que no dependen de nosotros; ya le estamos dando seguimiento para que llegue lo antes posible. Gracias por tu paciencia y por confiar en nosotros — cualquier duda, escríbenos.`
+
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
+    port: Number(process.env.SMTP_PORT ?? 465),
+    secure: true,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  })
+
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
+    to: correo,
+    subject: `Pedido ${codigo}: tu envío está tardando un poco más`,
+    html: plantillaCorreo({
+      nombre, codigo, estado: estado ?? null, estadoLabel: 'Aviso de retraso', nota,
+      urlSeguimiento, esNuevo: false, factura: null, fotos: [],
+    }),
+  })
+}
+
 // Envía el correo del pedido (creación o cambio de estado). Lanza si el SMTP falla.
 // `factura` es opcional: cuando llega, el correo incluye la tabla de la compra
 // (al crear el pedido) o del pago (al entregarlo).
-export async function enviarCorreoPedido({ correo, nombre, codigo, estado, esNuevo, factura, fotos }) {
+export async function enviarCorreoPedido({ correo, nombre, codigo, estado, esNuevo, factura, fotos, pedirResena }) {
   const estadoLabel = ESTADO_LABEL[estado]
   const nota = ESTADO_NOTA[estado] ?? 'Tu pedido fue actualizado.'
   const appUrl = (process.env.APP_URL ?? process.env.VITE_PUBLIC_APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
@@ -593,7 +683,7 @@ export async function enviarCorreoPedido({ correo, nombre, codigo, estado, esNue
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to: correo,
     subject: esNuevo ? `Pedido ${codigo}: Orden confirmada` : `Pedido ${codigo}: ${estadoLabel}`,
-    html: plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, urlSeguimiento, esNuevo, factura, fotos }),
+    html: plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, urlSeguimiento, esNuevo, factura, fotos, pedirResena }),
     attachments,
   })
 }

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Modal } from '../../components/ui/Modal'
+import { CuentaSelect, type DestinoPago } from '../../components/finanzas/CuentaSelect'
 import { estadoLabel } from '../../constants/orders'
 import { DEMO_PEDIDOS } from '../../data/demo'
 import { isSupabaseConfigured } from '../../lib/supabase'
@@ -11,6 +12,7 @@ import { listarPedidos } from '../../services/pedidos.service'
 import type { Inversion, Pago, Pedido } from '../../types/domain'
 import { desglosePedido, estadoPago, type EstadoPago } from '../../utils/pedidoCosto'
 import { periodoDeMes } from '../../utils/periodo'
+import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { formatDate, PagoModal } from './PagosPage'
 
 const money = (n: number) => new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0)
@@ -115,9 +117,11 @@ function Header({ onVender }: { onVender: () => void }) {
 function VentaStockModal({ open, stock, onClose, onSold }: { open: boolean; stock: Inversion[]; onClose: () => void; onSold: () => void }) {
   const [selected, setSelected] = useState<Inversion | null>(null)
   const [form, setForm] = useState({ fecha: new Date().toISOString().slice(0, 10), cliente: '', precio_venta: '', monto_recibido: '', metodo: 'Transferencia', observaciones: '' })
+  const [destino, setDestino] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
+  const [tipoCambio, setTipoCambio] = useState(37)
   const [saving, setSaving] = useState(false)
   const [buscar, setBuscar] = useState('')
-  useEffect(() => { if (open) { setSelected(null); setBuscar('') } }, [open])
+  useEffect(() => { if (open) { setSelected(null); setBuscar(''); setDestino({ cuentaId: null, montoCuenta: 0 }); void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined) } }, [open])
   const elegir = (item: Inversion) => { const precio = (Number(item.precio_venta_estimado) * Number(item.cantidad)).toFixed(2); setSelected(item); setForm({ fecha: new Date().toISOString().slice(0, 10), cliente: '', precio_venta: precio, monto_recibido: precio, metodo: 'Transferencia', observaciones: '' }) }
 
   const lista = useMemo(() => { const t = buscar.trim().toLowerCase(); return stock.filter((i) => !t || [i.producto, i.codigo, i.marca].some((v) => v?.toLowerCase().includes(t))) }, [stock, buscar])
@@ -127,9 +131,10 @@ function VentaStockModal({ open, stock, onClose, onSold }: { open: boolean; stoc
     if (!selected) return
     const precio = Number(form.precio_venta), recibido = Number(form.monto_recibido)
     if (precio <= 0) return toast.error('Indica el precio de venta.')
+    if (recibido > 0 && !destino.cuentaId) return toast.error('Elegí a qué cuenta entra la venta.')
     setSaving(true)
     try {
-      await venderStockInmediato(selected, { fecha: form.fecha, precio_venta: precio / Number(selected.cantidad), monto_recibido: Math.max(0, recibido), metodo: form.metodo, cliente: form.cliente, observaciones: form.observaciones })
+      await venderStockInmediato(selected, { fecha: form.fecha, precio_venta: precio / Number(selected.cantidad), monto_recibido: Math.max(0, recibido), metodo: form.metodo, cliente: form.cliente, observaciones: form.observaciones }, destino)
       toast.success('Venta registrada. El producto salió del stock.')
       onSold()
     } catch { toast.error('No se pudo registrar la venta.') } finally { setSaving(false) }
@@ -140,7 +145,7 @@ function VentaStockModal({ open, stock, onClose, onSold }: { open: boolean; stoc
       <div className="relative mb-3"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" size={17} /><input className="search-input" value={buscar} onChange={(e) => setBuscar(e.target.value)} placeholder="Producto, código o marca" /></div>
       <div className="grid max-h-[55vh] gap-2 overflow-y-auto pr-1">
         {lista.map((item) => <button type="button" key={item.id} onClick={() => elegir(item)} className="flex items-center gap-3 rounded-xl border border-line bg-white/[.02] p-3 text-left transition hover:border-accent/40 hover:bg-accent/[.05]">
-          <span className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-lg bg-accent/10 text-accent">{item.imagen ? <img src={item.imagen} alt={item.producto} className="size-full object-cover" /> : <PackageCheck size={20} />}</span>
+          <span className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-lg bg-accent/10 text-accent">{resolverImagenCatalogo(item.imagen) ? <img src={resolverImagenCatalogo(item.imagen)} alt={item.producto} className="size-full object-cover" /> : <PackageCheck size={20} />}</span>
           <span className="min-w-0 flex-1"><strong className="block truncate text-sm">{item.producto}</strong><span className="block truncate text-xs text-muted">{[item.codigo, item.marca, item.talla_color].filter(Boolean).join(' · ') || 'Sin detalle'}</span></span>
           <span className="shrink-0 text-right"><strong className="block text-accent">USD {(Number(item.precio_venta_estimado) * Number(item.cantidad)).toFixed(2)}</strong><span className="text-[10px] text-muted">{item.cantidad} disp.</span></span>
         </button>)}
@@ -160,6 +165,7 @@ function VentaStockModal({ open, stock, onClose, onSold }: { open: boolean; stoc
       <Field label="Monto recibido"><input type="number" min="0" step=".01" value={form.monto_recibido} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setForm({ ...form, monto_recibido: e.target.value })} /></Field>
       <Field label="Método de pago"><input value={form.metodo} onChange={(e) => setForm({ ...form, metodo: e.target.value })} /></Field>
       <Field label="Nota (opcional)"><input value={form.observaciones} onChange={(e) => setForm({ ...form, observaciones: e.target.value })} /></Field>
+      {recibido > 0 && <CuentaSelect requerido proposito="recibir" montoUsd={recibido} tipoCambio={tipoCambio} value={destino} onChange={setDestino} />}
       <div className="col-span-full grid grid-cols-3 gap-3 rounded-xl border border-line bg-white/[.02] p-4 text-center"><div><span className="text-[10px] uppercase text-muted">Costo</span><strong className="mt-1 block text-sm">USD {costo.toFixed(2)}</strong></div><div><span className="text-[10px] uppercase text-muted">Venta</span><strong className="mt-1 block text-sm text-accent">USD {(precio || 0).toFixed(2)}</strong></div><div><span className="text-[10px] uppercase text-muted">Ganancia</span><strong className="mt-1 block text-sm text-green-300">USD {Math.max(0, (precio || 0) - costo).toFixed(2)}</strong></div></div>
       {recibido < precio && recibido >= 0 && <p className="col-span-full rounded-xl border border-amber-300/20 bg-amber-300/[.05] p-3 text-[11px] leading-5 text-amber-200/90">Se registra como ingreso solo el monto recibido (USD {Math.max(0, recibido).toFixed(2)}). El resto queda como acuerdo directo con el cliente.</p>}
       <div className="col-span-full flex justify-end gap-2"><button type="button" className="subtle-button" onClick={onClose}>Cancelar</button><button className="primary-button px-5" disabled={saving}>{saving ? 'Registrando…' : 'Registrar venta'}</button></div>

@@ -1,6 +1,8 @@
 import { Plus, Save, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Modal } from '../ui/Modal'
+import { CuentaSelect, type DestinoPago } from '../finanzas/CuentaSelect'
+import { obtenerTipoCambio } from '../../services/comercial.service'
 import { ENVIO_RAPIDO_RECARGO, esLineaEnvioRapido, type EditarPedidoInput } from '../../services/pedidos.service'
 import type { Pedido, PedidoItem } from '../../types/domain'
 import { costoRealPedido } from '../../utils/pedidoCosto'
@@ -17,6 +19,9 @@ export function EditarPedidoModal({ pedido, open, onClose, onSave }: {
   const [fechaEstimada, setFechaEstimada] = useState('')
   const [abono, setAbono] = useState(0)
   const [costoProveedor, setCostoProveedor] = useState(0)
+  const [costoOriginal, setCostoOriginal] = useState(0)
+  const [destinoCosto, setDestinoCosto] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
+  const [tipoCambio, setTipoCambio] = useState(37)
   const [notasInternas, setNotasInternas] = useState('')
   const [notasPublicas, setNotasPublicas] = useState('')
   const [envioRapido, setEnvioRapido] = useState(false)
@@ -31,15 +36,22 @@ export function EditarPedidoModal({ pedido, open, onClose, onSave }: {
     setFechaEstimada(pedido.fecha_estimada ?? '')
     setAbono(Number(pedido.abono))
     const proveedor = pedido.gastos?.find((gasto) => (gasto.categoria ?? '').toLowerCase().includes('proveedor'))
-    setCostoProveedor(proveedor ? Number(proveedor.monto) : costoRealPedido(pedido))
+    const costoInicial = proveedor ? Number(proveedor.monto) : costoRealPedido(pedido)
+    setCostoProveedor(costoInicial)
+    setCostoOriginal(costoInicial)
+    setDestinoCosto({ cuentaId: null, montoCuenta: 0 })
     setNotasInternas(pedido.notas_internas ?? '')
     setNotasPublicas(pedido.notas_publicas ?? '')
     setEnvioRapido(Boolean(pedido.envio_rapido))
     setError('')
   }, [open, pedido])
 
+  useEffect(() => { if (open) void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined) }, [open])
+
   const totalProductos = useMemo(() => items.reduce((sum, item) => sum + Number(item.cantidad || 0) * Number(item.precio_unitario || 0), 0), [items])
   const total = totalProductos + (envioRapido ? ENVIO_RAPIDO_RECARGO : 0)
+  // Diferencia de costo real respecto a lo que estaba antes: >0 salió más plata, <0 volvió.
+  const deltaCosto = Math.round((Number(costoProveedor) - Number(costoOriginal)) * 100) / 100
   const changeItem = (index: number, field: keyof PedidoItem, value: string | number) => setItems((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item))
 
   const submit = async (event: FormEvent) => {
@@ -48,6 +60,7 @@ export function EditarPedidoModal({ pedido, open, onClose, onSave }: {
     if (items.some((item) => Number(item.cantidad) < 1 || Number(item.precio_unitario) < 0)) return setError('Revisa la cantidad y el precio de los productos.')
     if (abono < 0) return setError('El abono no puede ser negativo.')
     if (costoProveedor < 0) return setError('El costo real no puede ser negativo.')
+    if (Math.abs(deltaCosto) > 0.001 && !destinoCosto.cuentaId) return setError('Elegí la cuenta que absorbe la diferencia de costo.')
     setSaving(true)
     setError('')
     try {
@@ -55,6 +68,9 @@ export function EditarPedidoModal({ pedido, open, onClose, onSave }: {
         fecha_estimada: fechaEstimada || null,
         abono: Number(abono),
         costo_proveedor: Number(costoProveedor),
+        cuentaAjuste: destinoCosto.cuentaId && deltaCosto !== 0
+          ? { cuentaId: destinoCosto.cuentaId, ajuste: deltaCosto > 0 ? -Math.abs(destinoCosto.montoCuenta) : Math.abs(destinoCosto.montoCuenta) }
+          : null,
         notas_internas: notasInternas.trim() || null,
         notas_publicas: notasPublicas.trim() || null,
         envio_rapido: envioRapido,
@@ -89,6 +105,10 @@ export function EditarPedidoModal({ pedido, open, onClose, onSave }: {
       </div>
       <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-line bg-white/[0.02] p-3 transition hover:border-accent/40"><input type="checkbox" className="size-4 shrink-0 accent-accent" checked={envioRapido} onChange={(event) => setEnvioRapido(event.target.checked)} /><span className="flex flex-col"><span className="text-sm font-medium">El cliente quiere envío rápido</span><span className="text-[11px] text-muted">Llega en 14 a 17 días en vez de 20 a 25. Suma US$15 al total del pedido (una sola vez).</span></span></label>
       <div className="grid gap-3 rounded-xl border border-line bg-white/[0.025] p-4 sm:grid-cols-3"><Money label="Total" value={total} /><Money label="Abono" value={abono} /><Money label="Saldo" value={total - abono} accent /><Money label="Costo real" value={costoProveedor} /><Money label="Ganancia estimada" value={total - costoProveedor} /></div>
+      {Math.abs(deltaCosto) > 0.001 && <div className="grid gap-3 rounded-xl border border-line bg-white/[.02] p-4">
+        <p className="text-xs text-muted">El costo {deltaCosto > 0 ? 'subió' : 'bajó'} <strong className={deltaCosto > 0 ? 'text-red-300' : 'text-green-300'}>${Math.abs(deltaCosto).toFixed(2)}</strong>. {deltaCosto > 0 ? 'Elegí de qué cuenta salió esa diferencia (baja esa tarjeta).' : 'Elegí a qué cuenta vuelve esa diferencia (sube esa tarjeta).'}</p>
+        <CuentaSelect requerido proposito={deltaCosto > 0 ? 'comprar' : 'recibir'} montoUsd={Math.abs(deltaCosto)} tipoCambio={tipoCambio} value={destinoCosto} onChange={setDestinoCosto} modo={deltaCosto > 0 ? 'resta' : 'suma'} label={deltaCosto > 0 ? '¿De qué cuenta salió la diferencia?' : '¿A qué cuenta volvió la diferencia?'} />
+      </div>}
       {error && <p className="text-sm text-red-300">{error}</p>}
       <div className="flex justify-end gap-2"><button type="button" className="subtle-button px-4" onClick={onClose}>Cancelar</button><button className="primary-button px-5" disabled={saving}><Save size={16} /> {saving ? 'Guardando…' : 'Guardar cambios'}</button></div>
     </form>

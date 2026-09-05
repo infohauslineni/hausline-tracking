@@ -1,4 +1,4 @@
-import { ArrowUpRight, BarChart3, Bell, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, MoreHorizontal, PackagePlus, PackageSearch, Plus, ReceiptText, Settings, ShoppingBag, Star, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
+import { ArrowUpRight, BarChart3, Bell, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, MoreHorizontal, PackagePlus, PackageSearch, Plus, ReceiptText, Settings, ShoppingBag, Star, Ticket, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -42,6 +42,7 @@ const operaciones: NavItem[] = [
 ]
 const clientesProductos: NavItem[] = [
   { to: '/clientes', label: 'Clientes', icon: Users },
+  { to: '/cupones', label: 'Cupones', icon: Ticket, nuevo: true },
   { to: '/resenas', label: 'Reseñas', icon: Star },
   { to: '/productos', label: 'Productos', icon: PackageSearch },
   { to: '/stock', label: 'Stock e inversiones', icon: HandCoins },
@@ -67,8 +68,14 @@ const navGroups = [
   { title: 'Logística', items: logistica },
   { title: 'Administración', items: administracion },
 ]
-// Barra inferior en móvil: Resumen · Pedidos · (+) · Ventas · Más.
+// Rutas que ve el OPERADOR (empleado): su trabajo operativo, sin nada de dinero. Todo lo
+// demás (finanzas, productos/stock, reportes, cupones, reseñas, configuración, resumen) es
+// solo para el admin. La seguridad real está en el servidor (RLS); esto es la capa visual.
+const RUTAS_OPERADOR = new Set(['/pedidos', '/solicitudes', '/logistica'])
+// Barra inferior en móvil (admin): Resumen · Pedidos · (+) · Ventas · Más.
 const mobileLinks = [operaciones[0], operaciones[1], operaciones[2]]
+// Barra inferior en móvil (operador): Pedidos · Encargos · Logística · Más (sin botón "+").
+const mobileLinksOperador = [operaciones[1], operaciones[3], logistica[0]]
 // Accesos rápidos del botón central "+" en móvil.
 const quickActions: NavItem[] = [
   { to: '/pedidos/nuevo', label: 'Nuevo pedido', icon: PackagePlus },
@@ -83,8 +90,12 @@ export function PrivateLayout() {
   const [badges, setBadges] = useState<Badges>({})
   const [alertas, setAlertas] = useState<Alerta[]>([])
   const [bellOpen, setBellOpen] = useState(false)
-  const { user, signOut } = useAuth()
+  const { user, signOut, esAdmin } = useAuth()
   const location = useLocation()
+  // Menú lateral filtrado por rol: el operador solo ve sus rutas operativas.
+  const visibleGroups = navGroups
+    .map((group) => ({ ...group, items: esAdmin ? group.items : group.items.filter((item) => RUTAS_OPERADOR.has(item.to)) }))
+    .filter((group) => group.items.length > 0)
   useEffect(() => { warmDashboard() }, [])
   // Refresca los contadores y las alertas al cambiar de página (datos del caché de pedidos).
   useEffect(() => { if (!isSupabaseConfigured) return; let vivo = true; void calcularEstado().then((next) => { if (vivo) { setBadges(next.badges); setAlertas(next.alertas) } }).catch(() => undefined); return () => { vivo = false } }, [location.pathname])
@@ -116,7 +127,7 @@ export function PrivateLayout() {
           <button className="icon-button lg:hidden!" onClick={() => setOpen(false)} aria-label="Cerrar menú"><X size={20} /></button>
         </div>
         <nav className="mt-7 flex flex-1 flex-col gap-5 overflow-y-auto pr-1">
-          {navGroups.map((group) => (
+          {visibleGroups.map((group) => (
             <div key={group.title}>
               <p className="nav-group-title">{group.title}</p>
               <div className="mt-1.5 flex flex-col gap-0.5">
@@ -134,7 +145,7 @@ export function PrivateLayout() {
         </nav>
         <div className="mt-4 flex items-center gap-3 rounded-2xl border border-line bg-white/[0.03] p-3">
           <span className="grid size-9 shrink-0 place-items-center rounded-full bg-accent/15 text-sm font-bold text-accent">{(user?.email ?? 'A').charAt(0).toUpperCase()}</span>
-          <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{user?.email ?? 'Administrador'}</p><p className="text-[11px] text-muted">Administrador</p></div>
+          <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{user?.email ?? 'Usuario'}</p><p className="text-[11px] text-muted">{esAdmin ? 'Administrador' : 'Operador'}</p></div>
           <button className="icon-button" onClick={handleSignOut} title="Cerrar sesión" aria-label="Cerrar sesión"><LogOut size={16} /></button>
         </div>
       </aside>
@@ -161,8 +172,9 @@ export function PrivateLayout() {
         </header>
         <main className="mx-auto max-w-[1500px] p-4 pb-24 sm:p-6 lg:p-8"><Outlet /></main>
       </div>
-      {/* Hoja de accesos rápidos del botón central "+" (solo móvil). */}
-      {fabOpen && <>
+      {/* Hoja de accesos rápidos del botón central "+" (solo móvil, solo admin: todas las
+          acciones rápidas mueven dinero). */}
+      {esAdmin && fabOpen && <>
         <button aria-label="Cerrar" className="fixed inset-0 z-40 bg-black/70 lg:hidden" onClick={() => setFabOpen(false)} />
         <div className="reveal-up fixed inset-x-3 bottom-24 z-50 rounded-2xl border border-line bg-panel p-3 shadow-2xl lg:hidden">
           <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Crear rápido</p>
@@ -171,13 +183,20 @@ export function PrivateLayout() {
           </div>
         </div>
       </>}
-      <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-5 items-center rounded-2xl border border-line bg-panel/95 p-1.5 shadow-2xl backdrop-blur-xl lg:hidden" aria-label="Navegación móvil">
-        <MobileTab to={mobileLinks[0].to} label={mobileLinks[0].label} Icon={mobileLinks[0].icon} badge={badges[mobileLinks[0].to]} />
-        <MobileTab to={mobileLinks[1].to} label={mobileLinks[1].label} Icon={mobileLinks[1].icon} badge={badges[mobileLinks[1].to]} />
-        <button type="button" className="mobile-fab" onClick={() => setFabOpen(true)} aria-label="Crear rápido"><Plus size={24} /></button>
-        <MobileTab to={mobileLinks[2].to} label={mobileLinks[2].label} Icon={mobileLinks[2].icon} badge={badges[mobileLinks[2].to]} />
-        <button type="button" className="mobile-tab text-muted" onClick={() => setOpen(true)} aria-label="Más opciones"><MoreHorizontal size={18} /><span className="max-w-full truncate">Más</span></button>
-      </nav>
+      {esAdmin ? (
+        <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-5 items-center rounded-2xl border border-line bg-panel/95 p-1.5 shadow-2xl backdrop-blur-xl lg:hidden" aria-label="Navegación móvil">
+          <MobileTab to={mobileLinks[0].to} label={mobileLinks[0].label} Icon={mobileLinks[0].icon} badge={badges[mobileLinks[0].to]} />
+          <MobileTab to={mobileLinks[1].to} label={mobileLinks[1].label} Icon={mobileLinks[1].icon} badge={badges[mobileLinks[1].to]} />
+          <button type="button" className="mobile-fab" onClick={() => setFabOpen(true)} aria-label="Crear rápido"><Plus size={24} /></button>
+          <MobileTab to={mobileLinks[2].to} label={mobileLinks[2].label} Icon={mobileLinks[2].icon} badge={badges[mobileLinks[2].to]} />
+          <button type="button" className="mobile-tab text-muted" onClick={() => setOpen(true)} aria-label="Más opciones"><MoreHorizontal size={18} /><span className="max-w-full truncate">Más</span></button>
+        </nav>
+      ) : (
+        <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-4 items-center rounded-2xl border border-line bg-panel/95 p-1.5 shadow-2xl backdrop-blur-xl lg:hidden" aria-label="Navegación móvil">
+          {mobileLinksOperador.map((link) => <MobileTab key={link.to} to={link.to} label={link.label} Icon={link.icon} badge={badges[link.to]} />)}
+          <button type="button" className="mobile-tab text-muted" onClick={() => setOpen(true)} aria-label="Más opciones"><MoreHorizontal size={18} /><span className="max-w-full truncate">Más</span></button>
+        </nav>
+      )}
     </div>
   )
 }

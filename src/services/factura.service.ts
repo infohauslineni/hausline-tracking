@@ -1,4 +1,5 @@
 import { whatsappUrl } from '../utils/whatsapp'
+import { resolverImagenCatalogo } from '../utils/catalogoImagen'
 
 // Factura / comprobante de compra que se genera al registrar un pedido, para enviarla al
 // cliente junto con su código de seguimiento. Disponible como imagen (WhatsApp) y como PDF.
@@ -56,7 +57,7 @@ async function facturaJpeg(data: FacturaData) {
   // Precarga las fotos de los productos (máx. las 12 que caben). Si alguna se
   // "contamina" y toBlob se rompe, reintenta sin fotos.
   const visibles = data.items.slice(0, 12)
-  const fotos = await Promise.all(visibles.map((item) => (item.imagen ? cargarImagen(item.imagen) : Promise.resolve(null))))
+  const fotos = await Promise.all(visibles.map((item) => { const url = resolverImagenCatalogo(item.imagen); return url ? cargarImagen(url) : Promise.resolve(null) }))
   try {
     return await renderFactura(data, visibles, fotos)
   } catch (error) {

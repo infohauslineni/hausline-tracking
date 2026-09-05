@@ -1,6 +1,7 @@
 import { CalendarRange, Edit3, HandCoins, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
+import { CuentaSelect, type DestinoPago } from '../../components/finanzas/CuentaSelect'
 import { Modal } from '../../components/ui/Modal'
 import { MoneyField } from '../../components/ui/MoneyField'
 import { actualizarGasto, eliminarGasto, listarGastos, listarInversiones, listarProveedores, obtenerTipoCambio, registrarGasto } from '../../services/comercial.service'
@@ -60,8 +61,10 @@ export function GastoModal({ open, editing, pedidos, stock, providers, tipoCambi
     ? { fecha: editing.fecha.slice(0, 10), categoria: editing.categoria, monto: String(editing.monto_original ?? editing.monto), moneda: (editing.moneda ?? 'USD') as Moneda, metodo_pago: editing.metodo_pago ?? 'Transferencia', pedido_id: editing.pedido_id ?? '', inversion_id: editing.inversion_id ?? '', proveedor_id: editing.proveedor_id ?? '', descripcion: editing.descripcion, observaciones: editing.observaciones ?? '' }
     : { fecha: new Date().toISOString().slice(0, 10), categoria: 'Proveedor', monto: '', moneda: 'USD' as Moneda, metodo_pago: 'Transferencia', pedido_id: '', inversion_id: '', proveedor_id: '', descripcion: '', observaciones: '' }, [editing])
   const [form, setForm] = useState(initial)
+  const [destino, setDestino] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
   const [saving, setSaving] = useState(false)
-  useEffect(() => { if (open) setForm(initial) }, [open, initial])
+  useEffect(() => { if (open) { setForm(initial); setDestino({ cuentaId: null, montoCuenta: 0 }) } }, [open, initial])
+  const montoUsd = aUsd(Number(form.monto) || 0, form.moneda, tipoCambio)
 
   const esDeuda = esGastoDeuda(form.categoria)
   // Solo pedidos activos (los entregados/cancelados ya no deberían recibir gastos nuevos),
@@ -74,6 +77,7 @@ export function GastoModal({ open, editing, pedidos, stock, providers, tipoCambi
     event.preventDefault()
     const amount = aUsd(Number(form.monto), form.moneda, tipoCambio)
     if (amount <= 0 || !form.descripcion.trim()) return toast.error('Completa descripción y monto.')
+    if (!editing && !destino.cuentaId) return toast.error('Elegí de qué cuenta sale el gasto.')
     setSaving(true)
     try {
       const payload = { fecha: form.fecha, categoria: form.categoria, descripcion: form.descripcion, monto: amount, moneda: form.moneda, monto_original: Number(form.monto), tipo_cambio: form.moneda === 'NIO' ? tipoCambio : null, pedido_id: form.pedido_id || null, inversion_id: form.inversion_id || null, proveedor_id: form.proveedor_id || null, metodo_pago: form.metodo_pago || null, observaciones: form.observaciones || null }
@@ -82,7 +86,7 @@ export function GastoModal({ open, editing, pedidos, stock, providers, tipoCambi
         onSaved(saved, 'edit')
         toast.success('Gasto actualizado.')
       } else {
-        const saved = await registrarGasto(payload)
+        const saved = await registrarGasto(payload, destino)
         onSaved(saved, 'create')
         toast.success(esDeuda ? 'Deuda pagada: se descontó del saldo y de tu ganancia.' : form.inversion_id ? 'Gasto registrado y sumado al costo total del stock.' : 'Gasto registrado.')
       }
@@ -101,6 +105,7 @@ export function GastoModal({ open, editing, pedidos, stock, providers, tipoCambi
         <Field label="Proveedor (opcional)"><select value={form.proveedor_id} onChange={(event) => setForm({ ...form, proveedor_id: event.target.value })}><option value="">Sin proveedor</option>{providers.map((provider) => <option value={provider.id} key={provider.id}>{provider.nombre}</option>)}</select></Field>
       </>}
       <Field label="Método"><input value={form.metodo_pago} onChange={(event) => setForm({ ...form, metodo_pago: event.target.value })} /></Field>
+      {!editing && <CuentaSelect requerido montoUsd={montoUsd} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" />}
       <label className="form-field col-span-full"><span>Observaciones</span><input value={form.observaciones} onChange={(event) => setForm({ ...form, observaciones: event.target.value })} /></label>
       {esDeuda && <p className="col-span-full rounded-xl border border-amber-400/25 bg-amber-400/[.06] p-4 text-xs leading-5 text-amber-200/90">Al guardar, USD {(aUsd(Number(form.monto) || 0, form.moneda, tipoCambio)).toFixed(2)} se restan del saldo de caja y la misma cantidad se descuenta de tu ganancia disponible (como cuando usas la ganancia y el negocio para pagar una deuda).</p>}
       {!esDeuda && form.inversion_id && <p className="col-span-full rounded-xl border border-accent/20 bg-accent/[.05] p-4 text-xs leading-5 text-muted">Este gasto se descontará una sola vez de Mi cuenta y se sumará al costo total del producto seleccionado.</p>}

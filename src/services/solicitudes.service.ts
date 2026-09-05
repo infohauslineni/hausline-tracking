@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase'
+import { invalidateComercial } from '../utils/queryCache'
 
 // Encargos hechos por clientes desde el catálogo público. Viven aparte de los pedidos:
 // se confirman (→ crean el pedido HS real) o se descartan; si no, se vencen solas.
@@ -64,9 +65,19 @@ async function adjuntarFotos(items: Solicitud[]) {
 
 // Confirma la solicitud: crea el pedido HS real (cliente + ítem) y devuelve su código.
 // `abono` = monto REAL pagado por el cliente (opcional; si no se pasa, usa el de la solicitud).
-export async function confirmarSolicitud(id: string, abono?: number) {
-  const { data, error } = await requireSupabase().rpc('confirmar_solicitud', { p_id: id, p_abono: abono ?? null })
+// `cuentaId`/`montoCuenta`: cuenta donde entró el abono y cuánto tocó a esa tarjeta (en su
+// moneda). Van al RPC para que el abono sume a la cuenta elegida (antes entraba sin cuenta).
+export async function confirmarSolicitud(id: string, abono?: number, cuentaId?: string | null, montoCuenta?: number | null) {
+  const { data, error } = await requireSupabase().rpc('confirmar_solicitud', {
+    p_id: id,
+    p_abono: abono ?? null,
+    p_cuenta_id: cuentaId ?? null,
+    p_monto_cuenta: montoCuenta ?? null,
+  })
   if (error) throw error
+  // El RPC creó el pedido HS real (+ abono en caja): limpiamos la caché comercial para que
+  // el pedido aparezca al instante en Pedidos/Pagos/Mi cuenta/Resumen sin recargar la web.
+  invalidateComercial()
   return String(data)
 }
 

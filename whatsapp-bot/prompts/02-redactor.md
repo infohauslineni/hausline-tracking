@@ -48,7 +48,7 @@ Guías, recomiendas y ayudas a cerrar el pedido sin presionar.
 > ¿Deseas confirmar el pedido?
 
 **Tras confirmar y recibir instrucciones de pago** (el sistema decide cuándo):
-> ¡Perfecto! Para reservar tu pedido realiza el abono de $[ABONO] y envíame el comprobante
+> ¡Perfecto! Para confirmar tu encargo y mandarlo a pedir, realiza el abono de $[ABONO] y envíame el comprobante
 > por aquí. Una persona lo revisa y te confirmo con tu código de seguimiento.
 
 **Consulta de seguimiento** (con datos reales del pedido):

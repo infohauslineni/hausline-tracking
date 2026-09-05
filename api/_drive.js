@@ -17,6 +17,38 @@ export function mesCarpeta(fecha) {
   return `${MESES[d.getMonth()]} ${d.getFullYear()}`
 }
 
+// Sube un archivo cualquiera (PDF, imagen, …) a Drive bajo:
+//   HAUSLINE Facturas / <mes> / <codigo> / <filename>
+// Es la misma carpeta del pedido, así la factura y las fotos de control de calidad
+// quedan juntas. Devuelve el JSON del script, o { skipped } si no hay config o data.
+export async function subirArchivoDrive({ codigo, fecha, filename, data, mime }) {
+  const url = process.env.DRIVE_WEBHOOK_URL
+  const secret = process.env.DRIVE_WEBHOOK_SECRET
+  if (!url || !secret) return { skipped: 'Falta configuración de Drive' }
+  if (!data) return { skipped: 'Sin datos' }
+
+  const body = {
+    secret,
+    mes: mesCarpeta(fecha),
+    codigo: String(codigo ?? 'SIN-CODIGO').trim() || 'SIN-CODIGO',
+    filename: filename || String(codigo ?? 'archivo'),
+    mime: mime || 'application/octet-stream',
+    dataBase64: Buffer.from(data).toString('base64'),
+  }
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    redirect: 'follow', // Apps Script responde con un redirect a googleusercontent
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok || json?.ok === false) {
+    throw new Error(`Drive HTTP ${res.status}: ${JSON.stringify(json).slice(0, 200)}`)
+  }
+  return json
+}
+
 // Sube un PDF a Drive bajo:  HAUSLINE Facturas / <mes> / <codigo> / <filename>
 // Devuelve el JSON del script, o { skipped } si no hay config. Lanza si el POST falla.
 export async function subirFacturaDrive({ codigo, fecha, filename, pdf }) {

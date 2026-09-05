@@ -2,10 +2,10 @@
 export type CuentaPago = { banco: string; numero: string; titular: string }
 
 export const CUENTAS_PAGO: CuentaPago[] = [
-  { banco: 'LAFISE (USD)', numero: '133254039', titular: 'Alejandro Uzziel Linares Flores' },
+  { banco: 'LAFISE (USD)', numero: '133210618', titular: 'Xiomara Rivas López' },
   { banco: 'LAFISE (Córdobas)', numero: '138038710', titular: 'Alejandro Uzziel Linares Flores' },
-  { banco: 'Billetera Móvil', numero: '8487-6610', titular: 'Alejandro Uzziel Linares Flores' },
-  { banco: 'BAC (Córdobas)', numero: '360322192', titular: 'Tania Vanessa Flores Rivas' },
+  { banco: 'BAC (USD)', numero: '374570968', titular: 'Alejandro Uzziel Linares Flores' },
+  { banco: 'BAC (Córdobas)', numero: '374570869', titular: 'Alejandro Uzziel Linares Flores' },
 ]
 
 // Una cuenta por bloque, con línea en blanco entre cada una para que en WhatsApp

@@ -1,4 +1,5 @@
 import PDFDocument from 'pdfkit'
+import { absolutizarImagen } from './_correo.js'
 
 // Genera la factura/comprobante en PDF desde el servidor (sin navegador), para
 // adjuntarla al correo. Reusa los mismos datos que la tabla del correo.
@@ -32,7 +33,7 @@ export async function facturaPdfBuffer({ codigo, nombre, fecha, factura }) {
   const items = Array.isArray(factura?.items) ? factura.items : []
 
   // Pre-descarga las fotos (pdfkit dibuja de forma síncrona).
-  const imagenes = await Promise.all(items.map((it) => traerImagen(it.imagen)))
+  const imagenes = await Promise.all(items.map((it) => traerImagen(absolutizarImagen(it.imagen))))
 
   const doc = new PDFDocument({ size: 'A4', margin: 0 })
   const chunks = []

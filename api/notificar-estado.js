@@ -1,8 +1,107 @@
 import { ESTADO_LABEL, enviarCorreoPedido } from './_correo.js'
 import { facturaPdfBuffer } from './_factura-pdf.js'
-import { subirFacturaDrive } from './_drive.js'
+import { subirFacturaDrive, subirArchivoDrive } from './_drive.js'
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Extensión de archivo según el tipo MIME de la foto (para nombrarla en Drive/correo).
+function extPorMime(mime) {
+  if (mime === 'image/jpeg') return 'jpg'
+  if (mime === 'image/png') return 'png'
+  return 'webp'
+}
+
+// Trae las fotos de CONTROL DE CALIDAD visibles al cliente de un pedido (por código),
+// ya con su marca de agua HAUSLINE.NI grabada (se aplicó al subirlas). Descarga los
+// bytes desde el Storage privado con la llave de servicio. Devuelve también la fecha
+// del pedido para archivarlas en la carpeta del mes correcto. Si algo falla, [] sin fecha.
+async function obtenerFotosCalidad(codigo) {
+  const base = process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!base || !key || !codigo) return { fotos: [], fecha: null }
+  const root = base.replace(/\/$/, '')
+
+  const url = `${root}/rest/v1/pedidos`
+    + `?codigo=eq.${encodeURIComponent(codigo)}`
+    + `&select=fecha_pedido,archivos_pedido(storage_path,nombre,mime_type,orden,tipo,visible_cliente)`
+    + `&limit=1`
+
+  let pedido = null
+  try {
+    const res = await fetch(url, { headers: { apikey: key, authorization: `Bearer ${key}`, accept: 'application/json' } })
+    if (res.ok) { const data = await res.json(); pedido = Array.isArray(data) ? data[0] : null }
+    else console.error('obtenerFotosCalidad: fetch no ok', res.status)
+  } catch (error) {
+    console.error('obtenerFotosCalidad: error', error?.message)
+    return { fotos: [], fecha: null }
+  }
+  if (!pedido) return { fotos: [], fecha: null }
+
+  const archivos = (Array.isArray(pedido.archivos_pedido) ? pedido.archivos_pedido : [])
+    .filter((a) => a.tipo === 'control_calidad' && a.visible_cliente)
+    .sort((a, b) => (a.orden || 0) - (b.orden || 0))
+
+  const fotos = []
+  for (let i = 0; i < archivos.length; i++) {
+    const a = archivos[i]
+    try {
+      // storage_path ya incluye el prefijo "pedidos/…" (la clave dentro del bucket
+      // "pedidos"), de ahí el "pedidos/pedidos/…" en la ruta de descarga.
+      const objUrl = `${root}/storage/v1/object/pedidos/${a.storage_path.split('/').map(encodeURIComponent).join('/')}`
+      const res = await fetch(objUrl, { headers: { apikey: key, authorization: `Bearer ${key}` } })
+      if (!res.ok) { console.error('obtenerFotosCalidad: descarga no ok', res.status, a.storage_path); continue }
+      const content = Buffer.from(await res.arrayBuffer())
+      const ext = extPorMime(a.mime_type)
+      fotos.push({
+        cid: `calidad-${i + 1}@hausline`,
+        filename: `${codigo} - Control de calidad ${i + 1}.${ext}`,
+        content,
+        contentType: a.mime_type || 'image/webp',
+      })
+    } catch (error) {
+      console.error('obtenerFotosCalidad: error descarga', error?.message)
+    }
+  }
+  return { fotos, fecha: pedido.fecha_pedido || null }
+}
+
+// Rellena la foto de cada ítem de la factura desde el catálogo (tabla productos) cuando
+// el ítem no trae imagen propia, emparejando por CÓDIGO y, si no, por NOMBRE. Espejo del
+// backfill del frontend (adjuntarFotosCatalogo): sin esto, un encargo confirmado o un
+// producto agregado al catálogo DESPUÉS de crear el pedido saldría sin foto en el correo
+// y en el PDF. Las rutas del catálogo son relativas; el correo/PDF las absolutiza aparte.
+async function rellenarFotosCatalogo(items) {
+  const base = process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!base || !key) return
+  const root = base.replace(/\/$/, '')
+  const norm = (v) => String(v ?? '').trim().toUpperCase()
+  const sinFoto = items.filter((it) => !it.imagen)
+  if (!sinFoto.length) return
+  const codigos = [...new Set(sinFoto.map((it) => it.codigo).filter(Boolean))]
+  const nombres = [...new Set(sinFoto.map((it) => it.producto).filter(Boolean))]
+  const headers = { apikey: key, authorization: `Bearer ${key}`, accept: 'application/json' }
+  const inList = (arr) => encodeURIComponent(`(${arr.map((v) => `"${String(v).replace(/"/g, '\\"')}"`).join(',')})`)
+  const porCodigo = new Map()
+  const porNombre = new Map()
+  try {
+    if (codigos.length) {
+      const res = await fetch(`${root}/rest/v1/productos?select=codigo,imagen&codigo=in.${inList(codigos)}`, { headers })
+      if (res.ok) for (const p of await res.json()) if (p.imagen) porCodigo.set(norm(p.codigo), p.imagen)
+    }
+    if (nombres.length) {
+      const res = await fetch(`${root}/rest/v1/productos?select=nombre,imagen&nombre=in.${inList(nombres)}`, { headers })
+      if (res.ok) for (const p of await res.json()) if (p.imagen) porNombre.set(norm(p.nombre), p.imagen)
+    }
+  } catch (error) {
+    console.error('rellenarFotosCatalogo: error', error?.message)
+    return
+  }
+  for (const it of sinFoto) {
+    const foto = porCodigo.get(norm(it.codigo)) ?? porNombre.get(norm(it.producto))
+    if (foto) it.imagen = foto
+  }
+}
 
 // Trae el pedido + sus productos para armar la factura del correo. Usa la llave de
 // servicio (ya configurada en Vercel para el cron) porque las tablas están con RLS.
@@ -52,6 +151,8 @@ async function obtenerFactura(codigo, esNuevo) {
     precioUnitario: Number(r.precio_unitario) || 0,
     subtotal: Number(r.subtotal) || 0,
   }))
+  // Completa la foto de los ítems que no la traen, buscándola en el catálogo por código/nombre.
+  await rellenarFotosCatalogo(items)
 
   const total = items.reduce((sum, it) => sum + it.subtotal, 0)
   // Al entregar (comprobante) se da por pagado el total; al crear se usa el abono real.
@@ -114,14 +215,40 @@ export default async function handler(request, response) {
   if (!correo) return response.status(200).json({ ok: true, skipped: 'cliente sin correo' })
 
   // Factura dentro del correo: al confirmar el pedido (INSERT → tabla de compra con
-  // producto, precio, abono y saldo) y al marcarlo entregado (comprobante PAGADO).
-  const conFactura = esNuevo || estado === 'entregado'
+  // producto, precio, abono y saldo) y al cobrar (comprobante PAGADO). El pago ahora se
+  // marca en el estado "Pagado", así que el comprobante sale ahí. Si el pedido va directo
+  // a "Entregado" sin pasar por "Pagado" (pagó al recibir), el comprobante sale en
+  // "Entregado"; si ya venía de "Pagado", no se repite el comprobante.
+  const yaPagado = oldRecord.estado === 'pagado'
+  const conFactura = esNuevo || estado === 'pagado' || (estado === 'entregado' && !yaPagado)
   const factura = conFactura ? await obtenerFactura(record.codigo, esNuevo) : null
 
+  // Fotos de control de calidad: al avisarle al cliente que su pedido está en control
+  // de calidad, el correo lleva las fotos de revisión (ya con la marca de agua grabada).
+  const { fotos, fecha: fechaFotos } = estado === 'control_calidad'
+    ? await obtenerFotosCalidad(record.codigo)
+    : { fotos: [], fecha: null }
+
+  // La reseña se pide SOLO al "Entregado" (cuando el cliente ya tiene el producto en mano).
+  // El correo de "Pagado" va sin reseña, solo con el agradecimiento.
+  const pedirResena = estado === 'entregado'
+
   try {
-    await enviarCorreoPedido({ correo, nombre, codigo: record.codigo, estado, esNuevo, factura })
+    await enviarCorreoPedido({ correo, nombre, codigo: record.codigo, estado, esNuevo, factura, fotos, pedirResena })
   } catch (sendError) {
     return response.status(502).json({ ok: false, error: 'No se pudo enviar el correo' })
+  }
+
+  // Archiva las MISMAS fotos de control de calidad en la carpeta del pedido en Drive,
+  // junto a las facturas. Best-effort: si falla, no rompe el aviso.
+  let fotosArchivadas = 0
+  for (const f of fotos) {
+    try {
+      await subirArchivoDrive({ codigo: record.codigo, fecha: fechaFotos, filename: f.filename, data: f.content, mime: f.contentType })
+      fotosArchivadas++
+    } catch (driveError) {
+      console.error('drive: no se pudo archivar la foto de calidad', driveError?.message)
+    }
   }
 
   // Archiva la MISMA factura del correo en tu Google Drive, en la carpeta del mes y del
@@ -140,5 +267,5 @@ export default async function handler(request, response) {
     }
   }
 
-  return response.status(200).json({ ok: true, sent: correo, archivado })
+  return response.status(200).json({ ok: true, sent: correo, archivado, fotos: fotos.length, fotosArchivadas })
 }
