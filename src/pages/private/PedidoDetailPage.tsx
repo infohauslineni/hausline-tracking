@@ -215,7 +215,7 @@ export function PedidoDetailPage() {
           </div>
         </section>
         <section className="form-section"><div className="flex items-center justify-between"><h2 className="flex items-center gap-2 font-semibold"><Package size={18} className="text-accent" /> Productos</h2>{esAdmin && <button className="table-action" aria-label="Editar pedido" onClick={() => setEditOpen(true)}><Pencil size={16} /></button>}</div><div className="mt-4 divide-y divide-line">{pedido.pedido_items?.map((item, index) => <div className="flex items-center gap-3 py-4" key={`${item.producto}-${index}`}><ProductoThumb imagen={item.imagen} cantidad={item.cantidad} alt={item.producto} /><div className="min-w-0 flex-1"><strong className="block truncate text-sm">{item.producto}</strong><span className="block truncate text-xs text-muted">{[item.marca, item.talla, item.color].filter(Boolean).join(' · ')}</span>{item.codigo_producto && <span className="mt-0.5 block font-mono text-[11px] text-accent">Cód. {item.codigo_producto}</span>}</div><strong className="text-sm">${(item.cantidad * item.precio_unitario).toFixed(2)}</strong></div>)}</div></section>
-        <PedidoArchivos pedidoId={pedido.id} codigo={pedido.codigo} onQualityReady={setQualityPhotosReady} onEstadoAvanzado={(updated) => setPedido((current) => current ? { ...current, ...updated } : updated)} />
+        <PedidoArchivos pedidoId={pedido.id} codigo={pedido.codigo} estadoPedido={pedido.estado} onQualityReady={setQualityPhotosReady} onEstadoAvanzado={(updated) => setPedido((current) => current ? { ...current, ...updated } : updated)} />
         <PedidoLogistica pedidoId={pedido.id} />
         <section className="form-section"><h2 className="flex items-center gap-2 font-semibold"><CalendarDays size={18} className="text-accent" /> Fechas</h2><div className="mt-5 grid gap-4 sm:grid-cols-3"><Info label="Pedido" value={pedido.fecha_pedido} /><Info label="Llegada estimada" value={pedido.fecha_estimada ?? 'Sin definir'} /><Info label="Actualización" value={new Intl.DateTimeFormat('es-NI').format(new Date(pedido.updated_at))} /></div></section>
       </div>
@@ -344,14 +344,18 @@ function ReaparicionPanel({ pedido, whatsapp, stockSaving, onStock }: { pedido: 
   </div>
 }
 function EtapaTracker({ actual, seleccionado, onSelect }: { actual: EstadoPedido; seleccionado: EstadoPedido; onSelect: (estado: EstadoPedido) => void }) {
-  const actualIndex = Math.max(0, ESTADOS_PEDIDO.findIndex((step) => step.value === etapaBase(actual)))
+  // "Pagado" ya NO es un paso de la barra: el pago se registra al ENTREGAR. Un pedido que
+  // esté en 'pagado' (de antes) se ubica en "Disponible para entrega".
+  const pasos = ESTADOS_PEDIDO.filter((step) => step.value !== 'pagado')
+  const baseVisible = (estado: EstadoPedido) => { const base = etapaBase(estado); return base === 'pagado' ? 'disponible_entrega' : base }
+  const actualIndex = Math.max(0, pasos.findIndex((step) => step.value === baseVisible(actual)))
   return <div className="mt-5 flex gap-1 overflow-x-auto pb-2">
-    {ESTADOS_PEDIDO.map((step, index) => {
+    {pasos.map((step, index) => {
       const reached = index <= actualIndex
       const isSelected = step.value === seleccionado
       const isTarget = isSelected && step.value !== actual
       return <button key={step.value} type="button" onClick={() => onSelect(step.value)} title={step.label} className="flex min-w-[3.9rem] flex-1 shrink-0 flex-col items-center text-center outline-none">
-        <div className="flex w-full items-center"><span className={`h-px flex-1 ${index === 0 ? 'opacity-0' : index <= actualIndex ? 'bg-accent/60' : 'bg-line'}`} /><span className={`step-dot size-8 transition ${reached ? 'step-done' : 'step-todo'} ${index === actualIndex ? 'step-current' : ''} ${isTarget ? 'ring-2 ring-accent ring-offset-2 ring-offset-[#0d100e]' : ''}`}>{reached ? <Check size={15} /> : <span className="text-[11px] font-semibold">{index + 1}</span>}</span><span className={`h-px flex-1 ${index === ESTADOS_PEDIDO.length - 1 ? 'opacity-0' : index < actualIndex ? 'bg-accent/60' : 'bg-line'}`} /></div>
+        <div className="flex w-full items-center"><span className={`h-px flex-1 ${index === 0 ? 'opacity-0' : index <= actualIndex ? 'bg-accent/60' : 'bg-line'}`} /><span className={`step-dot size-8 transition ${reached ? 'step-done' : 'step-todo'} ${index === actualIndex ? 'step-current' : ''} ${isTarget ? 'ring-2 ring-accent ring-offset-2 ring-offset-[#0d100e]' : ''}`}>{reached ? <Check size={15} /> : <span className="text-[11px] font-semibold">{index + 1}</span>}</span><span className={`h-px flex-1 ${index === pasos.length - 1 ? 'opacity-0' : index < actualIndex ? 'bg-accent/60' : 'bg-line'}`} /></div>
         <span className={`mt-2 text-[9px] font-medium leading-3 ${isSelected ? 'text-accent' : reached ? 'text-white' : 'text-muted'}`}>{step.label}</span>
       </button>
     })}

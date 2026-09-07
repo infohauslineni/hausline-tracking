@@ -4,7 +4,8 @@ import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { comprimirImagen, eliminarArchivo, listarArchivos, marcaParaTipo, marcarPrincipal, subirArchivo } from '../../services/archivos.service'
 import { avanzarADisponiblePorRecibido, avanzarAEmpaquetadoPorFoto } from '../../services/pedidos.service'
-import type { ArchivoPedido, Pedido, TipoArchivo } from '../../types/domain'
+import { ESTADOS_PEDIDO, etapaBase } from '../../constants/orders'
+import type { ArchivoPedido, EstadoPedido, Pedido, TipoArchivo } from '../../types/domain'
 
 // Categorías visibles para subir fotos. "Recibido en HAUSLINE" mueve el pedido
 // automáticamente a "Disponible para entrega" y "Empaque para envío" a "Empaquetado,
@@ -15,7 +16,7 @@ const CATEGORIAS: { id: TipoArchivo; label: string; description: string }[] = [
   { id: 'empaque', label: 'Empaque para envío', description: 'Foto del paquete empacado · pasa el pedido a “Empaquetado, listo para envío” y avisa al cliente' },
 ]
 
-export function PedidoArchivos({ pedidoId, codigo, onQualityReady, onEstadoAvanzado }: { pedidoId: string; codigo?: string; onQualityReady?: (ready: boolean) => void; onEstadoAvanzado?: (pedido: Pedido) => void }) {
+export function PedidoArchivos({ pedidoId, codigo, estadoPedido, onQualityReady, onEstadoAvanzado }: { pedidoId: string; codigo?: string; estadoPedido?: EstadoPedido; onQualityReady?: (ready: boolean) => void; onEstadoAvanzado?: (pedido: Pedido) => void }) {
   const [categoria, setCategoria] = useState<TipoArchivo>('control_calidad')
   const [archivos, setArchivos] = useState<ArchivoPedido[]>([])
   const [visibleCliente, setVisibleCliente] = useState(true)
@@ -133,6 +134,12 @@ export function PedidoArchivos({ pedidoId, codigo, onQualityReady, onEstadoAvanz
   const actuales = archivos.filter((archivo) => archivo.tipo === categoria)
   const detalle = CATEGORIAS.find((item) => item.id === categoria)!
 
+  // ¿La etapa de esta categoría ya fue enviada al cliente? (el pedido ya está en el estado
+  // objetivo o más adelante). Sirve para poner el botón en gris una vez enviadas las fotos.
+  const objetivoEtapa = categoria === 'recibido_hausline' ? 'disponible_entrega' : categoria === 'empaque' ? 'empaquetado' : null
+  const indiceEstado = (estado?: EstadoPedido) => estado ? ESTADOS_PEDIDO.findIndex((item) => item.value === etapaBase(estado)) : -1
+  const yaEnviado = Boolean(objetivoEtapa && estadoPedido && indiceEstado(estadoPedido) >= indiceEstado(objetivoEtapa))
+
   return <section id="imagenes-pedido" className="form-section">
     <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
       <div><h2 className="flex items-center gap-2 font-semibold"><ImagePlus size={18} className="text-accent" /> Imágenes y archivos</h2><p className="mt-1 text-xs text-muted">Organiza la evidencia visual del pedido por categoría.</p></div>
@@ -173,8 +180,8 @@ export function PedidoArchivos({ pedidoId, codigo, onQualityReady, onEstadoAvanz
         </article>)}
       </div> : <div className="mt-5 rounded-xl border border-line bg-white/[0.015] px-4 py-7 text-center"><p className="text-sm text-muted">Todavía no hay imágenes en {detalle.label.toLowerCase()}.</p></div>}
 
-    {(categoria === 'recibido_hausline' || categoria === 'empaque') && actuales.length > 0 && <button type="button" onClick={() => void confirmarEtapa()} disabled={confirmando || uploading} className="primary-button mt-4 w-full">
-      {confirmando ? 'Avisando al cliente…' : categoria === 'recibido_hausline' ? '✅ Confirmar y enviar las fotos al cliente' : '📦 Confirmar empaquetado y avisar al cliente'}
+    {(categoria === 'recibido_hausline' || categoria === 'empaque') && actuales.length > 0 && <button type="button" onClick={() => void confirmarEtapa()} disabled={confirmando || uploading || yaEnviado} className={yaEnviado ? 'mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-line bg-white/[0.04] px-5 py-2.5 text-sm font-semibold text-muted' : 'primary-button mt-4 w-full'}>
+      {yaEnviado ? '✓ Fotos ya enviadas al cliente' : confirmando ? 'Avisando al cliente…' : categoria === 'recibido_hausline' ? '✅ Confirmar y enviar las fotos al cliente' : '📦 Confirmar empaquetado y avisar al cliente'}
     </button>}
   </section>
 }

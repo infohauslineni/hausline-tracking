@@ -73,27 +73,40 @@ function dibujarSelloRecepcion(context: CanvasRenderingContext2D, width: number,
   context.restore()
 }
 
-// Logo de marca "HAUS / LINE" en dos líneas apiladas, arriba al centro, negro y en
-// negrita (igual al logo de HAUSLINE). Lleva una sombra BLANCA muy suave: sobre fondo
-// claro (como el logo original) casi no se nota y se ve negro puro, y sobre un producto
-// oscuro ese halo lo mantiene legible. Queda limpio para postear en redes / Instagram.
+// Logo de marca "HAUS / LINE" (con el ".NI") en dos líneas apiladas, arriba al centro,
+// NEGRO y con fuente condensada pesada (Impact) para parecerse al logo real de HAUSLINE.
+// Lleva un halo blanco muy suave: en las fotos el logo cae sobre el fondo claro del estudio
+// (arriba), donde se ve negro nítido; el halo lo salva si arriba hubiera algo oscuro.
 function dibujarMarcaLogo(context: CanvasRenderingContext2D, width: number, height: number) {
   const shortest = Math.min(width, height)
-  const fontSize = Math.max(22, Math.round(shortest * .075))
-  const lineGap = Math.round(fontSize * .94) // apiladas bien juntas, estilo logo
-  const yTop = Math.round(fontSize * .8)
+  const fontSize = Math.max(24, Math.round(shortest * .085))
+  const lineGap = Math.round(fontSize * .82) // apiladas bien juntas, estilo logo
+  const yTop = Math.round(fontSize * .7)
   const cx = width / 2
+  const familia = `Impact, Haettenschweiler, 'Arial Narrow Bold', 'Arial Narrow', sans-serif`
+  // Letras NEGRAS con un contorno blanco fino: en fondo claro (como el logo real) se ve
+  // negro nítido y el contorno casi no se nota; en fondo oscuro (camiseta negra, cuello del
+  // maniquí) el contorno blanco la mantiene visible. Así SIEMPRE se ve, sea cual sea la foto.
   context.save()
-  context.font = `900 ${fontSize}px Arial, 'Arial Black', sans-serif`
-  context.textAlign = 'center'
   context.textBaseline = 'top'
-  // Separación de letras para el look de logo (si el navegador no lo soporta, se ignora).
-  try { (context as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = `${Math.max(1, Math.round(fontSize * .06))}px` } catch { /* noop */ }
-  context.shadowColor = 'rgba(255,255,255,.6)'
-  context.shadowBlur = Math.max(3, Math.round(fontSize * .28))
-  context.fillStyle = '#0a0a0a'
-  context.fillText('HAUS', cx, yTop)
-  context.fillText('LINE', cx, yTop + lineGap)
+  context.lineJoin = 'round'
+  context.miterLimit = 2
+  const dibujar = (texto: string, x: number, y: number, size: number, align: CanvasTextAlign) => {
+    context.font = `${size}px ${familia}`
+    context.textAlign = align
+    context.lineWidth = Math.max(2, Math.round(size * .16))
+    context.strokeStyle = 'rgba(255,255,255,.9)'
+    context.strokeText(texto, x, y)
+    context.fillStyle = '#0a0a0a'
+    context.fillText(texto, x, y)
+  }
+  // "HAUS" (línea 1) + el ".NI" pequeño arriba a la derecha, como en el logo.
+  dibujar('HAUS', cx, yTop, fontSize, 'center')
+  context.font = `${fontSize}px ${familia}`
+  const hausMitad = context.measureText('HAUS').width / 2
+  dibujar('.NI', cx + hausMitad + Math.round(fontSize * .04), yTop, Math.round(fontSize * .3), 'left')
+  // "LINE" (línea 2).
+  dibujar('LINE', cx, yTop + lineGap, fontSize, 'center')
   context.restore()
 }
 
