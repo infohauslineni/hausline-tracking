@@ -3,14 +3,16 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { comprimirImagen, eliminarArchivo, listarArchivos, marcaParaTipo, marcarPrincipal, subirArchivo } from '../../services/archivos.service'
-import { avanzarAWarehousePorMiami } from '../../services/pedidos.service'
+import { avanzarADisponiblePorRecibido, avanzarAEmpaquetadoPorFoto } from '../../services/pedidos.service'
 import type { ArchivoPedido, Pedido, TipoArchivo } from '../../types/domain'
 
-// Categorías visibles para subir fotos. "Recibido en bodega Miami" mueve el pedido
-// automáticamente a "Warehouse HAUSLINE" (ver cargar()).
+// Categorías visibles para subir fotos. "Recibido en HAUSLINE" mueve el pedido
+// automáticamente a "Disponible para entrega" y "Empaque para envío" a "Empaquetado,
+// listo para envío" (ver cargar()); ambas le llegan al cliente por correo con sus fotos.
 const CATEGORIAS: { id: TipoArchivo; label: string; description: string }[] = [
   { id: 'control_calidad', label: 'Control de calidad', description: 'Evidencia de revisión y empaque' },
-  { id: 'recepcion_miami', label: 'Recibido en bodega Miami', description: 'Foto del paquete en la bodega · pasa el pedido a Warehouse HAUSLINE' },
+  { id: 'recibido_hausline', label: 'Recibido en HAUSLINE', description: 'Fotos reales del producto que llegó · pasa el pedido a “Disponible para entrega” y se las envía al cliente' },
+  { id: 'empaque', label: 'Empaque para envío', description: 'Foto del paquete empacado · pasa el pedido a “Empaquetado, listo para envío” y avisa al cliente' },
 ]
 
 export function PedidoArchivos({ pedidoId, codigo, onQualityReady, onEstadoAvanzado }: { pedidoId: string; codigo?: string; onQualityReady?: (ready: boolean) => void; onEstadoAvanzado?: (pedido: Pedido) => void }) {
@@ -19,6 +21,7 @@ export function PedidoArchivos({ pedidoId, codigo, onQualityReady, onEstadoAvanz
   const [visibleCliente, setVisibleCliente] = useState(true)
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [uploading, setUploading] = useState(false)
+  const [confirmando, setConfirmando] = useState(false)
   const [dragging, setDragging] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const localUrls = useRef(new Set<string>())
@@ -67,18 +70,40 @@ export function PedidoArchivos({ pedidoId, codigo, onQualityReady, onEstadoAvanz
       }
       if (categoria === 'control_calidad' && visibleCliente) onQualityReady?.(true)
       toast.success(`${imagenes.length === 1 ? 'Imagen cargada' : 'Imágenes cargadas'} correctamente.`)
-      // Al subir la foto de recepción en Miami, el pedido pasa solo a "Warehouse HAUSLINE".
-      if (categoria === 'recepcion_miami' && isSupabaseConfigured) {
-        try {
-          const avanzado = await avanzarAWarehousePorMiami(pedidoId)
-          if (avanzado) { onEstadoAvanzado?.(avanzado); toast.success('📦 Pedido movido a “Warehouse HAUSLINE”.') }
-        } catch { toast.error('La foto se guardó, pero no se pudo mover el pedido a Warehouse. Cámbialo a mano.') }
-      }
+      // Nota: "Recibido en HAUSLINE" y "Empaque para envío" ya NO avisan al cliente al subir.
+      // Subís todas las fotos que quieras y luego tocás "Confirmar y avisar" (confirmarEtapa),
+      // así el cliente recibe UN solo correo con TODAS las fotos.
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo cargar la imagen.')
     } finally {
       setUploading(false)
       if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+
+  // Confirma la etapa una vez subidas TODAS las fotos de "Recibido en HAUSLINE" o "Empaque
+  // para envío": avanza el pedido y dispara UN solo correo al cliente con todas las fotos de
+  // esa categoría (el webhook las junta al momento de enviar). Guarda anti-retroceso en el
+  // servicio, así que si ya estaba en esa etapa o más adelante, no reenvía.
+  const confirmarEtapa = async () => {
+    if (!isSupabaseConfigured) { toast.info('Disponible solo con Supabase configurado.'); return }
+    setConfirmando(true)
+    try {
+      const avanzado = categoria === 'recibido_hausline'
+        ? await avanzarADisponiblePorRecibido(pedidoId)
+        : await avanzarAEmpaquetadoPorFoto(pedidoId)
+      if (avanzado) {
+        onEstadoAvanzado?.(avanzado)
+        toast.success(categoria === 'recibido_hausline'
+          ? '✅ Cliente avisado: pedido “Disponible para entrega” con sus fotos.'
+          : '📦 Cliente avisado: “Empaquetado, listo para envío” con sus fotos.')
+      } else {
+        toast.info('El pedido ya está en esa etapa o más adelante; no se reenvió el correo.')
+      }
+    } catch {
+      toast.error('No se pudo avisar al cliente. Podés cambiar el estado desde el pedido.')
+    } finally {
+      setConfirmando(false)
     }
   }
 
@@ -134,7 +159,7 @@ export function PedidoArchivos({ pedidoId, codigo, onQualityReady, onEstadoAvanz
     </button>
     {(categoria === 'control_calidad' || categoria === 'producto') && <div className="mt-2 text-center text-[10px] font-semibold text-accent">Marca de agua HAUSLINE.NI automática</div>}
     {categoria === 'recibido_local' && <div className="mt-2 text-center text-[10px] font-semibold text-accent">Se agrega sello “✓ RECIBIDO” con código y fecha automáticamente</div>}
-    {categoria === 'recepcion_miami' && <div className="mt-2 text-center text-[10px] font-semibold text-accent">Marca HAUSLINE.NI en la esquina automática</div>}
+    {(categoria === 'empaque' || categoria === 'recibido_hausline') && <div className="mt-2 text-center text-[10px] font-semibold text-accent">Logo HAUSLINE arriba · subí todas las fotos y confirmá para avisar al cliente en un solo correo</div>}
     <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={(event) => event.target.files && void cargar(event.target.files)} />
 
     {loading ? <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3"><div className="aspect-square animate-pulse rounded-xl bg-white/[0.04]" /><div className="aspect-square animate-pulse rounded-xl bg-white/[0.04]" /></div>
@@ -147,5 +172,9 @@ export function PedidoArchivos({ pedidoId, codigo, onQualityReady, onEstadoAvanz
           <div className="flex items-center gap-2 p-2.5"><div className="min-w-0 flex-1"><strong className="block truncate text-xs">{archivo.nombre}</strong><span className="text-[10px] text-muted">{(archivo.tamano_bytes / 1024).toFixed(0)} KB</span></div><button type="button" className="table-action" onClick={() => void hacerPrincipal(archivo)} title="Marcar como principal" aria-label="Marcar como principal"><Star size={15} /></button><button type="button" className="table-action hover:!text-red-300" onClick={() => void borrar(archivo)} title="Eliminar" aria-label="Eliminar imagen"><Trash2 size={15} /></button></div>
         </article>)}
       </div> : <div className="mt-5 rounded-xl border border-line bg-white/[0.015] px-4 py-7 text-center"><p className="text-sm text-muted">Todavía no hay imágenes en {detalle.label.toLowerCase()}.</p></div>}
+
+    {(categoria === 'recibido_hausline' || categoria === 'empaque') && actuales.length > 0 && <button type="button" onClick={() => void confirmarEtapa()} disabled={confirmando || uploading} className="primary-button mt-4 w-full">
+      {confirmando ? 'Avisando al cliente…' : categoria === 'recibido_hausline' ? '✅ Confirmar y enviar las fotos al cliente' : '📦 Confirmar empaquetado y avisar al cliente'}
+    </button>}
   </section>
 }

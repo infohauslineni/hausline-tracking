@@ -12,7 +12,8 @@ import { estimateDateForPreview } from '../utils/estimates'
 const CODIGO_POR_ETIQUETA: Record<string, EstadoPedido> = {
   'Orden confirmada': 'pedido_confirmado', 'En preparación': 'en_preparacion',
   'En tránsito': 'transito_internacional', 'País de destino': 'llego_nicaragua',
-  'Disponible para entrega': 'disponible_entrega', 'Pagado': 'pagado', 'Entregado': 'entregado',
+  'Disponible para entrega': 'disponible_entrega', 'Pagado': 'pagado',
+  'Empaquetado, listo para envío': 'empaquetado', 'Entregado': 'entregado',
 }
 const esEstadoOculto = (label: string) => { const v = label.toLowerCase(); return v.includes('cancel') || v.includes('incidencia') || v.includes('requiere') || v.includes('atenci') }
 function ocultarEstadoInterno(order: PublicOrder): PublicOrder {
@@ -80,8 +81,9 @@ function normalizarEstadoHistorial(label: string) {
   if (value.includes('confirm')) return 'Orden confirmada'
   // Control de calidad se agrupa dentro de "En preparación".
   if (value.includes('prepar') || value.includes('calidad')) return 'En preparación'
-  if (value.includes('disponible')) return 'Disponible para entrega'
-  if (value.includes('pagad')) return 'Pagado'
+  // "Pagado" no es un paso visible para el cliente: se muestra como "Disponible para entrega".
+  if (value.includes('disponible') || value.includes('pagad')) return 'Disponible para entrega'
+  if (value.includes('empaque')) return 'Empaquetado, listo para envío'
   if (value.includes('entregado')) return 'Entregado'
   if (value.includes('país de destino') || value.includes('pais de destino') || (value.includes('nicaragua') && (value.includes('lleg') || value.includes('recibid') && !value.includes('estados unidos')))) return 'País de destino'
   // Despacho + bodega internacional (Warehouse, enviando, tránsito, Miami/EE.UU.) → "En tránsito".

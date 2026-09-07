@@ -15,11 +15,15 @@ function extPorMime(mime) {
 // ya con su marca de agua HAUSLINE.NI grabada (se aplicó al subirlas). Descarga los
 // bytes desde el Storage privado con la llave de servicio. Devuelve también la fecha
 // del pedido para archivarlas en la carpeta del mes correcto. Si algo falla, [] sin fecha.
-async function obtenerFotosCalidad(codigo) {
+// El mismo mecanismo sirve para las fotos de "control de calidad" y para las del paquete
+// empacado ("empaque"): cambia solo el tipo que se filtra y el nombre del archivo. Por eso
+// recibe `tipo` (por defecto 'control_calidad', para no tocar las llamadas existentes).
+async function obtenerFotosCalidad(codigo, tipo = 'control_calidad') {
   const base = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!base || !key || !codigo) return { fotos: [], fecha: null }
   const root = base.replace(/\/$/, '')
+  const etiqueta = tipo === 'empaque' ? 'Empaque' : tipo === 'recibido_hausline' ? 'Producto' : 'Control de calidad'
 
   const url = `${root}/rest/v1/pedidos`
     + `?codigo=eq.${encodeURIComponent(codigo)}`
@@ -38,7 +42,7 @@ async function obtenerFotosCalidad(codigo) {
   if (!pedido) return { fotos: [], fecha: null }
 
   const archivos = (Array.isArray(pedido.archivos_pedido) ? pedido.archivos_pedido : [])
-    .filter((a) => a.tipo === 'control_calidad' && a.visible_cliente)
+    .filter((a) => a.tipo === tipo && a.visible_cliente)
     .sort((a, b) => (a.orden || 0) - (b.orden || 0))
 
   const fotos = []
@@ -53,8 +57,8 @@ async function obtenerFotosCalidad(codigo) {
       const content = Buffer.from(await res.arrayBuffer())
       const ext = extPorMime(a.mime_type)
       fotos.push({
-        cid: `calidad-${i + 1}@hausline`,
-        filename: `${codigo} - Control de calidad ${i + 1}.${ext}`,
+        cid: `${tipo === 'empaque' ? 'empaque' : tipo === 'recibido_hausline' ? 'producto' : 'calidad'}-${i + 1}@hausline`,
+        filename: `${codigo} - ${etiqueta} ${i + 1}.${ext}`,
         content,
         contentType: a.mime_type || 'image/webp',
       })
@@ -223,11 +227,18 @@ export default async function handler(request, response) {
   const conFactura = esNuevo || estado === 'pagado' || (estado === 'entregado' && !yaPagado)
   const factura = conFactura ? await obtenerFactura(record.codigo, esNuevo) : null
 
-  // Fotos de control de calidad: al avisarle al cliente que su pedido está en control
-  // de calidad, el correo lleva las fotos de revisión (ya con la marca de agua grabada).
+  // Fotos dentro del correo, según la etapa (todas ya con su marca grabada al subirlas):
+  //   • Control de calidad          → fotos de revisión (tipo control_calidad)
+  //   • Disponible para entrega     → fotos reales del producto recibido en HAUSLINE (recibido_hausline)
+  //   • Empaquetado, listo p/ envío → foto del paquete empacado (empaque)
+  // En cualquier otra etapa no se adjuntan fotos.
   const { fotos, fecha: fechaFotos } = estado === 'control_calidad'
-    ? await obtenerFotosCalidad(record.codigo)
-    : { fotos: [], fecha: null }
+    ? await obtenerFotosCalidad(record.codigo, 'control_calidad')
+    : estado === 'disponible_entrega'
+      ? await obtenerFotosCalidad(record.codigo, 'recibido_hausline')
+      : estado === 'empaquetado'
+        ? await obtenerFotosCalidad(record.codigo, 'empaque')
+        : { fotos: [], fecha: null }
 
   // La reseña se pide SOLO al "Entregado" (cuando el cliente ya tiene el producto en mano).
   // El correo de "Pagado" va sin reseña, solo con el agradecimiento.

@@ -15,7 +15,7 @@ export type Cliente = {
 export type EstadoPedido =
   | 'pedido_confirmado' | 'en_preparacion' | 'control_calidad' | 'etiqueta_creada' | 'despachado'
   | 'transito_internacional' | 'recibido_estados_unidos' | 'transito_nicaragua'
-  | 'llego_nicaragua' | 'disponible_entrega' | 'pagado' | 'entregado' | 'cancelado' | 'incidencia'
+  | 'llego_nicaragua' | 'disponible_entrega' | 'pagado' | 'empaquetado' | 'entregado' | 'cancelado' | 'incidencia'
 
 export type PedidoItem = {
   id?: string
@@ -166,7 +166,7 @@ export type Trayecto = {
   tracking_eventos?: TrackingEvento[]
 }
 
-export type TipoArchivo = 'producto' | 'control_calidad' | 'comprobante' | 'entrega' | 'recepcion_miami' | 'recibido_local'
+export type TipoArchivo = 'producto' | 'control_calidad' | 'comprobante' | 'entrega' | 'recepcion_miami' | 'recibido_local' | 'empaque' | 'recibido_hausline'
 export type ArchivoPedido = {
   id: string
   pedido_id: string

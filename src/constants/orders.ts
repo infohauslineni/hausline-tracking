@@ -14,6 +14,7 @@ export const ESTADOS_PEDIDO: { value: EstadoPedido; label: string }[] = [
   { value: 'llego_nicaragua', label: 'País de destino' },
   { value: 'disponible_entrega', label: 'Disponible para entrega' },
   { value: 'pagado', label: 'Pagado' },
+  { value: 'empaquetado', label: 'Empaquetado, listo para envío' },
   { value: 'entregado', label: 'Entregado' },
 ]
 
@@ -33,6 +34,7 @@ export const etapaBase = (estado: EstadoPedido): EstadoPedido => (({
   llego_nicaragua: 'llego_nicaragua',
   disponible_entrega: 'disponible_entrega',
   pagado: 'pagado',
+  empaquetado: 'empaquetado',
   entregado: 'entregado',
   cancelado: 'cancelado',
   incidencia: 'incidencia',
@@ -61,6 +63,7 @@ export const notaPublicaEstado = (estado: EstadoPedido) => ({
   llego_nicaragua: 'Tu pedido llegó al país de destino.',
   disponible_entrega: 'Tu pedido está disponible para entrega.',
   pagado: 'Confirmamos el pago de tu pedido.',
+  empaquetado: 'Tu pedido está empaquetado y listo para envío.',
   entregado: 'Tu pedido fue entregado.',
   cancelado: 'El pedido fue cancelado.',
   incidencia: 'Estamos gestionando una incidencia con tu pedido.',
@@ -95,6 +98,7 @@ export function mensajeWhatsAppEstado(estado: EstadoPedido, data: { nombre?: str
     llego_nicaragua: `${saludo} Tu pedido ${data.codigo} ya llegó al país de destino y está siendo procesado. ${seguimiento}`,
     disponible_entrega: `${saludo} Tu pedido ${data.codigo} ya está *disponible para entrega*.\n\n*Saldo pendiente: ${saldoLinea}*\n\n*Tienes 2 días* para confirmar o cancelar tu pedido sin costo. Después de esos 2 días se cobra *US$ 5 por cada día* que el pedido permanezca en bodega.\n\n${envioTexto}\n\nCuentas para el pago:\n\n${cuentasTexto()}\n\nCuando deposités, mandanos el comprobante por aquí.`,
     pagado: `${saludo} Confirmamos el pago de tu pedido ${data.codigo}. ✅ Ya no se acumula ningún cargo por bodega. Coordinamos la entrega y te avisamos. ${seguimiento}`,
+    empaquetado: `${saludo} ¡Buenas noticias! Tu pedido ${data.codigo} ya está *empaquetado y listo para envío*. ${esManagua(data.departamento, data.ciudad) ? 'Sale con nuestro delivery a domicilio.' : 'Ya va en camino a tu departamento.'} Te enviamos una foto de tu paquete para que lo tengas presente. ${seguimiento}`,
     entregado: `${saludo} Tu pedido ${data.codigo} fue entregado. Gracias por comprar en Hausline.`,
     cancelado: `${saludo} El pedido ${data.codigo} fue cancelado. Escríbenos si necesitas ayuda.`,
     incidencia: `${saludo} Estamos revisando una novedad con tu pedido ${data.codigo}. Te avisaremos pronto. ${seguimiento}`,
@@ -134,6 +138,7 @@ export const estadoTone = (estado: EstadoPedido) => {
     case 'llego_nicaragua': return 'destino'
     case 'disponible_entrega': return 'disponible'
     case 'pagado': return 'pagado'
+    case 'empaquetado': return 'empaquetado'
     case 'entregado': return 'entregado'
     case 'incidencia': return 'incidencia'
     case 'cancelado': return 'cancelado'
@@ -144,7 +149,7 @@ export const estadoTone = (estado: EstadoPedido) => {
 // Color hex por tono (para puntos/acentos que no usan las clases .status-*).
 export const TONE_COLOR: Record<string, string> = {
   confirmada: '#94a3b8', preparacion: '#fbbf24', calidad: '#c4b5fd', despachado: '#fb923c',
-  transito: '#7dd3fc', destino: '#5eead4', disponible: '#b7ff00', pagado: '#4ade80', entregado: '#34d399',
+  transito: '#7dd3fc', destino: '#5eead4', disponible: '#b7ff00', pagado: '#4ade80', empaquetado: '#2dd4bf', entregado: '#34d399',
   incidencia: '#ffb08a', cancelado: '#f87171', neutral: '#8c948f', success: '#62eaa0', info: '#76b4ff', danger: '#ff9696',
 }
 export const estadoColor = (estado: EstadoPedido) => TONE_COLOR[estadoTone(estado)] ?? '#8c948f'

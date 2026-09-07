@@ -259,22 +259,39 @@ export async function actualizarEstadoPedido(id: string, estado: EstadoPedido) {
 const PROGRESO_ESTADOS: EstadoPedido[] = [
   'pedido_confirmado', 'en_preparacion', 'control_calidad', 'etiqueta_creada', 'despachado',
   'transito_internacional', 'recibido_estados_unidos', 'transito_nicaragua',
-  'llego_nicaragua', 'disponible_entrega', 'pagado', 'entregado',
+  'llego_nicaragua', 'disponible_entrega', 'pagado', 'empaquetado', 'entregado',
 ]
 
-// Al subir la foto "Recibido en bodega Miami", el pedido avanza solo a "Warehouse
-// HAUSLINE" (recibido_estados_unidos). Es el evento físico real que confirma la
-// llegada a la bodega. No retrocede el pedido ni pisa entregado/cancelado/incidencia,
-// y no hace nada si ya estaba en esa etapa o más adelante. El UPDATE dispara el
-// historial y el correo automático igual que un cambio manual. Devuelve el pedido
-// actualizado, o null si no correspondía avanzar.
-export async function avanzarAWarehousePorMiami(id: string): Promise<Pedido | null> {
+// Al subir las fotos "Recibido en HAUSLINE" (las fotos reales del producto tomadas con el
+// teléfono cuando el pedido llega a HAUSLINE, Nicaragua), el pedido avanza solo a
+// "Disponible para entrega". Es el evento físico real: el producto ya está en mano y listo
+// para coordinar la entrega. No retrocede el pedido ni pisa entregado/cancelado/incidencia,
+// y no hace nada si ya estaba en esa etapa o más adelante. El UPDATE dispara el historial y
+// el correo automático (con esas fotos). Devuelve el pedido actualizado, o null si no tocaba.
+export async function avanzarADisponiblePorRecibido(id: string): Promise<Pedido | null> {
   const client = requireSupabase()
   const { data, error } = await client.from('pedidos').select('estado').eq('id', id).single()
   if (error) throw error
   const actual = data.estado as EstadoPedido
   if (actual === 'entregado' || actual === 'cancelado' || actual === 'incidencia') return null
-  const destino: EstadoPedido = 'recibido_estados_unidos'
+  const destino: EstadoPedido = 'disponible_entrega'
+  if (PROGRESO_ESTADOS.indexOf(actual) >= PROGRESO_ESTADOS.indexOf(destino)) return null
+  return actualizarEstadoPedido(id, destino)
+}
+
+// Al subir la foto "Empaque para envío", el pedido avanza solo a "Empaquetado, listo para
+// envío" (empaquetado). Es el evento físico real: el paquete quedó empacado y va a salir
+// (delivery en Managua o bus/Cargotrans a departamentos). Igual que la foto de Miami: no
+// retrocede el pedido ni pisa entregado/cancelado/incidencia, y no hace nada si ya estaba
+// en esa etapa o más adelante. El UPDATE dispara el historial y el correo automático (con
+// la foto del paquete). Devuelve el pedido actualizado, o null si no correspondía avanzar.
+export async function avanzarAEmpaquetadoPorFoto(id: string): Promise<Pedido | null> {
+  const client = requireSupabase()
+  const { data, error } = await client.from('pedidos').select('estado').eq('id', id).single()
+  if (error) throw error
+  const actual = data.estado as EstadoPedido
+  if (actual === 'entregado' || actual === 'cancelado' || actual === 'incidencia') return null
+  const destino: EstadoPedido = 'empaquetado'
   if (PROGRESO_ESTADOS.indexOf(actual) >= PROGRESO_ESTADOS.indexOf(destino)) return null
   return actualizarEstadoPedido(id, destino)
 }
@@ -407,7 +424,13 @@ export async function eliminarPedido(id: string) {
 // caja: a qué cuenta bancaria afectar. `proveedor` resta de una cuenta el pago al
 // proveedor; `abono` suma a una cuenta el abono inicial que pagó el cliente. Opcional.
 type CajaPedido = { proveedor?: { cuentaId: string | null; montoCuenta: number }; abono?: { cuentaId: string | null; montoCuenta: number } }
-export async function crearPedido(input: NuevoPedidoInput, caja?: CajaPedido) {
+// opts.desdeInversion: convertir un producto de STOCK (una inversión ya comprada) en un
+// pedido normal. En ese caso el costo NO se vuelve a pagar (ya salió de caja cuando se
+// registró la inversión), así que se omite el gasto/movimiento de proveedor; el costo real
+// igual viaja en pedido_item_costos para que la ganancia salga correcta. Al terminar, la
+// inversión se marca como vendida para que salga del inventario disponible.
+type OpcionesPedido = { desdeInversion?: string | null }
+export async function crearPedido(input: NuevoPedidoInput, caja?: CajaPedido, opts?: OpcionesPedido) {
   const client = requireSupabase()
   const { items: itemsBase, ...pedido } = input
   const items = conLineaEnvioRapido(itemsBase, input.envio_rapido)
@@ -444,7 +467,8 @@ export async function crearPedido(input: NuevoPedidoInput, caja?: CajaPedido) {
     throw costosError
   }
   const costoProveedor = items.reduce((sum, item) => sum + Number(item.precio_compra || 0) * Number(item.cantidad || 1), 0)
-  if (costoProveedor > 0) {
+  // Stock convertido en pedido: el costo ya se pagó al traerlo, no se vuelve a descontar.
+  if (costoProveedor > 0 && !opts?.desdeInversion) {
     const proveedores = [...new Set(items.map((item) => item.proveedor_id).filter(Boolean))]
     const { data: expense, error: expenseError } = await client.from('gastos').insert({ fecha: input.fecha_pedido, categoria: 'Proveedor', monto: costoProveedor, metodo_pago: input.metodo_pago || null, pedido_id: created.id, proveedor_id: proveedores.length === 1 ? proveedores[0] : null, descripcion: `Pago a proveedor · ${created.codigo}`, observaciones: 'Generado automáticamente al registrar el pedido' }).select('id').single()
     if (expenseError) { await client.from('pedidos').delete().eq('id', created.id); throw expenseError }
@@ -470,6 +494,13 @@ export async function crearPedido(input: NuevoPedidoInput, caja?: CajaPedido) {
   const distintosCrear = new Set(productosCreados.map((it) => it.producto_id || (it.codigo_producto ?? '').trim().toUpperCase()))
   if (productosCreados.length && distintosCrear.size === 1) {
     await aprenderCostoProducto(client, productosCreados[0], Number(productosCreados[0].precio_compra || 0))
+  }
+
+  // Si viene de un producto de stock, la inversión sale del inventario (queda vendida).
+  // No es crítico para el pedido: si fallara, el pedido igual quedó creado.
+  if (opts?.desdeInversion) {
+    const { error: invError } = await client.from('inversiones').update({ estado: 'vendido' }).eq('id', opts.desdeInversion)
+    if (invError) console.error('No se pudo marcar la inversión como vendida:', invError)
   }
 
   invalidateComercial()

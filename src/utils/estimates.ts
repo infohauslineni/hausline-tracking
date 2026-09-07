@@ -5,7 +5,7 @@ export function estimateDateForPreview(estado: EstadoPedido, margin = 2) {
   if (estado === 'cancelado') return null
   const date = new Date()
   date.setHours(12, 0, 0, 0)
-  date.setDate(date.getDate() + (estado === 'disponible_entrega' || estado === 'pagado' || estado === 'entregado' ? 0 : (DAYS_BY_STATE[estado] ?? 7) + margin))
+  date.setDate(date.getDate() + (estado === 'disponible_entrega' || estado === 'pagado' || estado === 'empaquetado' || estado === 'entregado' ? 0 : (DAYS_BY_STATE[estado] ?? 7) + margin))
   return toISODate(date)
 }
 

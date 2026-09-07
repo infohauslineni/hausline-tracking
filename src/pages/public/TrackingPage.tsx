@@ -6,7 +6,7 @@ import { HauslineLogo } from '../../components/ui/HauslineLogo'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { buscarPedidoPublico } from '../../services/publicTracking.service'
 import type { EstadoPedido } from '../../types/domain'
-import type { PublicOrder } from '../../types/publicTracking'
+import type { PublicImage, PublicOrder } from '../../types/publicTracking'
 import { estimateAfterArrival, postponeToMinFuture, postponeUntilFuture } from '../../utils/estimates'
 import { whatsappUrl } from '../../utils/whatsapp'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
@@ -19,7 +19,7 @@ const STEPS: { code: EstadoPedido; label: string }[] = [
   { code: 'control_calidad', label: 'Control de calidad' },
   { code: 'transito_internacional', label: 'En tránsito' },
   { code: 'llego_nicaragua', label: 'País de destino' }, { code: 'disponible_entrega', label: 'Disponible para entrega' },
-  { code: 'pagado', label: 'Pagado' },
+  { code: 'empaquetado', label: 'Empaquetado, listo para envío' },
   { code: 'entregado', label: 'Entregado' },
 ]
 // Etapas viejas / internas → una de las 7 visibles. "En tránsito" agrupa despacho y bodega.
@@ -28,6 +28,10 @@ const aliases: Partial<Record<EstadoPedido, EstadoPedido>> = {
   despachado: 'transito_internacional',
   recibido_estados_unidos: 'transito_internacional',
   transito_nicaragua: 'transito_internacional',
+  // El pago NO es un paso visible en la barra del cliente (hay quienes pagan al recibir, y
+  // marcar "Pagado" como cumplido confundía). Un pedido pagado se muestra en "Disponible
+  // para entrega". El pago se sigue registrando en el panel (congela bodega, etc.).
+  pagado: 'disponible_entrega',
 }
 // Índice canónico de una etapa según su etiqueta pública (para limpiar el historial).
 const indiceEtapa = (label: string) => STEPS.findIndex((step) => step.label === label)
@@ -116,7 +120,7 @@ function ResultArea({ order, loading, input, setInput, submit, notFound }: Searc
     <div className="reveal-up" style={{ animationDelay: '90ms' }}><ProgressCard steps={STEPS} currentIndex={currentIndex} progress={progress} isDelivered={isDelivered} estimacion={estimacion} mostrarCuenta={mostrarCuenta} /></div>
 
     <div className="mt-5 grid gap-5 lg:grid-cols-[1.45fr_.75fr]">
-      <div className="reveal-up min-w-0 space-y-5" style={{ animationDelay: '180ms' }}><Products order={order} /><OrderImages order={order} type="control_calidad" title="Control de calidad" description="Fotos de revisión y preparación de tu pedido." /><OrderImages order={order} type="recepcion_miami" title="Recibido en bodega Miami" description="Foto del paquete al llegar a la bodega de nuestra agencia." /><OrderImages order={order} type="recibido_local" title="Recibido por Hausline" description="Confirmación de que recibimos tu paquete físicamente." /><Timeline order={order} capIndex={capIndex} /><Journeys order={order} /></div>
+      <div className="reveal-up min-w-0 space-y-5" style={{ animationDelay: '180ms' }}><Products order={order} /><OrderPhotos order={order} /><Timeline order={order} capIndex={capIndex} /><Journeys order={order} /></div>
       <aside className="reveal-up min-w-0 space-y-5 lg:sticky lg:top-6 lg:self-start" style={{ animationDelay: '270ms' }}>{order.estado_codigo === 'disponible_entrega' && <DeliveryCard codigo={order.codigo} whatsapp={whatsapp} disponibleDesde={disponibleDesde} />}<section className="public-card"><h2 className="flex items-center gap-2 text-sm font-semibold"><CalendarDays size={17} className="text-accent" /> Fechas importantes</h2>{transitoDias != null && <div className="mt-4 flex items-center gap-3 rounded-xl border border-accent/25 bg-accent/[0.06] p-3"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-accent/15 text-accent"><Plane size={17} /></span><div><strong className="block text-lg leading-none text-white">{transitoDias} {transitoDias === 1 ? 'día' : 'días'} en tránsito</strong><span className="mt-1 block text-[11px] text-muted">{llegadaPais ? 'Desde el despacho hasta que llegó al país' : 'Desde el despacho, tu pedido sigue en camino'}</span></div></div>}<div className="mt-5 space-y-4"><DateRow label="Pedido realizado" value={formatDate(order.fecha_pedido)} />{llegadaPais && <DateRow label="Llegó al país" value={formatDate(llegadaPais.fecha)} />}<DateRow label={estimacion.label} value={estimacion.value} highlight /><DateRow label="Última actualización" value={formatDate(order.ultima_actualizacion)} /></div></section>{order.notas_publicas && <section className="public-card"><h2 className="text-sm font-semibold">Nota sobre tu pedido</h2><p className="mt-3 text-sm leading-6 text-muted">{order.notas_publicas}</p></section>}<section className="public-card"><ShieldCheck size={20} className="text-accent" /><h2 className="mt-3 text-sm font-semibold">Información segura</h2><p className="mt-2 text-xs leading-5 text-muted">Esta página solo muestra información pública de tu pedido. Las fechas son estimadas y pueden variar por la logística internacional.</p>{whatsapp && <a href={whatsappUrl(whatsapp, `Hola, necesito ayuda con mi pedido ${order.codigo}.`)} target="_blank" rel="noopener noreferrer" className="primary-button mt-5 w-full"><MessageCircle size={17} /> Contactar por WhatsApp</a>}</section></aside>
     </div>
   </section>
@@ -195,7 +199,31 @@ function Products({ order }: { order: PublicOrder }) {
   // con resolverImagenCatalogo) y, como respaldo, las fotos del producto subidas al pedido.
   const fotos = (order.imagenes ?? []).filter((image) => image.tipo === 'producto' && image.url).map((image) => image.url as string)
   return <section className="public-card"><h2 className="flex items-center gap-2 text-sm font-semibold"><Package size={17} className="text-accent" /> Tu pedido</h2><div className="mt-4 divide-y divide-line">{order.productos.map((product, index) => { const foto = resolverImagenCatalogo(product.imagen) || fotos[index] || fotos[0]; return <div className="flex items-center gap-3 py-4" key={`${product.producto}-${index}`}><span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/[0.04] text-muted">{foto ? <img src={foto} alt="" className="size-full object-cover" /> : <Package size={19} />}</span><div className="min-w-0 flex-1"><strong className="block truncate text-sm">{product.producto}</strong><span className="mt-1 block text-xs text-muted">{[product.marca, product.talla, product.color].filter(Boolean).join(' · ') || 'Producto confirmado'}</span>{product.codigo && <span className="mt-0.5 block font-mono text-[11px] text-accent">Cód. {product.codigo}</span>}</div><span className="text-xs font-semibold">×{product.cantidad}</span></div> })}</div></section> }
-function OrderImages({ order, type, title, description, fallback }: { order: PublicOrder; type: 'producto' | 'control_calidad' | 'recepcion_miami' | 'recibido_local'; title: string; description: string; fallback?: { url: string; storage_path: string }[] }) { const uploaded = (order.imagenes ?? []).filter((image) => image.tipo === type && image.url).map((image) => ({ url: image.url as string, storage_path: image.storage_path })); const images = uploaded.length ? uploaded : (fallback ?? []); if (!images.length) return null; return <section className="public-card"><h2 className="flex items-center gap-2 text-sm font-semibold"><Images size={17} className="text-accent" /> {title}</h2><p className="mt-2 text-xs leading-5 text-muted">{description}</p><div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">{images.map((image, index) => <button type="button" key={`${image.storage_path}-${index}`} className="group aspect-square overflow-hidden rounded-xl border border-line bg-white/[0.025]" onClick={() => image.url && window.open(image.url, '_blank', 'noopener,noreferrer')}><img src={image.url} alt={`${title} ${index + 1}`} className="size-full object-cover transition duration-300 group-hover:scale-[1.03]" /></button>)}</div></section> }
+// Todas las fotos del pedido que ve el cliente, en UNA sola tarjeta compacta (grid), cada
+// una con su etiqueta de etapa. Antes iban en tarjetas separadas apiladas (muy vertical en
+// desktop). El orden sigue el avance real: control de calidad → producto recibido → paquete.
+function OrderPhotos({ order }: { order: PublicOrder }) {
+  const grupos: { tipo: PublicImage['tipo']; label: string }[] = [
+    { tipo: 'control_calidad', label: 'Control de calidad' },
+    { tipo: 'recibido_hausline', label: 'Tu producto' },
+    { tipo: 'empaque', label: 'Empaquetado' },
+    { tipo: 'recibido_local', label: 'Recibido' },
+  ]
+  const fotos = grupos.flatMap((grupo) => (order.imagenes ?? [])
+    .filter((image) => image.tipo === grupo.tipo && image.url)
+    .map((image) => ({ url: image.url as string, storage_path: image.storage_path, label: grupo.label })))
+  if (!fotos.length) return null
+  return <section className="public-card">
+    <h2 className="flex items-center gap-2 text-sm font-semibold"><Images size={17} className="text-accent" /> Fotos de tu pedido</h2>
+    <p className="mt-2 text-xs leading-5 text-muted">Fotos reales de tu producto en cada etapa. Tocá una para verla en grande.</p>
+    <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+      {fotos.map((foto, index) => <button type="button" key={`${foto.storage_path}-${index}`} className="group relative aspect-square overflow-hidden rounded-xl border border-line bg-white/[0.025]" onClick={() => window.open(foto.url, '_blank', 'noopener,noreferrer')}>
+        <img src={foto.url} alt={foto.label} className="size-full object-cover transition duration-300 group-hover:scale-[1.03]" />
+        <span className="absolute left-1.5 top-1.5 rounded-full border border-white/10 bg-app/85 px-2 py-0.5 text-[10px] font-semibold text-white">{foto.label}</span>
+      </button>)}
+    </div>
+  </section>
+}
 // Limpia el historial: descarta retrocesos, etapas repetidas y cualquier etapa
 // posterior a la actual (errores de avance corregidos). Devuelve el avance real.
 function historialLimpio(historial: PublicOrder['historial'], capIndex: number) {

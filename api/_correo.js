@@ -21,6 +21,7 @@ export const ESTADO_LABEL = {
   llego_nicaragua: 'País de destino',
   disponible_entrega: 'Disponible para entrega',
   pagado: 'Pagado',
+  empaquetado: 'Empaquetado, listo para envío',
   entregado: 'Entregado',
   cancelado: 'Cancelado',
   incidencia: 'Requiere atención',
@@ -38,6 +39,7 @@ export const ESTADO_NOTA = {
   llego_nicaragua: 'Tu pedido llegó a Nicaragua. Pronto estará disponible para entrega.',
   disponible_entrega: 'Tu pedido ya está disponible para entrega. Escríbenos para coordinar el envío o retiro.',
   pagado: '¡Recibimos tu pago! Tu pedido ya quedó apartado y está a la espera de ser entregado. Muy pronto coordinamos la entrega contigo. ¡Muchas gracias por tu compra!',
+  empaquetado: '¡Buenas noticias! Tu pedido ya está empaquetado y listo para envío. Abajo puedes ver la foto de tu paquete: ya va en camino hacia vos. Pronto coordinamos la entrega.',
   entregado: '¡Tu pedido fue entregado! Esperamos que lo disfrutes muchísimo. Fue un gusto atenderte y te esperamos en tu próxima compra.',
   cancelado: 'Tu pedido fue cancelado. Si tienes dudas, escríbenos.',
   incidencia: 'Tenemos una novedad con tu pedido y ya la estamos gestionando. Te contactaremos pronto.',
@@ -150,27 +152,48 @@ export function bloqueFactura(factura) {
 // estado es "Control de calidad" y hay fotos visibles al cliente. Normalmente es UNA
 // sola foto: en ese caso se muestra centrada y en buen tamaño; si hay varias, se
 // acomodan en cuadrícula de 2 columnas para que se vean bien en el teléfono.
-export function bloqueFotos(fotos) {
+export function bloqueFotos(fotos, estado) {
   if (!Array.isArray(fotos) || fotos.length === 0) return ''
-  const img = (f, style) => `<img src="cid:${esc(f.cid)}" alt="Foto de control de calidad" style="${style}">`
+  const base = ETAPA_BASE[estado] || estado
+  const esEmpaque = base === 'empaquetado'
+  const esProducto = base === 'disponible_entrega'
+  const alt = esEmpaque ? 'Foto de tu paquete empacado' : 'Foto de tu producto'
+  const img = (f, style) => `<img src="cid:${esc(f.cid)}" alt="${alt}" style="${style}">`
   const varias = fotos.length > 1
-  const titulo = varias ? 'Fotos de tu producto' : 'Foto de tu producto'
-  const subtitulo = 'Así se ve tu pedido en nuestro control de calidad.'
+  const titulo = esEmpaque
+    ? (varias ? 'Fotos de tu paquete' : 'Foto de tu paquete')
+    : (varias ? 'Fotos de tu producto' : 'Foto de tu producto')
+  const subtitulo = esEmpaque
+    ? 'Tu pedido ya quedó empaquetado y listo para envío. ¡Va en camino hacia vos!'
+    : esProducto
+      ? 'Tu pedido ya llegó a HAUSLINE. Estas son las fotos reales de tu producto.'
+      : 'Así se ve tu pedido en nuestro control de calidad.'
 
+  // La cuadrícula se adapta a la cantidad para verse bien incluso con muchas fotos:
+  //   1 foto  → centrada y grande
+  //   2-4     → 2 columnas
+  //   5 o más → 3 columnas (miniaturas ordenadas; aguanta 6, 9, 12… sin romperse)
+  const n = fotos.length
+  const estiloFoto = 'display:block;width:100%;height:auto;border-radius:10px;border:1px solid #e6e8ec;background-color:#f6f7f9;'
   let galeria
-  if (!varias) {
-    // Una sola foto: centrada, ancho máximo cómodo.
+  if (n === 1) {
     galeria = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
                 <td align="center" style="padding:0;">
                   ${img(fotos[0], 'display:block;width:100%;max-width:340px;height:auto;border-radius:10px;border:1px solid #e6e8ec;background-color:#f6f7f9;')}
                 </td></tr></table>`
   } else {
+    const cols = n <= 4 ? 2 : 3
+    const anchoCel = `${Math.floor(100 / cols)}%`
     const filas = []
-    for (let i = 0; i < fotos.length; i += 2) {
-      const cel = (f) => f
-        ? `<td width="50%" style="padding:5px;vertical-align:top;">${img(f, 'display:block;width:100%;height:auto;border-radius:10px;border:1px solid #e6e8ec;background-color:#f6f7f9;')}</td>`
-        : '<td width="50%" style="padding:5px;"></td>'
-      filas.push(`<tr>${cel(fotos[i])}${cel(fotos[i + 1])}</tr>`)
+    for (let i = 0; i < n; i += cols) {
+      const celdas = []
+      for (let c = 0; c < cols; c++) {
+        const f = fotos[i + c]
+        celdas.push(f
+          ? `<td width="${anchoCel}" style="padding:4px;vertical-align:top;">${img(f, estiloFoto)}</td>`
+          : `<td width="${anchoCel}" style="padding:4px;"></td>`)
+      }
+      filas.push(`<tr>${celdas.join('')}</tr>`)
     }
     galeria = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${filas.join('')}</table>`
   }
@@ -195,7 +218,7 @@ const TIMELINE = [
   { base: 'transito_internacional', label: 'En tránsito' },
   { base: 'llego_nicaragua', label: 'País de destino' },
   { base: 'disponible_entrega', label: 'Disponible para entrega' },
-  { base: 'pagado', label: 'Pagado' },
+  { base: 'empaquetado', label: 'Listo para envío' },
   { base: 'entregado', label: 'Entregado' },
 ]
 // Colapsa cualquier estado crudo (incl. sub-etapas de bodega/17TRACK) a una de las 8.
@@ -203,10 +226,13 @@ const ETAPA_BASE = {
   pedido_confirmado: 'pedido_confirmado', en_preparacion: 'en_preparacion', control_calidad: 'control_calidad',
   etiqueta_creada: 'transito_internacional', despachado: 'transito_internacional', transito_internacional: 'transito_internacional',
   recibido_estados_unidos: 'transito_internacional', transito_nicaragua: 'transito_internacional',
-  llego_nicaragua: 'llego_nicaragua', disponible_entrega: 'disponible_entrega', pagado: 'pagado', entregado: 'entregado',
+  llego_nicaragua: 'llego_nicaragua', disponible_entrega: 'disponible_entrega', pagado: 'pagado', empaquetado: 'empaquetado', entregado: 'entregado',
 }
 function indiceEtapa(estado) {
-  const base = ETAPA_BASE[estado] || estado
+  let base = ETAPA_BASE[estado] || estado
+  // El pago no es un paso visible en la barra: un pedido "pagado" se ubica en "Disponible
+  // para entrega" (el titular/label del correo de pago sí se conservan, ver tituloEstado).
+  if (base === 'pagado') base = 'disponible_entrega'
   return TIMELINE.findIndex((t) => t.base === base)
 }
 
@@ -219,6 +245,7 @@ const HEADLINE = {
   llego_nicaragua: 'Tu pedido llegó al país de destino',
   disponible_entrega: 'Tu pedido está disponible para entrega',
   pagado: 'Confirmamos el pago de tu pedido',
+  empaquetado: 'Tu pedido está empaquetado y listo para envío',
   entregado: 'Tu pedido fue entregado',
   cancelado: 'Tu pedido fue cancelado',
   incidencia: 'Tu pedido requiere atención',
@@ -307,7 +334,7 @@ export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, url
 
   const timeline = bloqueTimeline(estado)
   const datos = bloqueFactura(factura)          // datos del pedido: foto, talla, código, precio
-  const fotosBloque = bloqueFotos(fotos)        // fotos de control de calidad (cuando aplica)
+  const fotosBloque = bloqueFotos(fotos, estado) // fotos de control de calidad o del paquete empacado (cuando aplica)
   const font = `-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif`
   const serif = `Georgia,'Times New Roman',Times,serif`
 

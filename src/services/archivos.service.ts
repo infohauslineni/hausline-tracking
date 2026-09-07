@@ -7,13 +7,17 @@ const MAX_BYTES = 10 * 1024 * 1024
 function requireSupabase() { if (!supabase) throw new Error('Supabase no está configurado.'); return supabase }
 export function validarImagen(file: File) { if (!ALLOWED.includes(file.type)) throw new Error('Usa una imagen JPG, PNG o WEBP.'); if (file.size > MAX_BYTES) throw new Error('La imagen no puede superar 10 MB.') }
 
-export type MarcaImagen = boolean | 'esquina' | { sello: string }
+export type MarcaImagen = boolean | 'esquina' | 'logo' | { sello: string }
 
 // Decide qué marca aplicar según la categoría de la foto.
 export function marcaParaTipo(tipo: TipoArchivo, codigo?: string): MarcaImagen {
   if (tipo === 'recibido_local') return { sello: (codigo ?? '').toUpperCase() }
+  // Todas las fotos que ve el cliente (producto recibido, control de calidad y paquete
+  // empacado) llevan la MISMA marca: el logo "HAUS/LINE" arriba al centro, limpio, para
+  // que también sirvan para redes.
+  if (tipo === 'recibido_hausline' || tipo === 'control_calidad' || tipo === 'empaque') return 'logo'
   if (tipo === 'recepcion_miami') return 'esquina'
-  return tipo === 'control_calidad' || tipo === 'producto'
+  return tipo === 'producto'
 }
 
 export async function comprimirImagen(file: File, marcaDeAgua: MarcaImagen = false): Promise<Blob> {
@@ -28,6 +32,7 @@ export async function comprimirImagen(file: File, marcaDeAgua: MarcaImagen = fal
     const context = canvas.getContext('2d')
     context?.drawImage(image, 0, 0, canvas.width, canvas.height)
     if (context && typeof marcaDeAgua === 'object') dibujarSelloRecepcion(context, canvas.width, canvas.height, marcaDeAgua.sello)
+    else if (context && marcaDeAgua === 'logo') dibujarMarcaLogo(context, canvas.width, canvas.height)
     else if (context && marcaDeAgua === 'esquina') dibujarMarcaDeAguaEsquina(context, canvas.width, canvas.height)
     else if (context && marcaDeAgua) dibujarMarcaDeAgua(context, canvas.width, canvas.height)
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', .84))
@@ -65,6 +70,30 @@ function dibujarSelloRecepcion(context: CanvasRenderingContext2D, width: number,
   context.font = `800 ${Math.round(fontSize * .82)}px Arial, sans-serif`
   context.fillStyle = 'rgba(255,255,255,.7)'
   context.fillText('HAUSLINE.NI', width - pad * 1.6, height - barH / 2)
+  context.restore()
+}
+
+// Logo de marca "HAUS / LINE" en dos líneas apiladas, arriba al centro, negro y en
+// negrita (igual al logo de HAUSLINE). Lleva una sombra BLANCA muy suave: sobre fondo
+// claro (como el logo original) casi no se nota y se ve negro puro, y sobre un producto
+// oscuro ese halo lo mantiene legible. Queda limpio para postear en redes / Instagram.
+function dibujarMarcaLogo(context: CanvasRenderingContext2D, width: number, height: number) {
+  const shortest = Math.min(width, height)
+  const fontSize = Math.max(22, Math.round(shortest * .075))
+  const lineGap = Math.round(fontSize * .94) // apiladas bien juntas, estilo logo
+  const yTop = Math.round(fontSize * .8)
+  const cx = width / 2
+  context.save()
+  context.font = `900 ${fontSize}px Arial, 'Arial Black', sans-serif`
+  context.textAlign = 'center'
+  context.textBaseline = 'top'
+  // Separación de letras para el look de logo (si el navegador no lo soporta, se ignora).
+  try { (context as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = `${Math.max(1, Math.round(fontSize * .06))}px` } catch { /* noop */ }
+  context.shadowColor = 'rgba(255,255,255,.6)'
+  context.shadowBlur = Math.max(3, Math.round(fontSize * .28))
+  context.fillStyle = '#0a0a0a'
+  context.fillText('HAUS', cx, yTop)
+  context.fillText('LINE', cx, yTop + lineGap)
   context.restore()
 }
 
