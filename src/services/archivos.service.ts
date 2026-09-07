@@ -7,15 +7,17 @@ const MAX_BYTES = 10 * 1024 * 1024
 function requireSupabase() { if (!supabase) throw new Error('Supabase no está configurado.'); return supabase }
 export function validarImagen(file: File) { if (!ALLOWED.includes(file.type)) throw new Error('Usa una imagen JPG, PNG o WEBP.'); if (file.size > MAX_BYTES) throw new Error('La imagen no puede superar 10 MB.') }
 
-export type MarcaImagen = boolean | 'esquina' | 'logo' | { sello: string }
+export type MarcaImagen = boolean | 'esquina' | 'logo' | 'logo-centro' | { sello: string }
 
 // Decide qué marca aplicar según la categoría de la foto.
 export function marcaParaTipo(tipo: TipoArchivo, codigo?: string): MarcaImagen {
   if (tipo === 'recibido_local') return { sello: (codigo ?? '').toUpperCase() }
-  // Todas las fotos que ve el cliente (producto recibido, control de calidad y paquete
-  // empacado) llevan la MISMA marca: el logo "HAUS/LINE" arriba al centro, limpio, para
-  // que también sirvan para redes.
-  if (tipo === 'recibido_hausline' || tipo === 'control_calidad' || tipo === 'empaque') return 'logo'
+  // Control de calidad: la marca grande "HAUS/LINE" centrada sobre la foto, bien visible
+  // (protege la evidencia de revisión, que es la que más comparte el cliente).
+  if (tipo === 'control_calidad') return 'logo-centro'
+  // Las demás fotos que ve el cliente (producto recibido en HAUSLINE y paquete empacado)
+  // llevan el logo "HAUS/LINE" limpio arriba al centro, para que también sirvan en redes.
+  if (tipo === 'recibido_hausline' || tipo === 'empaque') return 'logo'
   if (tipo === 'recepcion_miami') return 'esquina'
   return tipo === 'producto'
 }
@@ -33,6 +35,7 @@ export async function comprimirImagen(file: File, marcaDeAgua: MarcaImagen = fal
     context?.drawImage(image, 0, 0, canvas.width, canvas.height)
     if (context && typeof marcaDeAgua === 'object') dibujarSelloRecepcion(context, canvas.width, canvas.height, marcaDeAgua.sello)
     else if (context && marcaDeAgua === 'logo') dibujarMarcaLogo(context, canvas.width, canvas.height)
+    else if (context && marcaDeAgua === 'logo-centro') dibujarMarcaLogo(context, canvas.width, canvas.height, 'centro')
     else if (context && marcaDeAgua === 'esquina') dibujarMarcaDeAguaEsquina(context, canvas.width, canvas.height)
     else if (context && marcaDeAgua) dibujarMarcaDeAgua(context, canvas.width, canvas.height)
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', .84))
@@ -73,15 +76,22 @@ function dibujarSelloRecepcion(context: CanvasRenderingContext2D, width: number,
   context.restore()
 }
 
-// Logo de marca "HAUS / LINE" (con el ".NI") en dos líneas apiladas, arriba al centro,
-// NEGRO y con fuente condensada pesada (Impact) para parecerse al logo real de HAUSLINE.
-// Lleva un halo blanco muy suave: en las fotos el logo cae sobre el fondo claro del estudio
-// (arriba), donde se ve negro nítido; el halo lo salva si arriba hubiera algo oscuro.
-function dibujarMarcaLogo(context: CanvasRenderingContext2D, width: number, height: number) {
+// Logo de marca "HAUS / LINE" (con el ".NI") en dos líneas apiladas, NEGRO y con fuente
+// condensada pesada (Impact) para parecerse al logo real de HAUSLINE.
+// - posicion 'arriba' (por defecto): logo chico arriba al centro, limpio, para redes.
+// - posicion 'centro': logo grande centrado sobre toda la foto (control de calidad), bien
+//   visible como marca de agua.
+// Lleva un halo blanco muy suave: en fondo claro se ve negro nítido y el halo casi no se
+// nota; en fondo oscuro (camiseta negra) el contorno blanco lo mantiene visible siempre.
+function dibujarMarcaLogo(context: CanvasRenderingContext2D, width: number, height: number, posicion: 'arriba' | 'centro' = 'arriba') {
   const shortest = Math.min(width, height)
-  const fontSize = Math.max(24, Math.round(shortest * .085))
+  const centrado = posicion === 'centro'
+  const fontSize = centrado
+    ? Math.max(40, Math.round(shortest * .16))
+    : Math.max(24, Math.round(shortest * .085))
   const lineGap = Math.round(fontSize * .82) // apiladas bien juntas, estilo logo
-  const yTop = Math.round(fontSize * .7)
+  // Arriba: pegado al borde superior. Centro: bloque de dos líneas centrado verticalmente.
+  const yTop = centrado ? Math.round((height - (lineGap + fontSize)) / 2) : Math.round(fontSize * .7)
   const cx = width / 2
   const familia = `Impact, Haettenschweiler, 'Arial Narrow Bold', 'Arial Narrow', sans-serif`
   // Letras NEGRAS con un contorno blanco fino: en fondo claro (como el logo real) se ve
