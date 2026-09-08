@@ -34,6 +34,9 @@ const fechaCorta = (iso: string) => new Intl.DateTimeFormat('es-NI', { day: 'num
 // Agrupa los encargos pendientes por cliente (teléfono normalizado: últimos 8 dígitos), así
 // varios encargos del mismo cliente se pueden confirmar como UN solo pedido con la suma.
 function claveCliente(s: Solicitud) {
+  // Un carrito comparte grupo_codigo: agrupamos EXACTO por ese carrito. Los encargos viejos
+  // (sin grupo) caen al agrupado por teléfono del cliente, como antes.
+  if (s.grupo_codigo) return `g:${s.grupo_codigo}`
   const tel = (s.cliente_whatsapp ?? '').replace(/\D/g, '').slice(-8)
   return tel || `id:${s.id}`
 }

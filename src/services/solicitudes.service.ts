@@ -31,6 +31,7 @@ export type Solicitud = {
   notas: string | null
   vence_at: string
   pedido_id: string | null
+  grupo_codigo?: string | null
   created_at: string
   updated_at: string
   imagen?: string | null
