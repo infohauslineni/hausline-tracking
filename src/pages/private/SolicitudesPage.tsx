@@ -6,7 +6,7 @@ import { CuentaSelect, type DestinoPago } from '../../components/finanzas/Cuenta
 import { DEMO_SOLICITUDES } from '../../data/demoSolicitudes'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { archivarComprobanteDrive } from '../../services/archivos.service'
-import { confirmarSolicitud, confirmarSolicitudesGrupo, descartarSolicitud, eliminarSolicitud, listarSolicitudes, suscribirSolicitudes, type Solicitud } from '../../services/solicitudes.service'
+import { confirmarSolicitud, confirmarSolicitudesGrupo, descartarSolicitud, descartarSolicitudes, eliminarSolicitud, listarSolicitudes, suscribirSolicitudes, type Solicitud } from '../../services/solicitudes.service'
 import { useAuth } from '../../contexts/AuthContext'
 import { whatsappUrl } from '../../utils/whatsapp'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
@@ -98,6 +98,19 @@ export function SolicitudesPage() {
       setConfirmando(null)
     } catch { toast.error('No se pudo confirmar el encargo.') } finally { setBusy(null) }
   }
+  // Descarta TODO el grupo de un cliente de una sola vez (saca todos sus encargos de la bandeja).
+  const descartarGrupo = async (grupo: Solicitud[]) => {
+    if (!grupo.length) return
+    if (!window.confirm(`¿Descartar los ${grupo.length} encargos de ${grupo[0].cliente_nombre}? Se quitarán todos de la bandeja.`)) return
+    setBusy(grupo[0].id)
+    try {
+      const ids = grupo.map((g) => g.id)
+      if (isSupabaseConfigured) await descartarSolicitudes(ids)
+      const set = new Set(ids)
+      setItems((all) => all.filter((x) => !set.has(x.id)))
+      toast.success(`${grupo.length} encargos descartados.`)
+    } catch { toast.error('No se pudieron descartar los encargos.') } finally { setBusy(null) }
+  }
   const descartar = async (s: Solicitud) => {
     if (!window.confirm(`¿Descartar el encargo de ${s.cliente_nombre}? Se quitará de la bandeja.`)) return
     setBusy(s.id)
@@ -131,7 +144,7 @@ export function SolicitudesPage() {
     {loading ? <div className="mt-5 h-64 animate-pulse rounded-2xl border border-line bg-panel" /> : pendientes.length === 0 ? <EmptyState /> : <div className="mt-6 space-y-3">
       {grupos.map((grupo) => grupo.length === 1
         ? <SolicitudCard key={grupo[0].id} s={grupo[0]} busy={busy === grupo[0].id} onConfirm={() => setConfirmando(grupo)} onDiscard={() => void descartar(grupo[0])} />
-        : <GrupoCard key={claveCliente(grupo[0])} grupo={grupo} busy={busy === grupo[0].id} onConfirm={() => setConfirmando(grupo)} onDiscard={(s) => void descartar(s)} />)}
+        : <GrupoCard key={claveCliente(grupo[0])} grupo={grupo} busy={busy === grupo[0].id} onConfirm={() => setConfirmando(grupo)} onDiscard={(s) => void descartar(s)} onDiscardAll={() => void descartarGrupo(grupo)} />)}
     </div>}
 
     {confirmando && <ConfirmarModal grupo={confirmando} busy={busy === confirmando[0].id} onClose={() => setConfirmando(null)} onConfirm={(abono, comprobante, destino, descuento) => void confirmar(confirmando, abono, comprobante, destino, descuento)} />}
@@ -263,7 +276,7 @@ function SolicitudCard({ s, busy, onConfirm, onDiscard }: { s: Solicitud; busy: 
 // Tarjeta de un CLIENTE con varios encargos web: lista todos sus productos, la suma del total
 // y del 50%, y un botón que los confirma como UN solo pedido. Cada producto se puede descartar
 // (por si no pagó ese) antes de confirmar el resto.
-function GrupoCard({ grupo, busy, onConfirm, onDiscard }: { grupo: Solicitud[]; busy: boolean; onConfirm: () => void; onDiscard: (s: Solicitud) => void }) {
+function GrupoCard({ grupo, busy, onConfirm, onDiscard, onDiscardAll }: { grupo: Solicitud[]; busy: boolean; onConfirm: () => void; onDiscard: (s: Solicitud) => void; onDiscardAll: () => void }) {
   const { esAdmin } = useAuth()
   const c = grupo[0]
   const total = grupo.reduce((sum, s) => sum + Number(s.total), 0)
@@ -307,7 +320,7 @@ function GrupoCard({ grupo, busy, onConfirm, onDiscard }: { grupo: Solicitud[]; 
       <a href={whatsappUrl(c.cliente_whatsapp, mensaje)} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1.5 text-[11px] font-semibold hover:underline ${urgente ? 'text-red-300' : 'text-[#62eaa0]'}`}><MessageCircle size={13} /> Recordar por WhatsApp</a>
       <div className="ml-auto flex gap-2">
         {esAdmin
-          ? <button className="primary-button min-h-10 px-4" disabled={busy} onClick={onConfirm}>{busy ? 'Procesando…' : <><Check size={16} /> Confirmar pago ({grupo.length}) <ArrowRight size={14} /></>}</button>
+          ? <><button className="subtle-button min-h-10" disabled={busy} onClick={onDiscardAll}><Trash2 size={15} /> Descartar todo</button><button className="primary-button min-h-10 px-4" disabled={busy} onClick={onConfirm}>{busy ? 'Procesando…' : <><Check size={16} /> Confirmar pago ({grupo.length}) <ArrowRight size={14} /></>}</button></>
           : <span className="text-[11px] text-muted">El administrador confirma el pago.</span>}
       </div>
     </div>

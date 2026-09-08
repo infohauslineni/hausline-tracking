@@ -102,6 +102,13 @@ export async function descartarSolicitud(id: string) {
   if (error) throw error
 }
 
+// Descarta VARIOS encargos de una vez (todo el grupo de un cliente) en una sola llamada.
+export async function descartarSolicitudes(ids: string[]) {
+  if (!ids.length) return
+  const { error } = await requireSupabase().from('solicitudes').update({ estado: 'descartada' }).in('id', ids)
+  if (error) throw error
+}
+
 export async function eliminarSolicitud(id: string) {
   const { error } = await requireSupabase().from('solicitudes').delete().eq('id', id)
   if (error) throw error
