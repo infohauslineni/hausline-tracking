@@ -164,8 +164,13 @@ function ConfirmarModal({ grupo, busy, onClose, onConfirm }: { grupo: Solicitud[
   return <Modal open title="Confirmar pago" description={esGrupo ? `${c.cliente_nombre} · ${grupo.length} productos en un solo pedido` : `${c.codigo} · ${c.cliente_nombre} · ${c.producto}`} onClose={onClose}>
     {esGrupo && <div className="mb-4 max-h-44 overflow-y-auto rounded-xl border border-line bg-white/[0.02] p-1.5">{grupo.map((s) => <div key={s.id} className="flex items-center justify-between gap-3 px-2 py-1.5 text-xs"><span className="min-w-0 truncate"><span className="font-mono text-muted">{s.codigo}</span> · {s.producto}</span><strong className="shrink-0 font-mono">{usd(s.total)}</strong></div>)}</div>}
     <div className="flex items-center justify-between rounded-xl border border-line bg-white/[0.02] p-4 text-sm"><span className="text-muted">{esGrupo ? `Total del pedido (${grupo.length} productos)` : 'Total del pedido'}</span><span className="text-right">{descuento > 0 && <span className="mr-2 font-mono text-muted line-through">{usd(totalBruto)}</span>}<strong className="font-mono">{usd(total)}</strong></span></div>
-    <label className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-line bg-white/[0.02] p-3 text-sm">
-      <span className="text-muted">Descuento al total (USD)</span>
+    <p className="mt-4 text-xs font-semibold text-muted">Descuento al total</p>
+    <div className="mt-2 flex flex-wrap gap-2">
+      {[10, 15, 20, 25, 30].map((pct) => { const monto = Math.round(totalBruto * pct) / 100; const activo = descuento > 0 && Math.abs(descuento - monto) < 0.01; return <button key={pct} type="button" onClick={() => setDescuentoStr(monto.toFixed(2))} className={`rounded-xl border px-3.5 py-2 text-sm font-bold transition ${activo ? 'border-accent bg-accent/[0.1] text-accent' : 'border-line text-muted hover:border-accent/50'}`}>{pct}%</button> })}
+      <button type="button" onClick={() => setDescuentoStr('0')} className={`rounded-xl border px-3.5 py-2 text-sm font-semibold transition ${descuento <= 0 ? 'border-accent bg-accent/[0.1] text-accent' : 'border-line text-muted hover:border-accent/50'}`}>Sin descuento</button>
+    </div>
+    <label className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-line bg-white/[0.02] p-3 text-sm">
+      <span className="text-muted">O monto exacto (USD)</span>
       <input type="number" min="0" step="0.01" value={descuentoStr} onChange={(e) => setDescuentoStr(e.target.value)} className="simple-input w-28 text-right" placeholder="0.00" />
     </label>
     {descuento > 0 && <p className="mt-1.5 text-right text-[11px] font-semibold text-[#62eaa0]">Se aplica −{usd(descuento)} · nuevo total {usd(total)}</p>}
