@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { comprimirImagen, eliminarArchivo, listarArchivos, marcaParaTipo, marcarPrincipal, subirArchivo } from '../../services/archivos.service'
-import { avanzarADisponiblePorRecibido, avanzarAEmpaquetadoPorFoto } from '../../services/pedidos.service'
+import { avanzarADisponiblePorRecibido, avanzarAEmpaquetadoPorFoto, marcarQcEnviado } from '../../services/pedidos.service'
 import { ESTADOS_PEDIDO, etapaBase } from '../../constants/orders'
 import type { ArchivoPedido, EstadoPedido, Pedido, PedidoItem, TipoArchivo } from '../../types/domain'
 
@@ -23,6 +23,10 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], onQ
   // En pedidos de varios productos, la foto de control de calidad se puede etiquetar al
   // producto que le corresponde (para el seguimiento por producto). '' = todo el pedido.
   const [itemQC, setItemQC] = useState<string>('')
+  // Productos a los que YA se les enviaron las fotos de calidad en esta sesión (para el botón
+  // en gris). Se combina con item.qc_enviado_at (envíos de sesiones anteriores).
+  const [qcEnviados, setQcEnviados] = useState<Set<string>>(new Set())
+  const [enviandoQc, setEnviandoQc] = useState(false)
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [uploading, setUploading] = useState(false)
   const [confirmando, setConfirmando] = useState(false)
@@ -137,6 +141,21 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], onQ
   const actuales = archivos.filter((archivo) => archivo.tipo === categoria)
   const detalle = CATEGORIAS.find((item) => item.id === categoria)!
   const itemsPorId = new Map(items.filter((item) => item.id).map((item) => [item.id, item] as const))
+  // Botón "Enviar fotos de control de calidad" del producto seleccionado: aparece si hay un
+  // producto elegido y ya tiene fotos de calidad subidas. Queda en gris si ya se enviaron.
+  const productoQc = itemQC ? itemsPorId.get(itemQC) : undefined
+  const fotosDelProductoQc = itemQC ? archivos.filter((a) => a.tipo === 'control_calidad' && a.pedido_item_id === itemQC).length : 0
+  const qcYaEnviado = Boolean(itemQC && (qcEnviados.has(itemQC) || productoQc?.qc_enviado_at))
+  const enviarFotosQc = async () => {
+    if (!itemQC) return
+    setEnviandoQc(true)
+    try {
+      if (isSupabaseConfigured) await marcarQcEnviado(itemQC)
+      setQcEnviados((prev) => new Set(prev).add(itemQC))
+      toast.success('Fotos de control de calidad enviadas al cliente por correo.')
+    } catch { toast.error('No se pudieron enviar las fotos. Intentá de nuevo.') }
+    finally { setEnviandoQc(false) }
+  }
 
   // ¿La etapa de esta categoría ya fue enviada al cliente? (el pedido ya está en el estado
   // objetivo o más adelante). Sirve para poner el botón en gris una vez enviadas las fotos.
@@ -193,6 +212,10 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], onQ
 
     {(categoria === 'recibido_hausline' || categoria === 'empaque') && actuales.length > 0 && <button type="button" onClick={() => void confirmarEtapa()} disabled={confirmando || uploading || yaEnviado} className={yaEnviado ? 'mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-line bg-white/[0.04] px-5 py-2.5 text-sm font-semibold text-muted' : 'primary-button mt-4 w-full'}>
       {yaEnviado ? '✓ Fotos ya enviadas al cliente' : confirmando ? 'Avisando al cliente…' : categoria === 'recibido_hausline' ? '✅ Confirmar y enviar las fotos al cliente' : '📦 Confirmar empaquetado y avisar al cliente'}
+    </button>}
+
+    {categoria === 'control_calidad' && itemQC && fotosDelProductoQc > 0 && <button type="button" onClick={() => void enviarFotosQc()} disabled={enviandoQc || uploading} className={qcYaEnviado ? 'mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-line bg-white/[0.04] px-5 py-2.5 text-sm font-semibold text-muted' : 'primary-button mt-4 w-full'}>
+      {enviandoQc ? 'Enviando…' : qcYaEnviado ? `✓ Enviadas a ${productoQc?.producto ?? 'este producto'} · reenviar` : `📸 Enviar fotos de control de calidad al cliente (${productoQc?.producto ?? 'este producto'})`}
     </button>}
   </section>
 }

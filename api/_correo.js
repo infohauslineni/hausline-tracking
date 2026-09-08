@@ -833,8 +833,9 @@ export async function enviarCorreoPedido({ correo, nombre, codigo, estado, esNue
 // ── Correo POR PRODUCTO: actualización de UN producto dentro de un pedido de varios ──
 // Cuando un producto del pedido cambia de etapa (recibido / enviado / entregado), el cliente
 // recibe un correo sobre ESE producto. El de "recibido" lleva su foto de control de calidad.
-const ITEM_ESTADO_LABEL = { recibido: 'Producto recibido y revisado', enviado: 'Producto en camino', entregado: 'Producto entregado' }
+const ITEM_ESTADO_LABEL = { control_calidad: 'Control de calidad de tu producto', recibido: 'Producto recibido y revisado', enviado: 'Producto en camino', entregado: 'Producto entregado' }
 const ITEM_ESTADO_NOTA = {
+  control_calidad: (p) => `Tu producto <strong>${esc(p)}</strong> está pasando por <strong>control de calidad</strong> antes de despacharlo. Mirá las fotos reales de la revisión abajo.`,
   recibido: (p) => `¡Buenas noticias! Tu producto <strong>${esc(p)}</strong> ya llegó a HAUSLINE y pasó el <strong>control de calidad</strong>. Mirá las fotos de revisión abajo. Te avisaremos cuando esté disponible para entrega.`,
   enviado: (p) => `Tu producto <strong>${esc(p)}</strong> ya va en camino. Te avisamos apenas esté disponible para que lo recibás.`,
   entregado: (p) => `Tu producto <strong>${esc(p)}</strong> fue entregado. ¡Gracias por comprar en Hausline!`,

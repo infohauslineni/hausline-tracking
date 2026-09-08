@@ -233,6 +233,16 @@ export async function actualizarEstadoItem(itemId: string, estado: EstadoItem) {
   invalidateComercial()
 }
 
+// Marca que se enviaron al cliente las fotos de control de calidad de UN producto. El trigger
+// de Supabase (notificar_item_calidad) manda el correo con las fotos de ese producto. Devuelve
+// la marca de tiempo para poner el botón en gris. Reenviar = volver a llamar (otra hora).
+export async function marcarQcEnviado(itemId: string): Promise<string> {
+  const at = new Date().toISOString()
+  const { error } = await requireSupabase().from('pedido_items').update({ qc_enviado_at: at }).eq('id', itemId)
+  if (error) throw error
+  return at
+}
+
 export async function actualizarEstadoPedido(id: string, estado: EstadoPedido) {
   const client = requireSupabase()
   const { data, error } = await client

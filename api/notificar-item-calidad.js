@@ -1,13 +1,10 @@
 import { enviarCorreoItemEstado } from './_correo.js'
 
-// Aviso por correo POR PRODUCTO. Lo dispara el trigger de Supabase sobre pedido_items cuando
-// cambia `estado_item` (con el secreto NOTIFY_SECRET). Envía al cliente un correo sobre ESE
-// producto; el de "recibido" adjunta su foto de control de calidad.
-const ESTADOS_NOTIFICABLES = new Set(['recibido', 'enviado', 'entregado'])
-
+// Envía al cliente las fotos de CONTROL DE CALIDAD de UN producto. Lo dispara el trigger de
+// Supabase cuando el admin toca el botón "Enviar fotos de control de calidad" del producto
+// (que marca pedido_items.qc_enviado_at). Reusa el secreto NOTIFY_SECRET.
 function extPorMime(mime) { return mime === 'image/jpeg' ? 'jpg' : mime === 'image/png' ? 'png' : 'webp' }
 
-// Trae el pedido (código, correo y nombre del cliente) del ítem.
 async function obtenerContexto(pedidoId) {
   const base = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -24,7 +21,6 @@ async function obtenerContexto(pedidoId) {
   } catch { return null }
 }
 
-// Trae y descarga las fotos de control de calidad visibles de UN producto (por pedido_item_id).
 async function fotosCalidadItem(codigo, pedidoItemId) {
   const base = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -45,7 +41,7 @@ async function fotosCalidadItem(codigo, pedidoItemId) {
       if (!res.ok) continue
       const content = Buffer.from(await res.arrayBuffer())
       fotos.push({ cid: `calidad-${i + 1}@hausline`, filename: `${codigo} - Control de calidad ${i + 1}.${extPorMime(a.mime_type)}`, content, contentType: a.mime_type || 'image/webp' })
-    } catch { /* omitir foto */ }
+    } catch { /* omitir */ }
   }
   return fotos
 }
@@ -58,25 +54,20 @@ export default async function handler(request, response) {
 
   const body = typeof request.body === 'string' ? JSON.parse(request.body || '{}') : (request.body ?? {})
   const record = body.record ?? {}
-  const old = body.old_record ?? {}
-
   if (body.table !== 'pedido_items' || body.type !== 'UPDATE') return response.status(200).json({ ok: true, skipped: 'no aplica' })
-  const estado = record.estado_item
-  if (!ESTADOS_NOTIFICABLES.has(estado)) return response.status(200).json({ ok: true, skipped: 'estado no notificable' })
-  if (old.estado_item === estado) return response.status(200).json({ ok: true, skipped: 'sin cambio' })
+  if (!record.qc_enviado_at) return response.status(200).json({ ok: true, skipped: 'sin marca de envío' })
 
   const ctx = await obtenerContexto(record.pedido_id)
   if (!ctx || !ctx.correo) return response.status(200).json({ ok: true, skipped: 'sin contexto o correo' })
 
-  // Las fotos de control de calidad se envían aparte, con el botón manual por producto
-  // (ver notificar-item-calidad). Este correo de ETAPA va solo con el texto del avance.
-  const fotos = []
+  const fotos = await fotosCalidadItem(ctx.codigo, record.id)
+  if (!fotos.length) return response.status(200).json({ ok: true, skipped: 'producto sin fotos de calidad' })
 
   try {
-    await enviarCorreoItemEstado({ correo: ctx.correo, nombre: ctx.nombre, codigo: ctx.codigo, producto: record.producto || 'Tu producto', estadoItem: estado, fotos })
+    await enviarCorreoItemEstado({ correo: ctx.correo, nombre: ctx.nombre, codigo: ctx.codigo, producto: record.producto || 'Tu producto', estadoItem: 'control_calidad', fotos })
   } catch (sendError) {
-    console.error('notificar-item: no se pudo enviar', sendError?.message)
+    console.error('notificar-item-calidad: no se pudo enviar', sendError?.message)
     return response.status(502).json({ ok: false, error: 'No se pudo enviar el correo' })
   }
-  return response.status(200).json({ ok: true, sent: ctx.correo, producto: record.producto, estado, fotos: fotos.length })
+  return response.status(200).json({ ok: true, sent: ctx.correo, producto: record.producto, fotos: fotos.length })
 }

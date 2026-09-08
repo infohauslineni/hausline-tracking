@@ -37,6 +37,7 @@ export type PedidoItem = {
   costo_delivery?: number
   otros_gastos?: number
   estado_item?: EstadoItem
+  qc_enviado_at?: string | null
 }
 
 // Etapa de UN producto dentro del pedido (para pedidos de varios productos que llegan/envían
