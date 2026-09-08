@@ -6,7 +6,6 @@ import { useFieldArray, useForm, useWatch } from 'react-hook-form'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { CuentaSelect, type DestinoPago } from '../../components/finanzas/CuentaSelect'
 import { IngresoEnCuenta, INGRESO_VACIO, type Ingreso } from '../../components/finanzas/IngresoEnCuenta'
 import { FacturaModal } from '../../components/pedidos/FacturaModal'
 import { ESTADOS_PEDIDO } from '../../constants/orders'
@@ -52,7 +51,6 @@ export function NuevoPedidoPage() {
   const [quick, setQuick] = useState({ nombre: '', whatsapp: '', correo: '', departamento: '' })
   const [factura, setFactura] = useState<FacturaData | null>(null)
   const [tipoCambio, setTipoCambio] = useState(37)
-  const [cuentaProveedor, setCuentaProveedor] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
   // Abono inicial: la cuenta manda la moneda (córdobas o dólares). El monto en dólares (para
   // el saldo del pedido) se calcula solo y se refleja en el campo `abono` del formulario.
   const [ingresoAbono, setIngresoAbono] = useState<Ingreso>(INGRESO_VACIO)
@@ -153,10 +151,8 @@ export function NuevoPedidoPage() {
     try {
       const normalizedItems = values.items.map((item, index) => ({ ...item, producto: item.producto || item.codigo_producto, cantidad: 1, color: (item.color ?? '').trim(), envio_internacional: 0, costo_delivery: 0, otros_gastos: 0, notas: '', imagen: productos.find((product) => product.id === item.producto_id)?.imagen ?? (index === 0 ? prefill?.imagen ?? null : null) }))
       if (!isSupabaseConfigured) { toast.success('Pedido validado en la vista previa.'); navigate('/pedidos'); return }
-      if (!prefill && costo > 0 && !cuentaProveedor.cuentaId) return toast.error('Elegí de qué cuenta pagaste al proveedor.')
       if (values.abono > 0 && !ingresoAbono.cuentaId) return toast.error('Elegí a qué cuenta entró el abono.')
       const created = await crearPedido({ cliente_id: values.cliente_id, estado: values.estado as EstadoPedido, fecha_pedido: values.fecha_pedido, fecha_estimada: values.fecha_estimada || null, abono: values.abono, metodo_pago: values.metodo_pago || null, notas_internas: values.notas_internas || null, notas_publicas: values.notas_publicas || null, envio_rapido: values.envio_rapido, descuento, cupon_id: cuponAplicado?.id ?? null, cupon_codigo: cuponAplicado?.codigo ?? null, items: normalizedItems }, {
-        proveedor: !prefill && costo > 0 ? cuentaProveedor : undefined,
         abono: values.abono > 0 ? { cuentaId: ingresoAbono.cuentaId, montoCuenta: ingresoAbono.montoCuenta } : undefined,
       }, prefill ? { desdeInversion: prefill.inversionId } : undefined)
       // El cupón solo se "quema" si el cliente pagó (hubo abono). Si no transfirió, sigue vivo.
@@ -208,7 +204,7 @@ export function NuevoPedidoPage() {
               </div>}
         </div>
 
-        <div className="mt-3 grid gap-3 rounded-xl border border-line bg-white/[0.025] p-4 sm:grid-cols-3 lg:grid-cols-6"><Money label="Venta" value={total} /><Money label="Descuento" value={descuento} /><Money label="Costo" value={costo} /><Money label="Ganancia" value={totalConDescuento - costo} accent /><Money label="Abono" value={abono} /><Money label="Saldo" value={totalConDescuento - abono} /></div><div className="mt-3 grid gap-3 rounded-xl border border-line bg-white/[.02] p-4">{costo > 0 && !prefill && <CuentaSelect requerido proposito="comprar" montoUsd={costo} tipoCambio={tipoCambio} value={cuentaProveedor} onChange={setCuentaProveedor} modo="resta" label="¿De qué cuenta pagaste al proveedor?" />}{prefill && <p className="text-[11px] leading-5 text-muted">El costo (US$ {costo.toFixed(2)}) ya salió de caja cuando trajiste el producto para stock; no se descuenta de nuevo.</p>}<IngresoEnCuenta tipoCambio={tipoCambio} value={ingresoAbono} onChange={setIngresoAbono} label="Abono inicial (dejá el monto en 0 si aún no ha pagado)" /></div>{envioRapido && <p className="mt-2 text-[11px] text-muted">La venta incluye US$15 de envío rápido (14–17 días).</p>}</section>
+        <div className="mt-3 grid gap-3 rounded-xl border border-line bg-white/[0.025] p-4 sm:grid-cols-3 lg:grid-cols-6"><Money label="Venta" value={total} /><Money label="Descuento" value={descuento} /><Money label="Costo" value={costo} /><Money label="Ganancia" value={totalConDescuento - costo} accent /><Money label="Abono" value={abono} /><Money label="Saldo" value={totalConDescuento - abono} /></div><div className="mt-3 grid gap-3 rounded-xl border border-line bg-white/[.02] p-4">{costo > 0 && !prefill && <p className="text-[11px] leading-5 text-muted">El pago al proveedor (US$ {costo.toFixed(2)}) se descuenta de la cuenta cuando pases el pedido a <strong className="text-white">En preparación</strong> — ahí eliges de qué cuenta salió. Aquí solo lo registras como costo del pedido.</p>}{prefill && <p className="text-[11px] leading-5 text-muted">El costo (US$ {costo.toFixed(2)}) ya salió de caja cuando trajiste el producto para stock; no se descuenta de nuevo.</p>}<IngresoEnCuenta tipoCambio={tipoCambio} value={ingresoAbono} onChange={setIngresoAbono} label="Abono inicial (dejá el monto en 0 si aún no ha pagado)" /></div>{envioRapido && <p className="mt-2 text-[11px] text-muted">La venta incluye US$15 de envío rápido (14–17 días).</p>}</section>
       <div className="sticky bottom-3 z-10 flex items-center justify-between gap-3 rounded-2xl border border-line bg-[#121512]/95 p-3 shadow-2xl backdrop-blur-xl"><div className="hidden items-center gap-2 text-xs text-muted sm:flex"><CircleDollarSign size={17} className="text-accent" /> Total: <strong className="text-white">${totalConDescuento.toFixed(2)}</strong>{descuento > 0 && <span className="text-[10px] text-muted">(−${descuento.toFixed(2)})</span>}</div><button type="button" className="subtle-button px-5" onClick={() => navigate('/pedidos')}>Cancelar</button><button disabled={isSubmitting} className="primary-button flex-1 px-6 sm:flex-none"><Save size={17} /> {isSubmitting ? 'Guardando…' : 'Guardar pedido'}</button></div>
     </form>
     <FacturaModal factura={factura} onClose={() => { setFactura(null); navigate('/pedidos') }} />

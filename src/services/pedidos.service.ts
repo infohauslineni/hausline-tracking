@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase'
 import { notaPublicaEstado, type MotivoCancelacion } from '../constants/orders'
-import type { EstadoPedido, Pedido, PedidoItem } from '../types/domain'
+import type { EstadoPedido, Moneda, Pedido, PedidoItem } from '../types/domain'
 import { cachedQuery, invalidateCache, invalidateComercial } from '../utils/queryCache'
 import { etiquetaCargoBodega } from '../utils/bodega'
 import { ajustarSaldoCuenta } from './cuentas.service'
@@ -600,4 +600,79 @@ async function ajustarCostoProveedor(client: NonNullable<typeof supabase>, pedid
   if (expenseError) throw expenseError
   const { error: movError } = await client.from('movimientos_cuenta').insert({ fecha: `${pedido.fecha_pedido}T12:00:00`, tipo: 'pago_proveedor', descripcion: `Pago a proveedor · ${pedido.codigo}`, monto: nuevoCosto, metodo: pedido.metodo_pago || null, pedido_id: pedidoId, gasto_id: expense.id })
   if (movError) throw movError
+}
+
+// Registra (o ajusta) el pago al proveedor de un pedido y lo DESCUENTA de la cuenta
+// elegida. Se usa desde el detalle del pedido al pasarlo a "En preparación": ese es el
+// momento real en que se le compra al proveedor. Es idempotente respecto a la caja: si ya
+// había un pago a proveedor descontado de alguna cuenta, primero le devuelve ese monto a su
+// cuenta y luego aplica el nuevo, así nunca se descuenta dos veces. Mantiene un solo gasto
+// "Proveedor" y un solo movimiento de caja por pedido (el costo real no se duplica).
+export type PagoProveedorInput = { monto: number; moneda?: Moneda; montoOriginal?: number | null; tipoCambio?: number | null; metodo?: string | null }
+export async function pagarProveedorPedido(pedidoId: string, input: PagoProveedorInput, destino: { cuentaId: string | null; montoCuenta: number }) {
+  const client = requireSupabase()
+  const nuevoCosto = Math.round(Math.max(0, Number(input.monto)) * 100) / 100
+  const cuentaId = destino.cuentaId || null
+  // El pago al proveedor SALE de la cuenta: delta negativo.
+  const deltaCuenta = cuentaId ? -Math.abs(Number(destino.montoCuenta ?? nuevoCosto)) : null
+  const moneda: Moneda = input.moneda ?? 'USD'
+  const montoOriginal = input.montoOriginal ?? nuevoCosto
+  const tipoCambio = moneda === 'NIO' ? (input.tipoCambio ?? null) : null
+
+  const { data: pedido, error: pedidoError } = await client.from('pedidos').select('codigo, fecha_pedido, metodo_pago').eq('id', pedidoId).single()
+  if (pedidoError) throw pedidoError
+  const metodo = input.metodo ?? pedido.metodo_pago ?? null
+
+  // Aprende el costo del producto si el pedido tiene un solo producto sin costo en el
+  // catálogo (mismo criterio que en los demás flujos de proveedor).
+  if (nuevoCosto > 0) {
+    const { data: itemsPedido } = await client.from('pedido_items').select('producto_id, codigo_producto, cantidad, notas').eq('pedido_id', pedidoId)
+    const productos = itemsProducto(itemsPedido ?? [])
+    const distintos = new Set(productos.map((it) => it.producto_id || (it.codigo_producto ?? '').trim().toUpperCase()))
+    if (productos.length && distintos.size === 1) {
+      const cantidad = productos.reduce((sum, it) => sum + Number(it.cantidad || 1), 0) || 1
+      await aprenderCostoProducto(client, productos[0], nuevoCosto / cantidad)
+    }
+  }
+
+  // Devuelve a su cuenta cualquier descuento de proveedor previo antes de aplicar el nuevo,
+  // para no descontar dos veces si ya se había registrado (p. ej. al crear el pedido).
+  const { data: movsPrevios } = await client.from('movimientos_cuenta').select('cuenta_id, monto_cuenta').eq('pedido_id', pedidoId).eq('tipo', 'pago_proveedor')
+  for (const mov of movsPrevios ?? []) {
+    if (mov.cuenta_id && mov.monto_cuenta) await ajustarSaldoCuenta(mov.cuenta_id, -Number(mov.monto_cuenta))
+  }
+
+  const { data: gasto, error: gastoError } = await client.from('gastos').select('id').eq('pedido_id', pedidoId).ilike('categoria', '%proveedor%').maybeSingle()
+  if (gastoError) throw gastoError
+
+  // Sin costo: quita por completo el pago a proveedor (gasto + movimiento).
+  if (nuevoCosto <= 0) {
+    if (gasto) { await client.from('movimientos_cuenta').delete().eq('gasto_id', gasto.id); await client.from('gastos').delete().eq('id', gasto.id) }
+    invalidateComercial()
+    return
+  }
+
+  let gastoId: string
+  if (gasto) {
+    const { error } = await client.from('gastos').update({ categoria: 'Proveedor', monto: nuevoCosto, moneda, monto_original: montoOriginal, tipo_cambio: tipoCambio, metodo_pago: metodo }).eq('id', gasto.id)
+    if (error) throw error
+    gastoId = gasto.id
+  } else {
+    const { data: expense, error } = await client.from('gastos').insert({ fecha: pedido.fecha_pedido, categoria: 'Proveedor', monto: nuevoCosto, moneda, monto_original: montoOriginal, tipo_cambio: tipoCambio, metodo_pago: metodo, pedido_id: pedidoId, descripcion: `Pago a proveedor · ${pedido.codigo}`, observaciones: 'Registrado al pasar a En preparación' }).select('id').single()
+    if (error) throw error
+    gastoId = expense.id
+  }
+
+  const camposMov = { tipo: 'pago_proveedor', descripcion: `Pago a proveedor · ${pedido.codigo}`, monto: nuevoCosto, moneda, monto_original: montoOriginal, tipo_cambio: tipoCambio, metodo, cuenta_id: cuentaId, monto_cuenta: deltaCuenta, pedido_id: pedidoId }
+  const { data: mov } = await client.from('movimientos_cuenta').select('id').eq('gasto_id', gastoId).maybeSingle()
+  if (mov) {
+    const { error } = await client.from('movimientos_cuenta').update(camposMov).eq('id', mov.id)
+    if (error) throw error
+  } else {
+    const { error } = await client.from('movimientos_cuenta').insert({ fecha: `${pedido.fecha_pedido}T12:00:00`, gasto_id: gastoId, ...camposMov })
+    if (error) throw error
+  }
+
+  if (deltaCuenta) await ajustarSaldoCuenta(cuentaId!, deltaCuenta)
+  invalidateComercial()
 }

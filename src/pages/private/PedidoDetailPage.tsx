@@ -14,7 +14,7 @@ import { ESTADOS_PEDIDO, estadoLabel, etapaBase, mensajeWhatsAppEstado, mensajeW
 import { CancelarPedidoModal } from '../../components/pedidos/CancelarPedidoModal'
 import { DEMO_PEDIDOS } from '../../data/demo'
 import { isSupabaseConfigured } from '../../lib/supabase'
-import { actualizarEstadoPedido, actualizarPedidoCompleto, agregarEnvioPedido, cobrarPedido, obtenerDisponibleDesde, obtenerPedido, pasarPedidoAStock } from '../../services/pedidos.service'
+import { actualizarEstadoPedido, actualizarPedidoCompleto, agregarEnvioPedido, cobrarPedido, obtenerDisponibleDesde, obtenerPedido, pagarProveedorPedido, pasarPedidoAStock, type PagoProveedorInput } from '../../services/pedidos.service'
 import { useAuth } from '../../contexts/AuthContext'
 import type { FacturaData } from '../../services/factura.service'
 import { obtenerTipoCambio, registrarGasto } from '../../services/comercial.service'
@@ -69,6 +69,7 @@ export function PedidoDetailPage() {
   const [verFactura, setVerFactura] = useState<FacturaData | null>(null)
   const [historiaOpen, setHistoriaOpen] = useState(false)
   const [gastoOpen, setGastoOpen] = useState(false)
+  const [proveedorOpen, setProveedorOpen] = useState(false)
   useEffect(() => { if (isSupabaseConfigured) void obtenerPedido(id).then(setPedido).catch(() => toast.error('No se pudo cargar el pedido.')).finally(() => setLoading(false)) }, [id])
   useEffect(() => { if (isSupabaseConfigured) void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined) }, [])
   useEffect(() => { if (pedido) setEstadoSeleccionado(pedido.estado) }, [pedido])
@@ -103,6 +104,10 @@ export function PedidoDetailPage() {
         setCobrarDestino(estadoSeleccionado); setCobrarBodega(c > 0); const totalUsd = Math.max(0, saldoPend + c); setIngresoCobro({ cuentaId: null, moneda: 'USD', montoUsd: totalUsd, montoCuenta: totalUsd }); setComprobante(null); setPaymentOpen(true); return
       }
     }
+    // "En preparación" es cuando se le compra al proveedor: el administrador registra cuánto
+    // costó y de qué cuenta sale, para que se descuente de la caja. El operador solo mueve la
+    // etapa (no ve ni registra finanzas).
+    if (esAdmin && estadoSeleccionado === 'en_preparacion') { setProveedorOpen(true); return }
     setSavingStatus(true)
     try {
       const updated = isSupabaseConfigured ? await actualizarEstadoPedido(pedido.id, estadoSeleccionado) : { ...pedido, estado: estadoSeleccionado, updated_at: new Date().toISOString() }
@@ -163,6 +168,23 @@ export function PedidoDetailPage() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo agregar el envío.')
     } finally { setSavingStatus(false) }
+  }
+  // Tras registrar (u omitir) el pago al proveedor, avanza el pedido a "En preparación" y
+  // refresca para que se vean el nuevo gasto y el costo real actualizados.
+  const finalizarEnPreparacion = async () => {
+    setProveedorOpen(false)
+    setSavingStatus(true)
+    try {
+      if (isSupabaseConfigured) {
+        await actualizarEstadoPedido(pedido.id, 'en_preparacion')
+        const refreshed = await obtenerPedido(pedido.id)
+        setPedido(refreshed)
+      } else {
+        setPedido((current) => current ? { ...current, estado: 'en_preparacion', updated_at: new Date().toISOString() } : current)
+      }
+      toast.success('Etapa actualizada a En preparación.')
+    } catch { toast.error('No se pudo actualizar la etapa.') }
+    finally { setSavingStatus(false) }
   }
   const pasarAStock = async () => {
     if (!window.confirm(`¿Pasar los productos de ${pedido.codigo} al inventario / stock? Quedarán disponibles para venta directa.`)) return
@@ -240,6 +262,7 @@ export function PedidoDetailPage() {
     <FacturaModal factura={verFactura} onClose={() => setVerFactura(null)} title={verFactura?.variante === 'pago' ? 'Comprobante de pago' : 'Factura del pedido'} description="Descárgala en PDF o reenvíala al cliente por WhatsApp." codeLabel="Código del pedido" note="Es la misma factura/comprobante que recibe el cliente por correo, con el detalle y los totales del pedido." closeLabel="Cerrar" />
     {historiaOpen && <HistoriaModal pedido={pedido} open onClose={() => setHistoriaOpen(false)} />}
     <GastoEnvioModal pedido={pedido} tipoCambio={tipoCambio} open={gastoOpen} onClose={() => setGastoOpen(false)} onSaved={async () => { setGastoOpen(false); if (isSupabaseConfigured) { try { const refreshed = await obtenerPedido(pedido.id); setPedido(refreshed) } catch { /* la lista se refresca al recargar */ } } }} />
+    <ProveedorPagoModal pedido={pedido} tipoCambio={tipoCambio} montoSugerido={Number(pedido.gastos?.find((g) => (g.categoria ?? '').toLowerCase().includes('proveedor'))?.monto ?? 0) || costoReal} open={proveedorOpen} onClose={() => setProveedorOpen(false)} onConfirmado={() => void finalizarEnPreparacion()} onOmitir={() => void finalizarEnPreparacion()} />
   </div>
 }
 // Zona de carga del comprobante de la transferencia. Antes era un <input type="file"> gris
@@ -323,6 +346,42 @@ function GastoEnvioModal({ pedido, tipoCambio, open, onClose, onSaved }: { pedid
       <CuentaSelect requerido montoUsd={montoUsd} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" />
       <div className="col-span-full flex justify-end gap-2"><button type="button" className="subtle-button" onClick={onClose}>Cancelar</button><button className="primary-button px-5" disabled={saving}>{saving ? 'Guardando…' : 'Agregar costo'}</button></div>
     </form>
+  </Modal>
+}
+// Modal que salta al pasar el pedido a "En preparación": el administrador registra cuánto
+// le pagó al proveedor. El monto se descuenta de la cuenta elegida y queda como costo real
+// del pedido (usa pagarProveedorPedido, que evita descontar dos veces si ya se había
+// registrado). "Solo cambiar etapa" avanza sin tocar la caja (si ya se pagó, o se paga luego).
+function ProveedorPagoModal({ pedido, tipoCambio, montoSugerido, open, onClose, onConfirmado, onOmitir }: { pedido: Pedido; tipoCambio: number; montoSugerido: number; open: boolean; onClose: () => void; onConfirmado: () => void; onOmitir: () => void }) {
+  const [moneda, setMoneda] = useState<Moneda>('USD')
+  const [monto, setMonto] = useState(0)
+  const [metodo, setMetodo] = useState('Transferencia')
+  const [destino, setDestino] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
+  const [saving, setSaving] = useState(false)
+  useEffect(() => { if (open) { setMoneda('USD'); setMonto(Math.round(Math.max(0, montoSugerido) * 100) / 100); setMetodo(pedido.metodo_pago || 'Transferencia'); setDestino({ cuentaId: null, montoCuenta: 0 }) } }, [open, montoSugerido, pedido.metodo_pago])
+  const montoUsd = aUsd(monto, moneda, tipoCambio)
+  const guardar = async () => {
+    if (montoUsd <= 0) return toast.error('Indica cuánto le pagaste al proveedor, o toca "Solo cambiar etapa".')
+    if (!destino.cuentaId) return toast.error('Elegí de qué cuenta salió el pago.')
+    setSaving(true)
+    try {
+      const input: PagoProveedorInput = { monto: montoUsd, moneda, montoOriginal: monto, tipoCambio, metodo }
+      if (isSupabaseConfigured) await pagarProveedorPedido(pedido.id, input, destino)
+      toast.success('Pago al proveedor registrado y descontado de la cuenta.')
+      onConfirmado()
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'No se pudo registrar el pago al proveedor.') }
+    finally { setSaving(false) }
+  }
+  return <Modal open={open} onClose={onClose} title={`Pago al proveedor · ${pedido.codigo}`} description="¿Cuánto le pagaste al proveedor? Se descuenta de la cuenta que elijas y queda como costo del pedido. Luego el pedido pasa a En preparación.">
+    <div className="form-grid">
+      <MoneyField label="Costo pagado al proveedor" moneda={moneda} montoOriginal={monto} tipoCambio={tipoCambio} onMoneda={setMoneda} onMonto={setMonto} autoFocus />
+      <label className="form-field"><span>Método</span><input value={metodo} onChange={(e) => setMetodo(e.target.value)} /></label>
+      <CuentaSelect requerido montoUsd={montoUsd} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" proposito="comprar" />
+      <div className="col-span-full flex flex-col-reverse gap-2 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <button type="button" className="subtle-button" disabled={saving} onClick={onOmitir}>Solo cambiar etapa (sin pago)</button>
+        <div className="flex justify-end gap-2"><button type="button" className="subtle-button" disabled={saving} onClick={onClose}>Cancelar</button><button type="button" className="primary-button px-5" disabled={saving} onClick={() => void guardar()}>{saving ? 'Guardando…' : 'Registrar pago y continuar'}</button></div>
+      </div>
+    </div>
   </Modal>
 }
 // Panel para pedidos cancelados: si el paquete apareció después, deja avisarle al cliente
