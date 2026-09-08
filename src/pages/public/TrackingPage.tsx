@@ -194,11 +194,47 @@ function Confetti() {
   return <span aria-hidden className="pointer-events-none absolute inset-0 overflow-visible">{Array.from({ length: 10 }).map((_, index) => <span key={index} className="confetti-piece" style={{ left: `${8 + index * 9}%`, background: colors[index % colors.length], animationDelay: `${(index % 5) * 0.09}s` }} />)}</span>
 }
 
+// Etiqueta y color de la etapa de cada producto, tal como la ve el cliente.
+const ITEM_LABEL: Record<string, string> = { pendiente: 'Por llegar', recibido: 'Recibido', enviado: 'Enviado', entregado: 'Entregado' }
+const ITEM_TONE: Record<string, string> = { pendiente: '#8c948f', recibido: '#c4b5fd', enviado: '#7dd3fc', entregado: '#34d399' }
 function Products({ order }: { order: PublicOrder }) {
   // Foto del producto: se usa la del catálogo (product.imagen, resuelta a URL absoluta
   // con resolverImagenCatalogo) y, como respaldo, las fotos del producto subidas al pedido.
   const fotos = (order.imagenes ?? []).filter((image) => image.tipo === 'producto' && image.url).map((image) => image.url as string)
-  return <section className="public-card"><h2 className="flex items-center gap-2 text-sm font-semibold"><Package size={17} className="text-accent" /> Tu pedido</h2><div className="mt-4 divide-y divide-line">{order.productos.map((product, index) => { const foto = resolverImagenCatalogo(product.imagen) || fotos[index] || fotos[0]; return <div className="flex items-center gap-3 py-4" key={`${product.producto}-${index}`}><span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/[0.04] text-muted">{foto ? <img src={foto} alt="" className="size-full object-cover" /> : <Package size={19} />}</span><div className="min-w-0 flex-1"><strong className="block truncate text-sm">{product.producto}</strong><span className="mt-1 block text-xs text-muted">{[product.marca, product.talla, product.color].filter(Boolean).join(' · ') || 'Producto confirmado'}</span>{product.codigo && <span className="mt-0.5 block font-mono text-[11px] text-accent">Cód. {product.codigo}</span>}</div><span className="text-xs font-semibold">×{product.cantidad}</span></div> })}</div></section> }
+  // Foto de control de calidad por producto (para el seguimiento por producto).
+  const qcPorItem = new Map<string, string>()
+  for (const img of order.imagenes ?? []) { if (img.tipo === 'control_calidad' && img.url && img.pedido_item_id && !qcPorItem.has(img.pedido_item_id)) qcPorItem.set(img.pedido_item_id, img.url) }
+  const productos = order.productos ?? []
+  // El avance por producto solo se muestra si hay varios productos y ya hay progreso real
+  // (alguno dejó de estar "por llegar"), para no confundir en pedidos de un solo producto.
+  const conEtapa = productos.length > 1 && productos.some((p) => (p.estado_item ?? 'pendiente') !== 'pendiente')
+  const listos = productos.filter((p) => (p.estado_item ?? 'pendiente') !== 'pendiente').length
+  const enviados = productos.filter((p) => p.estado_item === 'enviado' || p.estado_item === 'entregado').length
+  const pct = productos.length ? Math.round((listos / productos.length) * 100) : 0
+  return <section className="public-card">
+    <h2 className="flex items-center gap-2 text-sm font-semibold"><Package size={17} className="text-accent" /> Tu pedido{productos.length > 1 ? ` · ${productos.length} productos` : ''}</h2>
+    {conEtapa && <div className="mt-3 rounded-xl border border-line bg-black/10 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs"><span className="font-semibold">Avance de tus productos</span><span className="text-muted">{listos} de {productos.length} listos{enviados > 0 ? ` · ${enviados} enviados` : ''}</span></div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: '#b7ff00' }} /></div>
+    </div>}
+    <div className="mt-4 divide-y divide-line">{productos.map((product, index) => {
+      const foto = resolverImagenCatalogo(product.imagen) || fotos[index] || fotos[0]
+      const qc = product.id ? qcPorItem.get(product.id) : undefined
+      const etapa = product.estado_item ?? 'pendiente'
+      return <div className="flex items-center gap-3 py-4" key={`${product.producto}-${index}`}>
+        <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/[0.04] text-muted">{foto ? <img src={foto} alt="" className="size-full object-cover" /> : <Package size={19} />}</span>
+        <div className="min-w-0 flex-1">
+          <strong className="block truncate text-sm">{product.producto}</strong>
+          <span className="mt-1 block text-xs text-muted">{[product.marca, product.talla, product.color].filter(Boolean).join(' · ') || 'Producto confirmado'}</span>
+          {product.codigo && <span className="mt-0.5 block font-mono text-[11px] text-accent">Cód. {product.codigo}</span>}
+          {conEtapa && <span className="mt-1 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ color: ITEM_TONE[etapa], background: `${ITEM_TONE[etapa]}1f` }}>{ITEM_LABEL[etapa]}</span>}
+        </div>
+        {qc && <button type="button" onClick={() => window.open(qc, '_blank', 'noopener,noreferrer')} className="size-12 shrink-0 overflow-hidden rounded-xl border border-line" title="Foto de control de calidad"><img src={qc} alt="Control de calidad" className="size-full object-cover" /></button>}
+        <span className="text-xs font-semibold">×{product.cantidad}</span>
+      </div>
+    })}</div>
+  </section>
+}
 // Todas las fotos del pedido que ve el cliente, en UNA sola tarjeta compacta (grid), cada
 // una con su etiqueta de etapa. Antes iban en tarjetas separadas apiladas (muy vertical en
 // desktop). El orden sigue el avance real: control de calidad → producto recibido → paquete.
