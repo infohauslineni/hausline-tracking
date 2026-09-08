@@ -72,15 +72,17 @@ export function SolicitudesPage() {
   // el pedido igual queda creado).
   // Confirma un GRUPO de encargos del mismo cliente (o uno solo) como un único pedido. Con
   // varios usa el RPC en lote (suma total + un solo abono); con uno mantiene el flujo simple.
-  const confirmar = async (grupo: Solicitud[], abono: number, comprobante: File | null, destino: DestinoPago) => {
+  const confirmar = async (grupo: Solicitud[], abono: number, comprobante: File | null, destino: DestinoPago, descuento: number) => {
     if (!grupo.length) return
     const c = grupo[0]
     setBusy(c.id)
     try {
       if (isSupabaseConfigured) {
-        const codigo = grupo.length === 1
+        // Con descuento (o con varios productos) usa el RPC en lote, que sabe aplicar el
+        // descuento al total; un solo encargo sin descuento mantiene el flujo simple.
+        const codigo = grupo.length === 1 && descuento <= 0
           ? await confirmarSolicitud(c.id, abono, destino.cuentaId, destino.montoCuenta)
-          : await confirmarSolicitudesGrupo(grupo.map((g) => g.id), abono, destino.cuentaId, destino.montoCuenta)
+          : await confirmarSolicitudesGrupo(grupo.map((g) => g.id), abono, destino.cuentaId, destino.montoCuenta, descuento)
         if (comprobante) {
           try { await archivarComprobanteDrive(codigo, comprobante) }
           catch { toast.error('El pedido se creó, pero no se pudo archivar el comprobante en Drive.') }
@@ -132,7 +134,7 @@ export function SolicitudesPage() {
         : <GrupoCard key={claveCliente(grupo[0])} grupo={grupo} busy={busy === grupo[0].id} onConfirm={() => setConfirmando(grupo)} onDiscard={(s) => void descartar(s)} />)}
     </div>}
 
-    {confirmando && <ConfirmarModal grupo={confirmando} busy={busy === confirmando[0].id} onClose={() => setConfirmando(null)} onConfirm={(abono, comprobante, destino) => void confirmar(confirmando, abono, comprobante, destino)} />}
+    {confirmando && <ConfirmarModal grupo={confirmando} busy={busy === confirmando[0].id} onClose={() => setConfirmando(null)} onConfirm={(abono, comprobante, destino, descuento) => void confirmar(confirmando, abono, comprobante, destino, descuento)} />}
 
     {vencidas.length > 0 && <div className="mt-8">
       <h2 className="flex items-center gap-2 text-sm font-semibold text-muted"><Trash2 size={15} /> Vencidas · nunca pagaron (no gastaron código)</h2>
@@ -144,21 +146,29 @@ export function SolicitudesPage() {
 // Modal para confirmar el pago indicando el MONTO REAL que pagó el cliente. Acepta un grupo:
 // con un solo encargo se comporta como antes; con varios muestra la lista de productos y usa
 // el total sumado (y el 50% del total del grupo).
-function ConfirmarModal({ grupo, busy, onClose, onConfirm }: { grupo: Solicitud[]; busy: boolean; onClose: () => void; onConfirm: (abono: number, comprobante: File | null, destino: DestinoPago) => void }) {
+function ConfirmarModal({ grupo, busy, onClose, onConfirm }: { grupo: Solicitud[]; busy: boolean; onClose: () => void; onConfirm: (abono: number, comprobante: File | null, destino: DestinoPago, descuento: number) => void }) {
   const esGrupo = grupo.length > 1
   const c = grupo[0]
-  const total = grupo.reduce((sum, s) => sum + Number(s.total), 0)
-  const mitad = Math.round(total * 50) / 100
-  const abonoSugerido = grupo.reduce((sum, s) => sum + (Number(s.abono) || 0), 0) || total
+  const totalBruto = grupo.reduce((sum, s) => sum + Number(s.total), 0)
   const tipoCambio = Number(c.tipo_cambio) || 37
-  const [monto, setMonto] = useState<string>(abonoSugerido.toFixed(2))
+  const [descuentoStr, setDescuentoStr] = useState('0')
+  const [monto, setMonto] = useState<string>((grupo.reduce((sum, s) => sum + (Number(s.abono) || 0), 0) || totalBruto).toFixed(2))
   const [comprobante, setComprobante] = useState<File | null>(null)
   const [destino, setDestino] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
+  // Descuento (USD) que el admin aplica al total antes de confirmar; acota a [0, total].
+  const descuento = Math.min(totalBruto, Math.max(0, Number(descuentoStr) || 0))
+  const total = Math.max(0, totalBruto - descuento)
+  const mitad = Math.round(total * 50) / 100
   const abono = Math.min(total, Math.max(0, Number(monto) || 0))
   const saldo = Math.max(0, total - abono)
   return <Modal open title="Confirmar pago" description={esGrupo ? `${c.cliente_nombre} · ${grupo.length} productos en un solo pedido` : `${c.codigo} · ${c.cliente_nombre} · ${c.producto}`} onClose={onClose}>
     {esGrupo && <div className="mb-4 max-h-44 overflow-y-auto rounded-xl border border-line bg-white/[0.02] p-1.5">{grupo.map((s) => <div key={s.id} className="flex items-center justify-between gap-3 px-2 py-1.5 text-xs"><span className="min-w-0 truncate"><span className="font-mono text-muted">{s.codigo}</span> · {s.producto}</span><strong className="shrink-0 font-mono">{usd(s.total)}</strong></div>)}</div>}
-    <div className="flex items-center justify-between rounded-xl border border-line bg-white/[0.02] p-4 text-sm"><span className="text-muted">{esGrupo ? `Total del pedido (${grupo.length} productos)` : 'Total del pedido'}</span><strong className="font-mono">{usd(total)}</strong></div>
+    <div className="flex items-center justify-between rounded-xl border border-line bg-white/[0.02] p-4 text-sm"><span className="text-muted">{esGrupo ? `Total del pedido (${grupo.length} productos)` : 'Total del pedido'}</span><span className="text-right">{descuento > 0 && <span className="mr-2 font-mono text-muted line-through">{usd(totalBruto)}</span>}<strong className="font-mono">{usd(total)}</strong></span></div>
+    <label className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-line bg-white/[0.02] p-3 text-sm">
+      <span className="text-muted">Descuento al total (USD)</span>
+      <input type="number" min="0" step="0.01" value={descuentoStr} onChange={(e) => setDescuentoStr(e.target.value)} className="simple-input w-28 text-right" placeholder="0.00" />
+    </label>
+    {descuento > 0 && <p className="mt-1.5 text-right text-[11px] font-semibold text-[#62eaa0]">Se aplica −{usd(descuento)} · nuevo total {usd(total)}</p>}
     <p className="mt-5 text-xs font-semibold text-muted">¿Cuánto pagó el cliente ahora?</p>
     <div className="mt-2 grid grid-cols-2 gap-2">
       <button type="button" onClick={() => setMonto(total.toFixed(2))} className={`rounded-xl border p-3 text-left transition ${Math.abs(abono - total) < 0.01 ? 'border-accent bg-accent/[0.07]' : 'border-line hover:border-line'}`}><strong className="block text-sm">Pagó todo</strong><span className="text-xs text-muted">{usd(total)}</span></button>
@@ -186,7 +196,7 @@ function ConfirmarModal({ grupo, busy, onClose, onConfirm }: { grupo: Solicitud[
 
     <div className="mt-6 flex justify-end gap-2">
       <button className="subtle-button" onClick={onClose}>Cancelar</button>
-      <button className="primary-button px-5" disabled={busy || (abono > 0 && !comprobante)} onClick={() => { if (abono > 0 && !comprobante) return toast.error('Subí la foto del comprobante para confirmar el encargo.'); onConfirm(abono, comprobante, destino) }}>{busy ? 'Creando…' : <><Check size={16} /> Confirmar y crear pedido</>}</button>
+      <button className="primary-button px-5" disabled={busy || (abono > 0 && !comprobante)} onClick={() => { if (abono > 0 && !comprobante) return toast.error('Subí la foto del comprobante para confirmar el encargo.'); onConfirm(abono, comprobante, destino, descuento) }}>{busy ? 'Creando…' : <><Check size={16} /> Confirmar y crear pedido</>}</button>
     </div>
   </Modal>
 }

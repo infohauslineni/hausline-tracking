@@ -84,12 +84,13 @@ export async function confirmarSolicitud(id: string, abono?: number, cuentaId?: 
 // Confirma VARIOS encargos del mismo cliente como UN solo pedido HS (todas las líneas, el
 // total sumado y un solo abono). Devuelve el código del pedido creado. Ver el RPC
 // confirmar_solicitudes_grupo (migración 202609070001).
-export async function confirmarSolicitudesGrupo(ids: string[], abono?: number, cuentaId?: string | null, montoCuenta?: number | null) {
+export async function confirmarSolicitudesGrupo(ids: string[], abono?: number, cuentaId?: string | null, montoCuenta?: number | null, descuento?: number) {
   const { data, error } = await requireSupabase().rpc('confirmar_solicitudes_grupo', {
     p_ids: ids,
     p_abono: abono ?? null,
     p_cuenta_id: cuentaId ?? null,
     p_monto_cuenta: montoCuenta ?? null,
+    p_descuento: descuento ?? null,
   })
   if (error) throw error
   invalidateComercial()
