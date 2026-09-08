@@ -38,11 +38,29 @@ function ding(ac: AudioContext, freq: number, t: number, vol: number) {
   }
 }
 
-// Alerta FUERTE y llamativa: tres dings brillantes ascendentes (insistente, tipo iPhone).
+// Blip corto y metálico (una "monedita"). Se usan varios seguidos para el brillo de dinero.
+function blip(ac: AudioContext, freq: number, t: number, vol: number, dur = 0.06) {
+  const now = ac.currentTime
+  const g = ac.createGain()
+  g.gain.setValueAtTime(0.0001, now + t)
+  g.gain.exponentialRampToValueAtTime(vol, now + t + 0.004)
+  g.gain.exponentialRampToValueAtTime(0.0001, now + t + dur)
+  g.connect(ac.destination)
+  const osc = ac.createOscillator()
+  osc.type = 'triangle'
+  osc.frequency.value = freq
+  osc.connect(g)
+  osc.start(now + t)
+  osc.stop(now + t + dur)
+}
+
+// Sonido de DINERO tipo caja registradora: "cha-CHING" (dos campanas brillantes) + un
+// brillo de moneditas cayendo. Suena una sola vez por encargo (ver PrivateLayout).
 export function playEncargoChime() {
   const ac = ensureCtx()
   if (!ac) return
-  ding(ac, 1046.5, 0, 0.55)     // C6
-  ding(ac, 1046.5, 0.15, 0.55)  // C6 (repite)
-  ding(ac, 1568, 0.32, 0.6)     // G6 (más agudo, remate)
+  ding(ac, 1318.5, 0, 0.5)      // E6  — "cha"
+  ding(ac, 1975.5, 0.09, 0.58)  // B6  — "ching"
+  const monedas = [2637, 3136, 2489, 2960, 3520, 2794]
+  monedas.forEach((f, i) => blip(ac, f, 0.2 + i * 0.045, 0.16, 0.06))
 }

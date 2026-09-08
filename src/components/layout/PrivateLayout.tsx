@@ -101,17 +101,27 @@ export function PrivateLayout() {
   useEffect(() => { if (!isSupabaseConfigured) return; let vivo = true; void calcularEstado().then((next) => { if (vivo) { setBadges(next.badges); setAlertas(next.alertas) } }).catch(() => undefined); return () => { vivo = false } }, [location.pathname])
   useEffect(() => { setBellOpen(false) }, [location.pathname])
 
-  // Aviso en vivo cuando cae un encargo nuevo desde la web: suena una campanita
-  // (tipo Shopify), sale un toast y se marca el contador de "Encargos web".
+  // Aviso en vivo cuando cae un encargo nuevo desde la web: suena el "cha-ching" de dinero,
+  // sale un toast y se marca el contador de "Encargos web". Un carrito de la web crea un
+  // encargo (solicitud) por producto, así que AGRUPAMOS los INSERT que llegan juntos: suena
+  // UNA sola vez por pedido (no 38 veces), diciendo cuántos productos trae.
   useEffect(() => {
     const client = supabase
     if (!isSupabaseConfigured || !client) return
-    const channel = client.channel('encargos-alerta').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'solicitudes' }, () => {
+    let pendientes = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const disparar = () => {
+      const n = pendientes; pendientes = 0
       playEncargoChime()
-      toast.success('🛍️ Nuevo encargo web — revisalo en "Encargos web".')
+      toast.success(n > 1 ? `🛍️ Nuevo encargo web con ${n} productos — revisalo en "Encargos web".` : '🛍️ Nuevo encargo web — revisalo en "Encargos web".')
       void calcularEstado().then((next) => { setBadges(next.badges); setAlertas(next.alertas) }).catch(() => undefined)
+    }
+    const channel = client.channel('encargos-alerta').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'solicitudes' }, () => {
+      pendientes += 1
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(disparar, 2500)
     }).subscribe()
-    return () => { void client.removeChannel(channel) }
+    return () => { if (timer) clearTimeout(timer); void client.removeChannel(channel) }
   }, [])
 
   const handleSignOut = async () => {

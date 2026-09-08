@@ -96,7 +96,7 @@ export function SolicitudesPage() {
       const ids = new Set(grupo.map((g) => g.id))
       setItems((all) => all.map((x) => ids.has(x.id) ? { ...x, estado: 'confirmada' } : x))
       setConfirmando(null)
-    } catch { toast.error('No se pudo confirmar el encargo.') } finally { setBusy(null) }
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'No se pudo confirmar el encargo.') } finally { setBusy(null) }
   }
   // Descarta TODO el grupo de un cliente de una sola vez (saca todos sus encargos de la bandeja).
   const descartarGrupo = async (grupo: Solicitud[]) => {
