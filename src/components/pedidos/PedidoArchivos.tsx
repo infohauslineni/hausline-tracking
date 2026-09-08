@@ -5,7 +5,7 @@ import { isSupabaseConfigured } from '../../lib/supabase'
 import { comprimirImagen, eliminarArchivo, listarArchivos, marcaParaTipo, marcarPrincipal, subirArchivo } from '../../services/archivos.service'
 import { avanzarADisponiblePorRecibido, avanzarAEmpaquetadoPorFoto } from '../../services/pedidos.service'
 import { ESTADOS_PEDIDO, etapaBase } from '../../constants/orders'
-import type { ArchivoPedido, EstadoPedido, Pedido, TipoArchivo } from '../../types/domain'
+import type { ArchivoPedido, EstadoPedido, Pedido, PedidoItem, TipoArchivo } from '../../types/domain'
 
 // Categorías visibles para subir fotos. "Recibido en HAUSLINE" mueve el pedido
 // automáticamente a "Disponible para entrega" y "Empaque para envío" a "Empaquetado,
@@ -16,10 +16,13 @@ const CATEGORIAS: { id: TipoArchivo; label: string; description: string }[] = [
   { id: 'empaque', label: 'Empaque para envío', description: 'Foto del paquete empacado · pasa el pedido a “Empaquetado, listo para envío” y avisa al cliente' },
 ]
 
-export function PedidoArchivos({ pedidoId, codigo, estadoPedido, onQualityReady, onEstadoAvanzado }: { pedidoId: string; codigo?: string; estadoPedido?: EstadoPedido; onQualityReady?: (ready: boolean) => void; onEstadoAvanzado?: (pedido: Pedido) => void }) {
+export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], onQualityReady, onEstadoAvanzado }: { pedidoId: string; codigo?: string; estadoPedido?: EstadoPedido; items?: PedidoItem[]; onQualityReady?: (ready: boolean) => void; onEstadoAvanzado?: (pedido: Pedido) => void }) {
   const [categoria, setCategoria] = useState<TipoArchivo>('control_calidad')
   const [archivos, setArchivos] = useState<ArchivoPedido[]>([])
   const [visibleCliente, setVisibleCliente] = useState(true)
+  // En pedidos de varios productos, la foto de control de calidad se puede etiquetar al
+  // producto que le corresponde (para el seguimiento por producto). '' = todo el pedido.
+  const [itemQC, setItemQC] = useState<string>('')
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [uploading, setUploading] = useState(false)
   const [confirmando, setConfirmando] = useState(false)
@@ -52,7 +55,7 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, onQualityReady,
     try {
       for (const file of imagenes) {
         if (isSupabaseConfigured) {
-          const nuevo = await subirArchivo(pedidoId, categoria, file, visibleCliente, codigo)
+          const nuevo = await subirArchivo(pedidoId, categoria, file, visibleCliente, codigo, categoria === 'control_calidad' ? (itemQC || null) : null)
           setArchivos((current) => [...current, nuevo])
         } else {
           const blob = await comprimirImagen(file, marcaParaTipo(categoria, codigo))
@@ -133,6 +136,7 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, onQualityReady,
 
   const actuales = archivos.filter((archivo) => archivo.tipo === categoria)
   const detalle = CATEGORIAS.find((item) => item.id === categoria)!
+  const itemsPorId = new Map(items.filter((item) => item.id).map((item) => [item.id, item] as const))
 
   // ¿La etapa de esta categoría ya fue enviada al cliente? (el pedido ya está en el estado
   // objetivo o más adelante). Sirve para poner el botón en gris una vez enviadas las fotos.
@@ -159,6 +163,13 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, onQualityReady,
       </label>
     </div>
 
+    {categoria === 'control_calidad' && items.length > 1 && <label className="mt-3 flex flex-col gap-1 text-xs">
+      <span className="font-semibold text-muted">¿De cuál producto es esta foto? <span className="font-normal">(para el seguimiento por producto)</span></span>
+      <select value={itemQC} onChange={(event) => setItemQC(event.target.value)} className="rounded-lg border border-line bg-white/[0.02] px-2.5 py-2 text-sm">
+        <option value="">Todo el pedido (sin producto específico)</option>
+        {items.filter((item) => item.id).map((item) => <option key={item.id} value={item.id!}>{item.producto}{item.codigo_producto ? ` · ${item.codigo_producto}` : ''}</option>)}
+      </select>
+    </label>}
     <button type="button" disabled={uploading} onClick={() => inputRef.current?.click()} onDragEnter={(event) => { event.preventDefault(); setDragging(true) }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); void cargar(event.dataTransfer.files) }} className={`mt-4 flex min-h-36 w-full flex-col items-center justify-center rounded-xl border border-dashed px-5 py-6 text-center transition ${dragging ? 'border-accent bg-accent/[0.07]' : 'border-white/15 bg-white/[0.015] hover:border-white/30'}`}>
       {uploading ? <LoaderCircle className="animate-spin text-accent" size={26} /> : <UploadCloud className="text-accent" size={27} />}
       <strong className="mt-3 text-sm">{uploading ? 'Procesando imágenes…' : 'Selecciona o arrastra imágenes'}</strong>
@@ -174,7 +185,7 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, onQualityReady,
         {actuales.map((archivo) => <article key={archivo.id} className="group overflow-hidden rounded-xl border border-line bg-black/20">
           <div className="relative aspect-square overflow-hidden bg-white/[0.025]">
             <img src={archivo.signed_url} alt={archivo.nombre} className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" />
-            <div className="absolute left-2 top-2 flex flex-wrap gap-1">{archivo.es_principal && <span className="status-badge border-accent/20 bg-app/85 text-accent"><Star size={10} fill="currentColor" /> Principal</span>}<span className="status-badge border-white/10 bg-app/85 text-white">{archivo.visible_cliente ? <Eye size={10} /> : <EyeOff size={10} />} {archivo.visible_cliente ? 'Cliente' : 'Interna'}</span></div>
+            <div className="absolute left-2 top-2 flex flex-wrap gap-1">{archivo.es_principal && <span className="status-badge border-accent/20 bg-app/85 text-accent"><Star size={10} fill="currentColor" /> Principal</span>}<span className="status-badge border-white/10 bg-app/85 text-white">{archivo.visible_cliente ? <Eye size={10} /> : <EyeOff size={10} />} {archivo.visible_cliente ? 'Cliente' : 'Interna'}</span>{archivo.pedido_item_id && itemsPorId.get(archivo.pedido_item_id) && <span className="status-badge max-w-[120px] truncate border-accent/20 bg-app/85 text-accent">{itemsPorId.get(archivo.pedido_item_id)!.producto}</span>}</div>
           </div>
           <div className="flex items-center gap-2 p-2.5"><div className="min-w-0 flex-1"><strong className="block truncate text-xs">{archivo.nombre}</strong><span className="text-[10px] text-muted">{(archivo.tamano_bytes / 1024).toFixed(0)} KB</span></div><button type="button" className="table-action" onClick={() => void hacerPrincipal(archivo)} title="Marcar como principal" aria-label="Marcar como principal"><Star size={15} /></button><button type="button" className="table-action hover:!text-red-300" onClick={() => void borrar(archivo)} title="Eliminar" aria-label="Eliminar imagen"><Trash2 size={15} /></button></div>
         </article>)}

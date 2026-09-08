@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase'
 import { notaPublicaEstado, type MotivoCancelacion } from '../constants/orders'
-import type { EstadoPedido, Moneda, Pedido, PedidoItem } from '../types/domain'
+import type { EstadoItem, EstadoPedido, Moneda, Pedido, PedidoItem } from '../types/domain'
 import { cachedQuery, invalidateCache, invalidateComercial } from '../utils/queryCache'
 import { etiquetaCargoBodega } from '../utils/bodega'
 import { ajustarSaldoCuenta } from './cuentas.service'
@@ -223,6 +223,14 @@ export async function obtenerPedido(id: string) {
   aplanarCostos(pedido.pedido_items)
   await adjuntarFotosCatalogo(pedido.pedido_items ?? [])
   return pedido
+}
+
+// Cambia la etapa de UN producto del pedido (seguimiento por producto). No toca el estado
+// general del pedido.
+export async function actualizarEstadoItem(itemId: string, estado: EstadoItem) {
+  const { error } = await requireSupabase().from('pedido_items').update({ estado_item: estado }).eq('id', itemId)
+  if (error) throw error
+  invalidateComercial()
 }
 
 export async function actualizarEstadoPedido(id: string, estado: EstadoPedido) {

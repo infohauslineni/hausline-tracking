@@ -171,13 +171,13 @@ export async function listarArchivos(pedidoId: string) {
   return files.map((file, index) => ({ ...file, signed_url: signed?.[index]?.signedUrl ?? undefined }))
 }
 
-export async function subirArchivo(pedidoId: string, tipo: TipoArchivo, file: File, visibleCliente: boolean, codigo?: string) {
+export async function subirArchivo(pedidoId: string, tipo: TipoArchivo, file: File, visibleCliente: boolean, codigo?: string, pedidoItemId?: string | null) {
   const client = requireSupabase()
   const blob = await comprimirImagen(file, marcaParaTipo(tipo, codigo))
   const path = `pedidos/${pedidoId}/${tipo === 'control_calidad' ? 'control-calidad' : tipo === 'comprobante' ? 'comprobantes' : tipo}/${crypto.randomUUID()}.webp`
   const { error: uploadError } = await client.storage.from('pedidos').upload(path, blob, { contentType: 'image/webp', upsert: false })
   if (uploadError) throw uploadError
-  const { data, error } = await client.from('archivos_pedido').insert({ pedido_id: pedidoId, tipo, storage_path: path, nombre: file.name, mime_type: 'image/webp', tamano_bytes: blob.size, visible_cliente: visibleCliente }).select().single()
+  const { data, error } = await client.from('archivos_pedido').insert({ pedido_id: pedidoId, tipo, storage_path: path, nombre: file.name, mime_type: 'image/webp', tamano_bytes: blob.size, visible_cliente: visibleCliente, pedido_item_id: pedidoItemId ?? null }).select().single()
   if (error) { await client.storage.from('pedidos').remove([path]); throw error }
   const { data: signed } = await client.storage.from('pedidos').createSignedUrl(path, 3600)
   return { ...(data as ArchivoPedido), signed_url: signed?.signedUrl ?? undefined }

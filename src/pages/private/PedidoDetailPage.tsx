@@ -10,18 +10,18 @@ import { PedidoLogistica } from '../../components/pedidos/PedidoLogistica'
 import { CuentaSelect, type DestinoPago } from '../../components/finanzas/CuentaSelect'
 import { IngresoEnCuenta, INGRESO_VACIO, type Ingreso } from '../../components/finanzas/IngresoEnCuenta'
 import { Modal } from '../../components/ui/Modal'
-import { ESTADOS_PEDIDO, estadoLabel, etapaBase, mensajeWhatsAppEstado, mensajeWhatsAppReaparicion, motivoCancelacionLabel } from '../../constants/orders'
+import { ESTADOS_ITEM, ESTADOS_PEDIDO, estadoLabel, etapaBase, mensajeWhatsAppEstado, mensajeWhatsAppReaparicion, motivoCancelacionLabel } from '../../constants/orders'
 import { CancelarPedidoModal } from '../../components/pedidos/CancelarPedidoModal'
 import { DEMO_PEDIDOS } from '../../data/demo'
 import { isSupabaseConfigured } from '../../lib/supabase'
-import { actualizarEstadoPedido, actualizarPedidoCompleto, agregarEnvioPedido, cobrarPedido, obtenerDisponibleDesde, obtenerPedido, pagarProveedorPedido, pasarPedidoAStock, type PagoProveedorInput } from '../../services/pedidos.service'
+import { actualizarEstadoItem, actualizarEstadoPedido, actualizarPedidoCompleto, agregarEnvioPedido, cobrarPedido, obtenerDisponibleDesde, obtenerPedido, pagarProveedorPedido, pasarPedidoAStock, type PagoProveedorInput } from '../../services/pedidos.service'
 import { useAuth } from '../../contexts/AuthContext'
 import type { FacturaData } from '../../services/factura.service'
 import { obtenerTipoCambio, registrarGasto } from '../../services/comercial.service'
 import { archivarComprobanteDrive } from '../../services/archivos.service'
 import { MoneyField } from '../../components/ui/MoneyField'
 import { aUsd } from '../../utils/money'
-import type { EstadoPedido, Moneda, Pedido } from '../../types/domain'
+import type { EstadoItem, EstadoPedido, Moneda, Pedido, PedidoItem } from '../../types/domain'
 import { costoRealPedido, envioClientePasaLargo } from '../../utils/pedidoCosto'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { whatsappUrl } from '../../utils/whatsapp'
@@ -186,6 +186,13 @@ export function PedidoDetailPage() {
     } catch { toast.error('No se pudo actualizar la etapa.') }
     finally { setSavingStatus(false) }
   }
+  // Cambia la etapa de un producto (seguimiento por producto). Optimista: actualiza la vista
+  // al instante y persiste en segundo plano.
+  const cambiarEstadoItem = async (itemId: string, estado: EstadoItem) => {
+    setPedido((current) => current ? { ...current, pedido_items: current.pedido_items?.map((it) => it.id === itemId ? { ...it, estado_item: estado } : it) } : current)
+    try { if (isSupabaseConfigured) await actualizarEstadoItem(itemId, estado) }
+    catch { toast.error('No se pudo actualizar el producto.') }
+  }
   const pasarAStock = async () => {
     if (!window.confirm(`¿Pasar los productos de ${pedido.codigo} al inventario / stock? Quedarán disponibles para venta directa.`)) return
     setStockSaving(true)
@@ -236,8 +243,10 @@ export function PedidoDetailPage() {
             <button className="primary-button px-5" onClick={() => void updateStatus()} disabled={savingStatus || estadoSeleccionado === pedido.estado}>{savingStatus ? 'Guardando…' : estadoSeleccionado === 'pagado' ? 'Registrar pago' : estadoSeleccionado === 'entregado' ? 'Confirmar entrega' : 'Confirmar etapa'}</button>
           </div>
         </section>
-        <section className="form-section"><div className="flex items-center justify-between"><h2 className="flex items-center gap-2 font-semibold"><Package size={18} className="text-accent" /> Productos</h2>{esAdmin && <button className="table-action" aria-label="Editar pedido" onClick={() => setEditOpen(true)}><Pencil size={16} /></button>}</div><div className="mt-4 divide-y divide-line">{pedido.pedido_items?.map((item, index) => <div className="flex items-center gap-3 py-4" key={`${item.producto}-${index}`}><ProductoThumb imagen={item.imagen} cantidad={item.cantidad} alt={item.producto} /><div className="min-w-0 flex-1"><strong className="block truncate text-sm">{item.producto}</strong><span className="block truncate text-xs text-muted">{[item.marca, item.talla, item.color].filter(Boolean).join(' · ')}</span>{item.codigo_producto && <span className="mt-0.5 block font-mono text-[11px] text-accent">Cód. {item.codigo_producto}</span>}</div><strong className="text-sm">${(item.cantidad * item.precio_unitario).toFixed(2)}</strong></div>)}</div></section>
-        <PedidoArchivos pedidoId={pedido.id} codigo={pedido.codigo} estadoPedido={pedido.estado} onQualityReady={setQualityPhotosReady} onEstadoAvanzado={(updated) => setPedido((current) => current ? { ...current, ...updated } : updated)} />
+        <section className="form-section"><div className="flex items-center justify-between"><h2 className="flex items-center gap-2 font-semibold"><Package size={18} className="text-accent" /> Productos{(pedido.pedido_items?.length ?? 0) > 1 && <span className="text-xs font-normal text-muted">({pedido.pedido_items?.length})</span>}</h2>{esAdmin && <button className="table-action" aria-label="Editar pedido" onClick={() => setEditOpen(true)}><Pencil size={16} /></button>}</div>
+          {(pedido.pedido_items?.length ?? 0) > 1 && <ItemsProgreso items={pedido.pedido_items ?? []} />}
+          <div className="mt-4 divide-y divide-line">{pedido.pedido_items?.map((item, index) => <div className="flex flex-wrap items-center gap-3 py-4" key={`${item.producto}-${index}`}><ProductoThumb imagen={item.imagen} cantidad={item.cantidad} alt={item.producto} /><div className="min-w-0 flex-1"><strong className="block truncate text-sm">{item.producto}</strong><span className="block truncate text-xs text-muted">{[item.marca, item.talla, item.color].filter(Boolean).join(' · ')}</span>{item.codigo_producto && <span className="mt-0.5 block font-mono text-[11px] text-accent">Cód. {item.codigo_producto}</span>}</div><strong className="text-sm">${(item.cantidad * item.precio_unitario).toFixed(2)}</strong>{esAdmin && item.id && <select value={item.estado_item ?? 'pendiente'} onChange={(e) => void cambiarEstadoItem(item.id!, e.target.value as EstadoItem)} className="w-full shrink-0 rounded-lg border border-line bg-white/[0.02] px-2 py-1.5 text-xs sm:w-auto">{ESTADOS_ITEM.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</select>}</div>)}</div></section>
+        <PedidoArchivos pedidoId={pedido.id} codigo={pedido.codigo} estadoPedido={pedido.estado} items={pedido.pedido_items ?? []} onQualityReady={setQualityPhotosReady} onEstadoAvanzado={(updated) => setPedido((current) => current ? { ...current, ...updated } : updated)} />
         <PedidoLogistica pedidoId={pedido.id} />
         <section className="form-section"><h2 className="flex items-center gap-2 font-semibold"><CalendarDays size={18} className="text-accent" /> Fechas</h2><div className="mt-5 grid gap-4 sm:grid-cols-3"><Info label="Pedido" value={pedido.fecha_pedido} /><Info label="Llegada estimada" value={pedido.fecha_estimada ?? 'Sin definir'} /><Info label="Actualización" value={new Intl.DateTimeFormat('es-NI').format(new Date(pedido.updated_at))} /></div></section>
       </div>
@@ -418,6 +427,19 @@ function EtapaTracker({ actual, seleccionado, onSelect }: { actual: EstadoPedido
         <span className={`mt-2 text-[9px] font-medium leading-3 ${isSelected ? 'text-accent' : reached ? 'text-white' : 'text-muted'}`}>{step.label}</span>
       </button>
     })}
+  </div>
+}
+// Barra de progreso del seguimiento por producto: cuántos productos del pedido ya llegaron
+// (recibidos), se enviaron y se entregaron. Solo aparece en pedidos de varios productos.
+function ItemsProgreso({ items }: { items: PedidoItem[] }) {
+  const total = items.length
+  const recibidos = items.filter((it) => (it.estado_item ?? 'pendiente') !== 'pendiente').length
+  const enviados = items.filter((it) => it.estado_item === 'enviado' || it.estado_item === 'entregado').length
+  const entregados = items.filter((it) => it.estado_item === 'entregado').length
+  const pct = total ? Math.round((recibidos / total) * 100) : 0
+  return <div className="mt-4 rounded-xl border border-line bg-white/[0.02] p-3">
+    <div className="flex flex-wrap items-center justify-between gap-2 text-xs"><span className="font-semibold">Seguimiento por producto</span><span className="text-muted">{recibidos} de {total} recibidos · {enviados} enviados · {entregados} entregados</span></div>
+    <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-accent transition-all" style={{ width: `${pct}%` }} /></div>
   </div>
 }
 // Miniatura del producto. Si no hay imagen —o si la URL está rota/no carga (p. ej.

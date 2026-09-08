@@ -1,4 +1,4 @@
-import type { EstadoPedido } from '../types/domain'
+import type { EstadoItem, EstadoPedido } from '../types/domain'
 import { cuentasTexto } from './pagos'
 import { esManagua, tieneUbicacion } from './nicaragua'
 
@@ -17,6 +17,16 @@ export const ESTADOS_PEDIDO: { value: EstadoPedido; label: string }[] = [
   { value: 'empaquetado', label: 'Empaquetado, listo para envío' },
   { value: 'entregado', label: 'Entregado' },
 ]
+
+// Etapas de UN producto dentro del pedido (seguimiento por producto). "recibido" = llegó a
+// HAUSLINE y pasó control de calidad; "enviado" = salió al cliente (puede ir en su propio paquete).
+export const ESTADOS_ITEM: { value: EstadoItem; label: string; tone: string }[] = [
+  { value: 'pendiente', label: 'Por llegar', tone: 'neutral' },
+  { value: 'recibido', label: 'Recibido / revisado', tone: 'calidad' },
+  { value: 'enviado', label: 'Enviado', tone: 'transito' },
+  { value: 'entregado', label: 'Entregado', tone: 'entregado' },
+]
+export const estadoItemLabel = (estado?: EstadoItem | null) => ESTADOS_ITEM.find((item) => item.value === (estado ?? 'pendiente'))?.label ?? 'Por llegar'
 
 // Colapsa CUALQUIER estado (incluidas las etapas viejas de bodega que aún puedan tener
 // pedidos en curso, o las que setea 17TRACK / la foto de Miami) a una de las 6 etapas

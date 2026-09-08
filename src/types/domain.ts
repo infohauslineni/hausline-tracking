@@ -36,7 +36,12 @@ export type PedidoItem = {
   envio_internacional?: number
   costo_delivery?: number
   otros_gastos?: number
+  estado_item?: EstadoItem
 }
+
+// Etapa de UN producto dentro del pedido (para pedidos de varios productos que llegan/envían
+// por partes). Es independiente del estado general del pedido.
+export type EstadoItem = 'pendiente' | 'recibido' | 'enviado' | 'entregado'
 
 export type Pedido = {
   id: string
@@ -180,6 +185,7 @@ export type ArchivoPedido = {
   visible_cliente: boolean
   created_at: string
   signed_url?: string
+  pedido_item_id?: string | null
 }
 
 export type PrioridadAlerta = 'baja' | 'media' | 'alta' | 'critica'
