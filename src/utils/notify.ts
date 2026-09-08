@@ -54,13 +54,22 @@ function blip(ac: AudioContext, freq: number, t: number, vol: number, dur = 0.06
   osc.stop(now + t + dur)
 }
 
-// Sonido de DINERO tipo caja registradora: "cha-CHING" (dos campanas brillantes) + un
-// brillo de moneditas cayendo. Suena una sola vez por encargo (ver PrivateLayout).
+// Sonido de DINERO: "cha-CHING" de caja registradora seguido de una CASCADA de monedas
+// cayendo (muchos clinks metálicos, en pares, con altura variable) — como una lluvia de
+// dinero. Suena una sola vez por encargo (ver PrivateLayout).
 export function playEncargoChime() {
   const ac = ensureCtx()
   if (!ac) return
+  // El "cha-ching" de la caja.
   ding(ac, 1318.5, 0, 0.5)      // E6  — "cha"
-  ding(ac, 1975.5, 0.09, 0.58)  // B6  — "ching"
-  const monedas = [2637, 3136, 2489, 2960, 3520, 2794]
-  monedas.forEach((f, i) => blip(ac, f, 0.2 + i * 0.045, 0.16, 0.06))
+  ding(ac, 1975.5, 0.1, 0.6)    // B6  — "ching"
+  // Cascada de monedas: ~14 clinks brillantes, cada uno con un segundo tono metálico encima,
+  // repartidos en el tiempo y con volumen que baja, como monedas cayendo en cadena.
+  const base = [2637, 3136, 2489, 2960, 3520, 2794, 3322, 2349, 2960, 3136, 2637, 3520, 2793, 3136]
+  base.forEach((f, i) => {
+    const t = 0.22 + i * 0.055
+    const vol = 0.2 * (1 - i / (base.length + 4))
+    blip(ac, f, t, vol, 0.05)
+    blip(ac, f * 1.5, t + 0.012, vol * 0.5, 0.04)
+  })
 }
