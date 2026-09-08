@@ -1,7 +1,11 @@
-// Sonido de notificación (tipo "cha-ching" de Shopify) para cuando cae un encargo nuevo.
-// Se genera con Web Audio (sin archivo). Los navegadores bloquean el audio hasta que el
-// usuario interactúa con la página, así que "despertamos" el contexto al primer clic.
+// Sonido de notificación para cuando cae un encargo web nuevo. Suena un ARCHIVO de audio
+// (public/encargo-sound.mp3, servido desde el mismo origen para cumplir la CSP). Si por lo
+// que sea no se puede reproducir, cae a un "cha-ching" sintetizado con Web Audio. Los
+// navegadores bloquean el audio hasta que el usuario interactúa con la página, así que
+// "despertamos"/precargamos el sonido al primer clic.
 let ctx: AudioContext | null = null
+let audio: HTMLAudioElement | null = null
+let audioListo = false
 
 function ensureCtx(): AudioContext | null {
   if (typeof window === 'undefined') return null
@@ -12,8 +16,31 @@ function ensureCtx(): AudioContext | null {
   return ctx
 }
 
+function ensureAudio(): HTMLAudioElement | null {
+  if (typeof window === 'undefined') return null
+  if (!audio) {
+    try {
+      const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '')
+      audio = new Audio(`${base}/encargo-sound.mp3`)
+      audio.preload = 'auto'
+    } catch { return null }
+  }
+  return audio
+}
+
 if (typeof window !== 'undefined') {
-  const wake = () => { ensureCtx() }
+  // Al primer clic: despertamos el AudioContext (fallback) y "primamos" el archivo de audio
+  // (un play muteado + pause) para que luego pueda sonar sin gesto directo del usuario.
+  const wake = () => {
+    ensureCtx()
+    const a = ensureAudio()
+    if (a && !audioListo) {
+      audioListo = true
+      const vol = a.volume
+      a.volume = 0
+      a.play().then(() => { a.pause(); a.currentTime = 0; a.volume = vol }).catch(() => { a.volume = vol })
+    }
+  }
   window.addEventListener('pointerdown', wake, { once: false })
 }
 
@@ -54,10 +81,23 @@ function blip(ac: AudioContext, freq: number, t: number, vol: number, dur = 0.06
   osc.stop(now + t + dur)
 }
 
-// Sonido de DINERO: "cha-CHING" de caja registradora seguido de una CASCADA de monedas
-// cayendo (muchos clinks metálicos, en pares, con altura variable) — como una lluvia de
-// dinero. Suena una sola vez por encargo (ver PrivateLayout).
+// Suena el ARCHIVO de audio del encargo; si falla, cae al "cha-ching" sintetizado.
+// Una sola vez por encargo (ver PrivateLayout).
 export function playEncargoChime() {
+  const a = ensureAudio()
+  if (a) {
+    try {
+      a.currentTime = 0
+      const p = a.play()
+      if (p && typeof p.catch === 'function') p.catch(() => tonoDinero())
+      return
+    } catch { /* cae al sonido sintetizado */ }
+  }
+  tonoDinero()
+}
+
+// Fallback sintetizado: "cha-CHING" de caja registradora + cascada de monedas.
+function tonoDinero() {
   const ac = ensureCtx()
   if (!ac) return
   // El "cha-ching" de la caja.
