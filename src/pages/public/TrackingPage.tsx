@@ -201,9 +201,15 @@ function Products({ order }: { order: PublicOrder }) {
   // Foto del producto: se usa la del catálogo (product.imagen, resuelta a URL absoluta
   // con resolverImagenCatalogo) y, como respaldo, las fotos del producto subidas al pedido.
   const fotos = (order.imagenes ?? []).filter((image) => image.tipo === 'producto' && image.url).map((image) => image.url as string)
-  // Foto de control de calidad por producto (para el seguimiento por producto).
-  const qcPorItem = new Map<string, string>()
-  for (const img of order.imagenes ?? []) { if (img.tipo === 'control_calidad' && img.url && img.pedido_item_id && !qcPorItem.has(img.pedido_item_id)) qcPorItem.set(img.pedido_item_id, img.url) }
+  // Fotos de control de calidad POR PRODUCTO (cada producto muestra las suyas debajo).
+  const qcPorItem = new Map<string, string[]>()
+  for (const img of order.imagenes ?? []) {
+    if (img.tipo === 'control_calidad' && img.url && img.pedido_item_id) {
+      const arr = qcPorItem.get(img.pedido_item_id) ?? []
+      arr.push(img.url as string)
+      qcPorItem.set(img.pedido_item_id, arr)
+    }
+  }
   const productos = order.productos ?? []
   // El avance por producto solo se muestra si hay varios productos y ya hay progreso real
   // (alguno dejó de estar "por llegar"), para no confundir en pedidos de un solo producto.
@@ -219,18 +225,23 @@ function Products({ order }: { order: PublicOrder }) {
     </div>}
     <div className="mt-4 divide-y divide-line">{productos.map((product, index) => {
       const foto = resolverImagenCatalogo(product.imagen) || fotos[index] || fotos[0]
-      const qc = product.id ? qcPorItem.get(product.id) : undefined
+      const qc = product.id ? (qcPorItem.get(product.id) ?? []) : []
       const etapa = product.estado_item ?? 'pendiente'
-      return <div className="flex items-center gap-3 py-4" key={`${product.producto}-${index}`}>
-        <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/[0.04] text-muted">{foto ? <img src={foto} alt="" className="size-full object-cover" /> : <Package size={19} />}</span>
-        <div className="min-w-0 flex-1">
-          <strong className="block truncate text-sm">{product.producto}</strong>
-          <span className="mt-1 block text-xs text-muted">{[product.marca, product.talla, product.color].filter(Boolean).join(' · ') || 'Producto confirmado'}</span>
-          {product.codigo && <span className="mt-0.5 block font-mono text-[11px] text-accent">Cód. {product.codigo}</span>}
-          {conEtapa && <span className="mt-1 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ color: ITEM_TONE[etapa], background: `${ITEM_TONE[etapa]}1f` }}>{ITEM_LABEL[etapa]}</span>}
+      return <div className="py-4" key={`${product.producto}-${index}`}>
+        <div className="flex items-center gap-3">
+          <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/[0.04] text-muted">{foto ? <img src={foto} alt="" className="size-full object-cover" /> : <Package size={19} />}</span>
+          <div className="min-w-0 flex-1">
+            <strong className="block truncate text-sm">{product.producto}</strong>
+            <span className="mt-1 block text-xs text-muted">{[product.marca, product.talla, product.color].filter(Boolean).join(' · ') || 'Producto confirmado'}</span>
+            {product.codigo && <span className="mt-0.5 block font-mono text-[11px] text-accent">Cód. {product.codigo}</span>}
+            {conEtapa && <span className="mt-1 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ color: ITEM_TONE[etapa], background: `${ITEM_TONE[etapa]}1f` }}>{ITEM_LABEL[etapa]}</span>}
+          </div>
+          <span className="text-xs font-semibold">×{product.cantidad}</span>
         </div>
-        {qc && <button type="button" onClick={() => window.open(qc, '_blank', 'noopener,noreferrer')} className="size-12 shrink-0 overflow-hidden rounded-xl border border-line" title="Foto de control de calidad"><img src={qc} alt="Control de calidad" className="size-full object-cover" /></button>}
-        <span className="text-xs font-semibold">×{product.cantidad}</span>
+        {qc.length > 0 && <div className="mt-3 pl-15">
+          <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-muted">Control de calidad de este producto</span>
+          <div className="flex flex-wrap gap-2">{qc.map((u, i) => <button key={i} type="button" onClick={() => window.open(u, '_blank', 'noopener,noreferrer')} className="size-16 overflow-hidden rounded-lg border border-line bg-white/[0.025]" title="Foto de control de calidad"><img src={u} alt="Control de calidad" className="size-full object-cover" /></button>)}</div>
+        </div>}
       </div>
     })}</div>
   </section>
@@ -245,8 +256,10 @@ function OrderPhotos({ order }: { order: PublicOrder }) {
     { tipo: 'empaque', label: 'Empaquetado' },
     { tipo: 'recibido_local', label: 'Recibido' },
   ]
+  // Las fotos de control de calidad que YA están asignadas a un producto se muestran debajo
+  // de cada producto (en Products), no acá, para no amontonarlas ni duplicarlas.
   const fotos = grupos.flatMap((grupo) => (order.imagenes ?? [])
-    .filter((image) => image.tipo === grupo.tipo && image.url)
+    .filter((image) => image.tipo === grupo.tipo && image.url && !(grupo.tipo === 'control_calidad' && image.pedido_item_id))
     .map((image) => ({ url: image.url as string, storage_path: image.storage_path, label: grupo.label })))
   if (!fotos.length) return null
   return <section className="public-card">

@@ -12,9 +12,9 @@ export type MarcaImagen = boolean | 'esquina' | 'logo' | 'logo-centro' | { sello
 // Decide qué marca aplicar según la categoría de la foto.
 export function marcaParaTipo(tipo: TipoArchivo, codigo?: string): MarcaImagen {
   if (tipo === 'recibido_local') return { sello: (codigo ?? '').toUpperCase() }
-  // Control de calidad: la marca grande "HAUS/LINE" centrada sobre la foto, bien visible
-  // (protege la evidencia de revisión, que es la que más comparte el cliente).
-  if (tipo === 'control_calidad') return 'logo-centro'
+  // Control de calidad: marca de agua "HAUSLINE.NI" repetida en diagonal por TODA la foto,
+  // con opacidad baja (protege la evidencia de revisión sin tapar el producto).
+  if (tipo === 'control_calidad') return true
   // Las demás fotos que ve el cliente (producto recibido en HAUSLINE y paquete empacado)
   // llevan el logo "HAUS/LINE" limpio arriba al centro, para que también sirvan en redes.
   if (tipo === 'recibido_hausline' || tipo === 'empaque') return 'logo'

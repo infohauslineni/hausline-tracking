@@ -27,7 +27,7 @@ async function obtenerFotosCalidad(codigo, tipo = 'control_calidad') {
 
   const url = `${root}/rest/v1/pedidos`
     + `?codigo=eq.${encodeURIComponent(codigo)}`
-    + `&select=fecha_pedido,archivos_pedido(storage_path,nombre,mime_type,orden,tipo,visible_cliente)`
+    + `&select=fecha_pedido,archivos_pedido(storage_path,nombre,mime_type,orden,tipo,visible_cliente,pedido_item_id)`
     + `&limit=1`
 
   let pedido = null
@@ -42,7 +42,9 @@ async function obtenerFotosCalidad(codigo, tipo = 'control_calidad') {
   if (!pedido) return { fotos: [], fecha: null }
 
   const archivos = (Array.isArray(pedido.archivos_pedido) ? pedido.archivos_pedido : [])
-    .filter((a) => a.tipo === tipo && a.visible_cliente)
+    // Las fotos de control de calidad YA asignadas a un producto se envían en el correo POR
+    // PRODUCTO (notificar-item), no acá, para no mandarlas todas amontonadas en un solo correo.
+    .filter((a) => a.tipo === tipo && a.visible_cliente && !(tipo === 'control_calidad' && a.pedido_item_id))
     .sort((a, b) => (a.orden || 0) - (b.orden || 0))
 
   const fotos = []
