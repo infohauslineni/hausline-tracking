@@ -562,6 +562,98 @@ export async function enviarCorreoEncargoAdmin({ to, solicitud }) {
   })
 }
 
+// ── Aviso INTERNO agrupado: VARIOS encargos del MISMO cliente en un solo correo ──
+// Cuando un cliente encarga varios productos desde la web (carrito), en vez de un correo por
+// producto, se lista todo junto con la suma del total. Reusa el mismo estilo del aviso simple.
+export function plantillaEncargoAdminGrupo({ solicitudes, panelUrl }) {
+  const anio = new Date().getFullYear()
+  const s0 = solicitudes[0] || {}
+  const wa = String(s0.cliente_whatsapp || '').replace(/[^0-9]/g, '')
+  const waLink = wa ? `https://wa.me/${wa}` : ''
+  const totalUsd = solicitudes.reduce((sum, s) => sum + (Number(s.total) || 0), 0)
+  const abonoUsd = solicitudes.reduce((sum, s) => sum + (Number(s.abono) || 0), 0)
+  const rapido = solicitudes.some((s) => s.envio === 'rapido')
+
+  const filaProd = (s) => {
+    const detalle = [s.marca && esc(s.marca), s.talla && `Talla ${esc(s.talla)}`, s.color && esc(s.color)].filter(Boolean).join(' · ')
+    return `<tr>
+      <td style="padding:10px 0;border-top:1px solid #eef0f2;vertical-align:top;width:62px;">${absolutizarImagen(s.imagen)
+        ? `<img src="${esc(absolutizarImagen(s.imagen))}" width="52" height="52" alt="" style="display:block;width:52px;height:52px;border-radius:10px;object-fit:cover;border:1px solid #eef0f2;background-color:#f6f7f9;">`
+        : `<div style="width:52px;height:52px;border-radius:10px;border:1px solid #eef0f2;background-color:#f6f7f9;"></div>`}</td>
+      <td style="padding:10px 0;border-top:1px solid #eef0f2;vertical-align:top;">
+        <p style="margin:0;font-size:14px;font-weight:700;color:#0b0f19;line-height:1.3;">${esc(s.producto)}${Number(s.cantidad) > 1 ? ` <span style="color:#6b7280;font-weight:600;">× ${Number(s.cantidad)}</span>` : ''}</p>
+        ${s.producto_codigo ? `<span style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:#6b7280;">${esc(s.producto_codigo)}</span>` : ''}
+        ${detalle ? `<p style="margin:2px 0 0;font-size:12px;color:#6b7280;">${detalle}</p>` : ''}
+      </td>
+      <td style="padding:10px 0;border-top:1px solid #eef0f2;vertical-align:top;text-align:right;font-size:13px;font-weight:700;color:#0b0f19;white-space:nowrap;">${montoUSD(s.total)}</td>
+    </tr>`
+  }
+  const fila = (label, valor) => valor ? `<tr><td style="padding:6px 0;font-size:13px;color:#6b7280;width:120px;">${label}</td><td style="padding:6px 0;font-size:14px;color:#0b0f19;font-weight:600;">${valor}</td></tr>` : ''
+
+  return `<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><title>Encargo de ${esc(s0.cliente_nombre || 'cliente')}</title></head>
+<body style="margin:0;padding:0;background-color:#ececed;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#ececed;">Nuevo encargo de ${esc(s0.cliente_nombre || 'cliente')}: ${solicitudes.length} productos. Vence en 24 h.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#ececed;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 24px rgba(17,24,39,.08);">
+        <tr><td style="background-color:#050505;padding:30px 24px;text-align:center;">
+          <div style="color:#ffffff;font-size:24px;font-weight:800;letter-spacing:5px;line-height:1;">HAUS<span style="color:#b7ff00;">LINE</span></div>
+          <div style="color:#b7ff00;font-size:11px;font-weight:600;letter-spacing:3px;text-transform:uppercase;margin-top:8px;">Nuevo encargo web</div>
+        </td></tr>
+        <tr><td style="height:4px;background-color:#b7ff00;font-size:0;line-height:0;">&nbsp;</td></tr>
+        <tr><td style="padding:32px 36px 8px;">
+          <p style="margin:0 0 4px;font-size:18px;font-weight:700;color:#0b0f19;">${esc(s0.cliente_nombre || 'Un cliente')} encargó ${solicitudes.length} ${solicitudes.length === 1 ? 'producto' : 'productos'}</p>
+          <p style="margin:0 0 22px;font-size:14px;line-height:1.6;color:#b26a00;">⏳ Vence en 24 h si no lo confirmas.${rapido ? ' ⚡ Incluye envío rápido.' : ''}</p>
+
+          <div style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#8b93a7;margin:0 0 6px;">Productos (${solicitudes.length})</div>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px;">
+            ${solicitudes.map(filaProd).join('')}
+          </table>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:2px solid #0b0f19;margin-top:4px;">
+            <tr><td style="padding:10px 0 0;font-size:14px;color:#0b0f19;font-weight:700;">Total del pedido</td><td style="padding:10px 0 0;text-align:right;font-size:16px;color:#0b0f19;font-weight:800;">${montoUSD(totalUsd)}</td></tr>
+            ${abonoUsd > 0 ? `<tr><td style="padding:2px 0;font-size:12px;color:#6b7280;">Abono para confirmar</td><td style="padding:2px 0;text-align:right;font-size:13px;color:#6b7280;font-weight:700;">${montoUSD(abonoUsd)}</td></tr>` : ''}
+          </table>
+
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:18px;border-top:1px solid #eef0f2;padding-top:10px;">
+            ${fila('Cliente', esc(s0.cliente_nombre))}
+            ${fila('WhatsApp', waLink ? `<a href="${waLink}" target="_blank" style="color:#0b0f19;text-decoration:underline;">${esc(s0.cliente_whatsapp)}</a>` : esc(s0.cliente_whatsapp))}
+            ${fila('Correo', s0.cliente_correo ? esc(s0.cliente_correo) : '')}
+            ${fila('Ciudad', s0.cliente_ciudad ? esc(s0.cliente_ciudad) : '')}
+            ${fila('Dirección', s0.cliente_direccion ? esc(s0.cliente_direccion) : '')}
+          </table>
+
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:26px;"><tr><td align="center">
+            <a href="${panelUrl}" target="_blank" style="display:inline-block;background-color:#b7ff00;color:#052012;text-decoration:none;font-weight:800;font-size:15px;padding:15px 38px;border-radius:10px;">Abrir en el panel</a>
+          </td></tr></table>
+        </td></tr>
+        <tr><td style="padding:26px 36px 32px;border-top:1px solid #eef0f2;text-align:center;">
+          <p style="margin:0;font-size:11px;color:#b7bcc5;">© ${anio} Hausline · Aviso interno automático</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`
+}
+
+// Envía UN aviso interno con todos los productos del carrito del cliente.
+export async function enviarCorreoEncargoAdminGrupo({ to, solicitudes }) {
+  const appUrl = (process.env.APP_URL ?? process.env.VITE_PUBLIC_APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
+  const panelUrl = `${appUrl}/solicitudes`
+  const totalUsd = solicitudes.reduce((sum, s) => sum + (Number(s.total) || 0), 0)
+  const nombre = solicitudes[0]?.cliente_nombre || 'Cliente'
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST ?? 'smtp.gmail.com', port: Number(process.env.SMTP_PORT ?? 465), secure: true,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  })
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
+    to,
+    subject: `Nuevo encargo · ${nombre} · ${solicitudes.length} productos · ${montoUSD(totalUsd).replace('USD ', '$')}`,
+    html: plantillaEncargoAdminGrupo({ solicitudes, panelUrl }),
+  })
+}
+
 // Correo automático de CARGO POR BODEGA. Lo dispara el cron diario cuando un pedido
 // lleva más de los días de gracia "disponible para entrega" sin retirarse. Le avisa al
 // cliente cuántos días lleva y cuánto se sumó a su factura final, para presionar el pago.
@@ -637,6 +729,29 @@ export async function enviarCorreoEsperandoPago({ correo, nombre, codigo, produc
     subject: `${codigo}: recibimos tu pedido — esperamos tu pago`,
     html: plantillaCorreo({
       nombre, codigo, estado: null, estadoLabel: 'Esperando tu pago', nota,
+      urlSeguimiento: checkoutUrl, esNuevo: false, factura: null, fotos: [],
+      ctaTexto: 'Pagar y enviar comprobante', ctaUrl: checkoutUrl,
+    }),
+  })
+}
+
+// Versión AGRUPADA de "esperamos tu pago": un carrito con varios productos → UN correo al
+// cliente con todos sus códigos. El botón lleva al checkout con todos (separados por coma),
+// igual que el flujo del carrito de la tienda.
+export async function enviarCorreoEsperandoPagoGrupo({ correo, nombre, codigos, cantidad }) {
+  const base = (process.env.CATALOGO_BASE_URL ?? 'https://hauslineshopni.es/').replace(/\/$/, '')
+  const checkoutUrl = `${base}/checkout/?c=${encodeURIComponent(codigos.join(','))}`
+  const nota = `¡Recibimos tu pedido de <strong>${cantidad} productos</strong>! Estamos <strong>esperando tu pago</strong> para confirmarlo. Realizá la transferencia y enviá tu comprobante desde el botón de abajo. Tenemos tu pedido en espera por <strong>24 horas</strong>; si no recibimos el pago, se cancela solo.<br><br><span style="font-size:12px;color:#8b93a7;">Importante: los pedidos por encargo <strong>no admiten devoluciones de dinero ni cambios</strong>.</span>`
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST ?? 'smtp.gmail.com', port: Number(process.env.SMTP_PORT ?? 465), secure: true,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  })
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
+    to: correo,
+    subject: `Recibimos tu pedido de ${cantidad} productos — esperamos tu pago`,
+    html: plantillaCorreo({
+      nombre, codigo: codigos[0], estado: null, estadoLabel: 'Esperando tu pago', nota,
       urlSeguimiento: checkoutUrl, esNuevo: false, factura: null, fotos: [],
       ctaTexto: 'Pagar y enviar comprobante', ctaUrl: checkoutUrl,
     }),
