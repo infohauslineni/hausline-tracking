@@ -16,7 +16,7 @@ const CATEGORIAS: { id: TipoArchivo; label: string; description: string }[] = [
   { id: 'empaque', label: 'Empaque para envío', description: 'Foto del paquete empacado · pasa el pedido a “Empaquetado, listo para envío” y avisa al cliente' },
 ]
 
-export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], onQualityReady, onEstadoAvanzado }: { pedidoId: string; codigo?: string; estadoPedido?: EstadoPedido; items?: PedidoItem[]; onQualityReady?: (ready: boolean) => void; onEstadoAvanzado?: (pedido: Pedido) => void }) {
+export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], qcGeneralEnviadoAt, onQualityReady, onEstadoAvanzado }: { pedidoId: string; codigo?: string; estadoPedido?: EstadoPedido; items?: PedidoItem[]; qcGeneralEnviadoAt?: string | null; onQualityReady?: (ready: boolean) => void; onEstadoAvanzado?: (pedido: Pedido) => void }) {
   const [categoria, setCategoria] = useState<TipoArchivo>('control_calidad')
   const [archivos, setArchivos] = useState<ArchivoPedido[]>([])
   const [visibleCliente, setVisibleCliente] = useState(true)
@@ -176,7 +176,7 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], onQ
   // cliente: son las que se mandan en un solo correo. Sirven para reenviarlas si se olvidó
   // subirlas antes de cambiar de estado.
   const fotosControlGenerales = archivos.filter((a) => a.tipo === 'control_calidad' && a.visible_cliente && !a.pedido_item_id).length
-  const qcGeneralEnviado = enviadosEtapa.has('control_calidad')
+  const qcGeneralEnviado = enviadosEtapa.has('control_calidad') || Boolean(qcGeneralEnviadoAt)
   const enviarFotosQc = async () => {
     if (!itemQC) return
     setEnviandoQc(true)

@@ -63,6 +63,9 @@ export type Pedido = {
   moneda?: string
   envio_rapido?: boolean
   motivo_cancelacion?: string | null
+  // Cuándo se enviaron al cliente las fotos de control de calidad del pedido completo (para
+  // que el botón quede en "ya enviadas" aunque se recargue el panel).
+  qc_general_enviado_at?: string | null
   activo: boolean
   created_at: string
   updated_at: string

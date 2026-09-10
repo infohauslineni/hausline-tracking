@@ -246,6 +246,14 @@ async function reenviarFotosEtapa(request, response, body, authorization) {
       console.error('reenviar-fotos: no se pudo archivar en Drive', driveError?.message)
     }
   }
+
+  // Deja guardado que las fotos de control de calidad del pedido ya se enviaron, para que el
+  // botón del panel quede en "ya enviadas" aunque se recargue. Best-effort: si la columna aún
+  // no existe (migración sin aplicar), no rompe el envío.
+  if (tipo === 'control_calidad') {
+    try { await admin.from('pedidos').update({ qc_general_enviado_at: new Date().toISOString() }).eq('codigo', codigo) }
+    catch (markError) { console.error('reenviar-fotos: no se pudo marcar qc_general_enviado_at', markError?.message) }
+  }
   return response.status(200).json({ ok: true, sent: correo, fotos: fotos.length, fotosArchivadas })
 }
 
@@ -334,6 +342,22 @@ export default async function handler(request, response) {
       fotosArchivadas++
     } catch (driveError) {
       console.error('drive: no se pudo archivar la foto de calidad', driveError?.message)
+    }
+  }
+
+  // Si este correo llevó las fotos de control de calidad del pedido, deja guardado que ya se
+  // enviaron (para que el botón del panel quede en "ya enviadas"). Best-effort vía REST con la
+  // llave de servicio; si la columna aún no existe (migración sin aplicar), no rompe el aviso.
+  if (estado === 'control_calidad' && fotos.length && process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    try {
+      const root = process.env.SUPABASE_URL.replace(/\/$/, '')
+      await fetch(`${root}/rest/v1/pedidos?codigo=eq.${encodeURIComponent(record.codigo)}`, {
+        method: 'PATCH',
+        headers: { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`, 'content-type': 'application/json', prefer: 'return=minimal' },
+        body: JSON.stringify({ qc_general_enviado_at: new Date().toISOString() }),
+      })
+    } catch (markError) {
+      console.error('notificar-estado: no se pudo marcar qc_general_enviado_at', markError?.message)
     }
   }
 
