@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { comprimirImagen, eliminarArchivo, listarArchivos, marcaParaTipo, marcarPrincipal, subirArchivo } from '../../services/archivos.service'
-import { avanzarADisponiblePorRecibido, avanzarAEmpaquetadoPorFoto, marcarQcEnviado } from '../../services/pedidos.service'
+import { avanzarADisponiblePorRecibido, avanzarAEmpaquetadoPorFoto, marcarQcEnviado, reenviarFotosEtapa } from '../../services/pedidos.service'
 import { ESTADOS_PEDIDO, etapaBase } from '../../constants/orders'
 import type { ArchivoPedido, EstadoPedido, Pedido, PedidoItem, TipoArchivo } from '../../types/domain'
 
@@ -27,6 +27,7 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], onQ
   // en gris). Se combina con item.qc_enviado_at (envíos de sesiones anteriores).
   const [qcEnviados, setQcEnviados] = useState<Set<string>>(new Set())
   const [enviandoQc, setEnviandoQc] = useState(false)
+  const [reenviando, setReenviando] = useState(false)
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [uploading, setUploading] = useState(false)
   const [confirmando, setConfirmando] = useState(false)
@@ -112,6 +113,24 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], onQ
       toast.error('No se pudo avisar al cliente. Podés cambiar el estado desde el pedido.')
     } finally {
       setConfirmando(false)
+    }
+  }
+
+  // Reenvía por correo las fotos de esta etapa (recibido / empaque) cuando el pedido YA pasó
+  // la etapa: el aviso automático por transición no vuelve a dispararse, así que este botón
+  // manda el correo con las fotos actuales aunque no cambie el estado.
+  const reenviarFotos = async () => {
+    if (categoria !== 'recibido_hausline' && categoria !== 'empaque') return
+    if (!isSupabaseConfigured) { toast.info('Disponible solo con Supabase configurado.'); return }
+    if (!codigo) { toast.error('Falta el código del pedido.'); return }
+    setReenviando(true)
+    try {
+      const r = await reenviarFotosEtapa(codigo, categoria)
+      toast.success(`Correo reenviado al cliente con ${r.fotos} ${r.fotos === 1 ? 'foto' : 'fotos'}.`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo reenviar el correo.')
+    } finally {
+      setReenviando(false)
     }
   }
 
@@ -210,9 +229,16 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], onQ
         </article>)}
       </div> : <div className="mt-5 rounded-xl border border-line bg-white/[0.015] px-4 py-7 text-center"><p className="text-sm text-muted">Todavía no hay imágenes en {detalle.label.toLowerCase()}.</p></div>}
 
-    {(categoria === 'recibido_hausline' || categoria === 'empaque') && actuales.length > 0 && <button type="button" onClick={() => void confirmarEtapa()} disabled={confirmando || uploading || yaEnviado} className={yaEnviado ? 'mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-line bg-white/[0.04] px-5 py-2.5 text-sm font-semibold text-muted' : 'primary-button mt-4 w-full'}>
-      {yaEnviado ? '✓ Fotos ya enviadas al cliente' : confirmando ? 'Avisando al cliente…' : categoria === 'recibido_hausline' ? '✅ Confirmar y enviar las fotos al cliente' : '📦 Confirmar empaquetado y avisar al cliente'}
-    </button>}
+    {(categoria === 'recibido_hausline' || categoria === 'empaque') && actuales.length > 0 && (yaEnviado
+      ? <div className="mt-4">
+          <button type="button" onClick={() => void reenviarFotos()} disabled={reenviando || uploading} className="primary-button w-full">
+            {reenviando ? 'Reenviando…' : '🔁 Reenviar estas fotos al cliente por correo'}
+          </button>
+          <p className="mt-1.5 text-center text-[11px] text-muted">El pedido ya pasó esta etapa. Usá esto si subiste o cambiaste fotos y querés que le lleguen al cliente.</p>
+        </div>
+      : <button type="button" onClick={() => void confirmarEtapa()} disabled={confirmando || uploading} className="primary-button mt-4 w-full">
+          {confirmando ? 'Avisando al cliente…' : categoria === 'recibido_hausline' ? '✅ Confirmar y enviar las fotos al cliente' : '📦 Confirmar empaquetado y avisar al cliente'}
+        </button>)}
 
     {categoria === 'control_calidad' && itemQC && fotosDelProductoQc > 0 && <button type="button" onClick={() => void enviarFotosQc()} disabled={enviandoQc || uploading} className={qcYaEnviado ? 'mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-line bg-white/[0.04] px-5 py-2.5 text-sm font-semibold text-muted' : 'primary-button mt-4 w-full'}>
       {enviandoQc ? 'Enviando…' : qcYaEnviado ? `✓ Enviadas a ${productoQc?.producto ?? 'este producto'} · reenviar` : `📸 Enviar fotos de control de calidad al cliente (${productoQc?.producto ?? 'este producto'})`}

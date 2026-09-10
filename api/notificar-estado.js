@@ -18,7 +18,7 @@ function extPorMime(mime) {
 // El mismo mecanismo sirve para las fotos de "control de calidad" y para las del paquete
 // empacado ("empaque"): cambia solo el tipo que se filtra y el nombre del archivo. Por eso
 // recibe `tipo` (por defecto 'control_calidad', para no tocar las llamadas existentes).
-async function obtenerFotosCalidad(codigo, tipo = 'control_calidad') {
+export async function obtenerFotosCalidad(codigo, tipo = 'control_calidad') {
   const base = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!base || !key || !codigo) return { fotos: [], fecha: null }

@@ -48,6 +48,14 @@ export function esLineaEnvioRapido(item: Pick<PedidoItem, 'notas'>) {
   return item.notas === ENVIO_RAPIDO_NOTA
 }
 
+// True si el ítem es una línea de envío/delivery (rápido o local) y NO un producto real.
+// Se usa para NO rastrearla por etapa ni contarla en el seguimiento por producto: el envío
+// es un cargo, no algo que "llegue del proveedor". Cubre la marca interna del envío rápido
+// y las etiquetas conocidas ("Envío rápido …", "Envío / delivery").
+export function esLineaEnvio(item: Pick<PedidoItem, 'notas' | 'producto'>) {
+  return esLineaEnvioRapido(item) || /^env[íi]o\b/i.test(item.producto ?? '')
+}
+
 // Quita cualquier línea previa de envío rápido y, si corresponde, agrega una fresca.
 // Así, al crear/editar, el recargo lo maneja solo la casilla "envío rápido" y nunca
 // se duplica ni queda pegado si se desmarca.
@@ -241,6 +249,24 @@ export async function marcarQcEnviado(itemId: string): Promise<string> {
   const { error } = await requireSupabase().from('pedido_items').update({ qc_enviado_at: at }).eq('id', itemId)
   if (error) throw error
   return at
+}
+
+// Reenvía al cliente el correo con las fotos de una etapa (recibido en HAUSLINE / empaque)
+// aunque el pedido ya haya pasado esa etapa —cuando el correo automático por transición ya no
+// dispara—. Llama al endpoint /api/reenviar-fotos con el JWT del usuario (lo valida el server).
+export async function reenviarFotosEtapa(codigo: string, tipo: 'recibido_hausline' | 'empaque' | 'control_calidad') {
+  const client = requireSupabase()
+  const { data: sessionData } = await client.auth.getSession()
+  const token = sessionData.session?.access_token
+  if (!token) throw new Error('Sesión no disponible.')
+  const res = await fetch('/api/reenviar-fotos', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ codigo, tipo }),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok || !json.ok) throw new Error(json.error || 'No se pudo reenviar el correo.')
+  return json as { ok: true; sent: string; fotos: number }
 }
 
 export async function actualizarEstadoPedido(id: string, estado: EstadoPedido) {
