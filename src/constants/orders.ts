@@ -88,6 +88,9 @@ export function mensajeWhatsAppEstado(estado: EstadoPedido, data: { nombre?: str
   // quede un número raro (ej. 2928 → 2930).
   const cordobas = Math.round((saldoUsd * tc) / 10) * 10
   const saldoLinea = `US$ ${saldoUsd.toFixed(2)} (≈ C$ ${cordobas})`
+  // Si el pedido ya está pagado por completo (saldo 0), NO mandamos números de cuenta:
+  // lo único pendiente es el envío, así que solo pedimos que nos digan a dónde lo quieren.
+  const pagado = saldoUsd <= 0.01
   // El texto de envío se adapta a la ubicación del cliente: en Managua ofrecemos
   // delivery a domicilio; fuera de Managua, bus o Cargotrans; si no sabemos dónde
   // está, mostramos todas las opciones como antes.
@@ -106,7 +109,9 @@ export function mensajeWhatsAppEstado(estado: EstadoPedido, data: { nombre?: str
     recibido_estados_unidos: `${saludo} Tu pedido ${data.codigo} está en tránsito internacional. ${seguimiento}`,
     transito_nicaragua: `${saludo} Tu pedido ${data.codigo} está en tránsito internacional. ${seguimiento}`,
     llego_nicaragua: `${saludo} Tu pedido ${data.codigo} ya llegó al país de destino y está siendo procesado. ${seguimiento}`,
-    disponible_entrega: `${saludo} Tu pedido ${data.codigo} ya está *disponible para entrega*.\n\n*Saldo pendiente: ${saldoLinea}*\n\n*Tienes 2 días* para confirmar o cancelar tu pedido sin costo. Después de esos 2 días se cobra *US$ 5 por cada día* que el pedido permanezca en bodega.\n\n${envioTexto}\n\nCuentas para el pago:\n\n${cuentasTexto()}\n\nCuando deposités, mandanos el comprobante por aquí.`,
+    disponible_entrega: pagado
+      ? `${saludo} Tu pedido ${data.codigo} ya está *disponible para entrega*.\n\nTu pedido *ya está pagado por completo* ✅. Lo único que faltaría es el *costo del envío*; decinos a dónde lo querés y coordinamos la entrega.\n\n${envioTexto}`
+      : `${saludo} Tu pedido ${data.codigo} ya está *disponible para entrega*.\n\n*Saldo pendiente: ${saldoLinea}*\n\n*Tienes 2 días* para confirmar o cancelar tu pedido sin costo. Después de esos 2 días se cobra *US$ 5 por cada día* que el pedido permanezca en bodega.\n\n${envioTexto}\n\nCuentas para el pago:\n\n${cuentasTexto()}\n\nCuando deposités, mandanos el comprobante por aquí.`,
     pagado: `${saludo} Confirmamos el pago de tu pedido ${data.codigo}. ✅ Ya no se acumula ningún cargo por bodega. Coordinamos la entrega y te avisamos. ${seguimiento}`,
     empaquetado: `${saludo} ¡Buenas noticias! Tu pedido ${data.codigo} ya está *empaquetado y listo para envío*. ${esManagua(data.departamento, data.ciudad) ? 'Sale con nuestro delivery a domicilio.' : 'Ya va en camino a tu departamento.'} Te enviamos una foto de tu paquete para que lo tengas presente. ${seguimiento}`,
     entregado: `${saludo} Tu pedido ${data.codigo} fue entregado. Gracias por comprar en Hausline.`,
