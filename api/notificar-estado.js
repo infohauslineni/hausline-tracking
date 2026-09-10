@@ -225,7 +225,7 @@ async function reenviarFotosEtapa(request, response, body, authorization) {
   const nombre = cli?.nombre ?? null
   if (!correo) return response.status(200).json({ ok: false, error: 'El cliente no tiene correo.' })
 
-  const { fotos } = await obtenerFotosCalidad(codigo, tipo)
+  const { fotos, fecha: fechaFotos } = await obtenerFotosCalidad(codigo, tipo)
   if (!fotos.length) return response.status(200).json({ ok: false, error: 'No hay fotos para enviar en esta etapa.' })
 
   try {
@@ -234,7 +234,19 @@ async function reenviarFotosEtapa(request, response, body, authorization) {
     console.error('reenviar-fotos: no se pudo enviar', sendError?.message)
     return response.status(502).json({ ok: false, error: 'No se pudo enviar el correo.' })
   }
-  return response.status(200).json({ ok: true, sent: correo, fotos: fotos.length })
+
+  // Archiva las MISMAS fotos en la carpeta del pedido en Drive (igual que el flujo normal).
+  // Best-effort: si falla, no rompe el envío del correo.
+  let fotosArchivadas = 0
+  for (const f of fotos) {
+    try {
+      await subirArchivoDrive({ codigo, fecha: fechaFotos, filename: f.filename, data: f.content, mime: f.contentType })
+      fotosArchivadas++
+    } catch (driveError) {
+      console.error('reenviar-fotos: no se pudo archivar en Drive', driveError?.message)
+    }
+  }
+  return response.status(200).json({ ok: true, sent: correo, fotos: fotos.length, fotosArchivadas })
 }
 
 export default async function handler(request, response) {

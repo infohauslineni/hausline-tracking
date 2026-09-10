@@ -28,6 +28,9 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], onQ
   const [qcEnviados, setQcEnviados] = useState<Set<string>>(new Set())
   const [enviandoQc, setEnviandoQc] = useState(false)
   const [reenviando, setReenviando] = useState(false)
+  // Etapas cuyas fotos YA se enviaron al cliente en esta sesión (para pasar el botón de
+  // "Enviar" a "Enviado · Reenviar" con confirmación a partir del segundo envío).
+  const [enviadosEtapa, setEnviadosEtapa] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [uploading, setUploading] = useState(false)
   const [confirmando, setConfirmando] = useState(false)
@@ -119,19 +122,20 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], onQ
   // Reenvía por correo las fotos de esta etapa (recibido / empaque) cuando el pedido YA pasó
   // la etapa: el aviso automático por transición no vuelve a dispararse, así que este botón
   // manda el correo con las fotos actuales aunque no cambie el estado.
-  const reenviarFotos = async () => {
-    if (categoria !== 'recibido_hausline' && categoria !== 'empaque' && categoria !== 'control_calidad') return
+  // Envía (o reenvía) por correo las fotos de una etapa. La PRIMERA vez va sin aviso (es un
+  // envío normal); si ya se enviaron antes (yaAntes), pide confirmación para no mandar un
+  // correo repetido al cliente por accidente.
+  const enviarOReenviar = async (cat: 'recibido_hausline' | 'empaque' | 'control_calidad', yaAntes: boolean) => {
     if (!isSupabaseConfigured) { toast.info('Disponible solo con Supabase configurado.'); return }
     if (!codigo) { toast.error('Falta el código del pedido.'); return }
-    // Estas fotos ya se enviaron al cambiar de etapa. Confirmamos antes de reenviar para no
-    // mandar un correo repetido al cliente por accidente.
-    if (!window.confirm('Estas fotos ya se enviaron al cliente. ¿Querés reenviárselas por correo de nuevo?')) return
+    if (yaAntes && !window.confirm('Estas fotos ya se enviaron al cliente. ¿Querés reenviárselas por correo de nuevo?')) return
     setReenviando(true)
     try {
-      const r = await reenviarFotosEtapa(codigo, categoria)
-      toast.success(`Correo reenviado al cliente con ${r.fotos} ${r.fotos === 1 ? 'foto' : 'fotos'}.`)
+      const r = await reenviarFotosEtapa(codigo, cat)
+      setEnviadosEtapa((prev) => new Set(prev).add(cat))
+      toast.success(`Correo enviado al cliente con ${r.fotos} ${r.fotos === 1 ? 'foto' : 'fotos'}.`)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'No se pudo reenviar el correo.')
+      toast.error(error instanceof Error ? error.message : 'No se pudo enviar el correo.')
     } finally {
       setReenviando(false)
     }
@@ -172,6 +176,7 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], onQ
   // cliente: son las que se mandan en un solo correo. Sirven para reenviarlas si se olvidó
   // subirlas antes de cambiar de estado.
   const fotosControlGenerales = archivos.filter((a) => a.tipo === 'control_calidad' && a.visible_cliente && !a.pedido_item_id).length
+  const qcGeneralEnviado = enviadosEtapa.has('control_calidad')
   const enviarFotosQc = async () => {
     if (!itemQC) return
     setEnviandoQc(true)
@@ -237,7 +242,7 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], onQ
       </div> : <div className="mt-5 rounded-xl border border-line bg-white/[0.015] px-4 py-7 text-center"><p className="text-sm text-muted">Todavía no hay imágenes en {detalle.label.toLowerCase()}.</p></div>}
 
     {(categoria === 'recibido_hausline' || categoria === 'empaque') && actuales.length > 0 && (yaEnviado
-      ? <button type="button" onClick={() => void reenviarFotos()} disabled={reenviando || uploading} className="subtle-button mt-4 w-full justify-center py-3">
+      ? <button type="button" onClick={() => void enviarOReenviar(categoria, true)} disabled={reenviando || uploading} className="subtle-button mt-4 w-full justify-center py-3">
           {reenviando ? 'Reenviando…' : '✓ Fotos ya enviadas al cliente · Reenviar'}
         </button>
       : <button type="button" onClick={() => void confirmarEtapa()} disabled={confirmando || uploading} className="primary-button mt-4 w-full">
@@ -248,8 +253,8 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], onQ
       {enviandoQc ? 'Enviando…' : qcYaEnviado ? `✓ Enviadas a ${productoQc?.producto ?? 'este producto'} · reenviar` : `📸 Enviar fotos de control de calidad al cliente (${productoQc?.producto ?? 'este producto'})`}
     </button>}
 
-    {categoria === 'control_calidad' && !itemQC && fotosControlGenerales > 0 && <button type="button" onClick={() => void reenviarFotos()} disabled={reenviando || uploading} className="subtle-button mt-4 w-full justify-center py-3">
-      {reenviando ? 'Reenviando…' : '✓ Fotos ya enviadas al cliente · Reenviar'}
+    {categoria === 'control_calidad' && !itemQC && fotosControlGenerales > 0 && <button type="button" onClick={() => void enviarOReenviar('control_calidad', qcGeneralEnviado)} disabled={reenviando || uploading} className={qcGeneralEnviado ? 'subtle-button mt-4 w-full justify-center py-3' : 'primary-button mt-4 w-full'}>
+      {reenviando ? (qcGeneralEnviado ? 'Reenviando…' : 'Enviando…') : qcGeneralEnviado ? '✓ Fotos ya enviadas al cliente · Reenviar' : '📸 Enviar fotos de control de calidad al cliente'}
     </button>}
   </section>
 }
