@@ -76,11 +76,11 @@ function dibujarSelloRecepcion(context: CanvasRenderingContext2D, width: number,
   context.restore()
 }
 
-// Logo de marca "HAUS / LINE" (con el ".NI") en dos líneas apiladas, NEGRO y con fuente
-// condensada pesada (Impact) para parecerse al logo real de HAUSLINE.
-// - posicion 'arriba' (por defecto): logo chico arriba al centro, limpio, para redes.
-// - posicion 'centro': logo grande centrado sobre toda la foto (control de calidad), bien
-//   visible como marca de agua.
+// Logo de marca "HAUS / LINE" en dos líneas apiladas, NEGRO y con fuente condensada pesada
+// (Impact), idéntico al logo real de HAUSLINE (sin ".NI").
+// - posicion 'arriba' (por defecto): logo en la parte baja-central de la foto (~60% del alto),
+//   como el logo de referencia; sirve también para redes.
+// - posicion 'centro': logo grande centrado sobre toda la foto, bien visible como marca de agua.
 // Lleva un halo blanco muy suave: en fondo claro se ve negro nítido y el halo casi no se
 // nota; en fondo oscuro (camiseta negra) el contorno blanco lo mantiene visible siempre.
 function dibujarMarcaLogo(context: CanvasRenderingContext2D, width: number, height: number, posicion: 'arriba' | 'centro' = 'arriba') {
@@ -88,10 +88,13 @@ function dibujarMarcaLogo(context: CanvasRenderingContext2D, width: number, heig
   const centrado = posicion === 'centro'
   const fontSize = centrado
     ? Math.max(40, Math.round(shortest * .16))
-    : Math.max(24, Math.round(shortest * .085))
+    : Math.max(28, Math.round(shortest * .10))
   const lineGap = Math.round(fontSize * .82) // apiladas bien juntas, estilo logo
-  // Arriba: pegado al borde superior. Centro: bloque de dos líneas centrado verticalmente.
-  const yTop = centrado ? Math.round((height - (lineGap + fontSize)) / 2) : Math.round(fontSize * .7)
+  const bloqueAlto = lineGap + fontSize
+  // Centro: bloque centrado en toda la foto. Por defecto (recibido/empaque): el logo va en la
+  // parte baja-central de la foto (~60% del alto), como en el logo de referencia, no pegado
+  // al borde de arriba.
+  const yTop = centrado ? Math.round((height - bloqueAlto) / 2) : Math.round(height * .6 - bloqueAlto / 2)
   const cx = width / 2
   const familia = `Impact, Haettenschweiler, 'Arial Narrow Bold', 'Arial Narrow', sans-serif`
   // Letras NEGRAS con un contorno blanco fino: en fondo claro (como el logo real) se ve
@@ -110,12 +113,8 @@ function dibujarMarcaLogo(context: CanvasRenderingContext2D, width: number, heig
     context.fillStyle = '#0a0a0a'
     context.fillText(texto, x, y)
   }
-  // "HAUS" (línea 1) + el ".NI" pequeño arriba a la derecha, como en el logo.
+  // Logo "HAUS" / "LINE" en dos líneas, idéntico a la referencia (negro, condensado, sin ".NI").
   dibujar('HAUS', cx, yTop, fontSize, 'center')
-  context.font = `${fontSize}px ${familia}`
-  const hausMitad = context.measureText('HAUS').width / 2
-  dibujar('.NI', cx + hausMitad + Math.round(fontSize * .04), yTop, Math.round(fontSize * .3), 'left')
-  // "LINE" (línea 2).
   dibujar('LINE', cx, yTop + lineGap, fontSize, 'center')
   context.restore()
 }
