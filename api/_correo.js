@@ -174,12 +174,13 @@ export function bloqueFotos(fotos, estado) {
   //   2-4     → 2 columnas
   //   5 o más → 3 columnas (miniaturas ordenadas; aguanta 6, 9, 12… sin romperse)
   const n = fotos.length
-  const estiloFoto = 'display:block;width:100%;height:auto;border-radius:10px;border:1px solid #e6e8ec;background-color:#f6f7f9;'
+  // Sin borde ni fondo gris (dejaban un "relleno blanco" alrededor de la foto) y a mayor tamaño.
+  const estiloFoto = 'display:block;width:100%;height:auto;border-radius:10px;'
   let galeria
   if (n === 1) {
     galeria = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
                 <td align="center" style="padding:0;">
-                  ${img(fotos[0], 'display:block;width:100%;max-width:340px;height:auto;border-radius:10px;border:1px solid #e6e8ec;background-color:#f6f7f9;')}
+                  ${img(fotos[0], 'display:block;width:100%;max-width:460px;height:auto;border-radius:10px;')}
                 </td></tr></table>`
   } else {
     const cols = n <= 4 ? 2 : 3
@@ -190,8 +191,8 @@ export function bloqueFotos(fotos, estado) {
       for (let c = 0; c < cols; c++) {
         const f = fotos[i + c]
         celdas.push(f
-          ? `<td width="${anchoCel}" style="padding:4px;vertical-align:top;">${img(f, estiloFoto)}</td>`
-          : `<td width="${anchoCel}" style="padding:4px;"></td>`)
+          ? `<td width="${anchoCel}" style="padding:2px;vertical-align:top;">${img(f, estiloFoto)}</td>`
+          : `<td width="${anchoCel}" style="padding:2px;"></td>`)
       }
       filas.push(`<tr>${celdas.join('')}</tr>`)
     }
@@ -201,7 +202,7 @@ export function bloqueFotos(fotos, estado) {
   return `
           <!-- Foto(s) de control de calidad -->
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 30px;">
-            <tr><td class="card" style="border:1px solid #e6e8ec;border-radius:12px;padding:20px 18px;">
+            <tr><td class="card" style="border:1px solid #e6e8ec;border-radius:12px;padding:16px 12px;">
               <div style="font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#8b93a7;margin-bottom:6px;text-align:center;">${titulo}</div>
               <div class="t-body" style="font-size:13px;line-height:1.6;color:#4b5563;margin:0 0 14px;text-align:center;">${subtitulo}</div>
               ${galeria}
