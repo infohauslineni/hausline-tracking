@@ -259,10 +259,10 @@ export async function reenviarFotosEtapa(codigo: string, tipo: 'recibido_hauslin
   const { data: sessionData } = await client.auth.getSession()
   const token = sessionData.session?.access_token
   if (!token) throw new Error('Sesión no disponible.')
-  const res = await fetch('/api/reenviar-fotos', {
+  const res = await fetch('/api/notificar-estado', {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-    body: JSON.stringify({ codigo, tipo }),
+    body: JSON.stringify({ resend: true, codigo, tipo }),
   })
   const json = await res.json().catch(() => ({}))
   if (!res.ok || !json.ok) throw new Error(json.error || 'No se pudo reenviar el correo.')

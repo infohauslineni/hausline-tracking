@@ -1,6 +1,14 @@
+import { createClient } from '@supabase/supabase-js'
 import { ESTADO_LABEL, enviarCorreoPedido } from './_correo.js'
 import { facturaPdfBuffer } from './_factura-pdf.js'
 import { subirFacturaDrive, subirArchivoDrive } from './_drive.js'
+
+// Reenvío manual (panel): cada tipo de foto corresponde a la etapa/correo que la lleva.
+const TIPO_A_ESTADO = {
+  recibido_hausline: 'disponible_entrega',
+  empaque: 'empaquetado',
+  control_calidad: 'control_calidad',
+}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -180,11 +188,65 @@ async function obtenerFactura(codigo, esNuevo) {
 // ya NO uno titulado "pedido registrado". Al cambiar de estado (UPDATE) se envía el
 // aviso de esa etapa, y el comprobante PAGADO al entregar.
 // La app NO envía correos por su cuenta, así que no hay envíos duplicados.
+// Reenvío MANUAL desde el panel: manda el correo de una etapa (recibido / empaque) con sus
+// fotos actuales, aunque el pedido ya haya pasado esa etapa (el aviso por transición ya no
+// dispara). Lo llama el panel con el JWT del usuario; se valida que sea admin/operador activo.
+// Va dentro de este endpoint (no en uno propio) para no pasarnos del límite de funciones.
+async function reenviarFotosEtapa(request, response, body, authorization) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return response.status(500).json({ ok: false, error: 'Missing server configuration' })
+  }
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    return response.status(500).json({ ok: false, error: 'Missing SMTP configuration' })
+  }
+  const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+  const token = String(authorization).replace(/^Bearer\s+/i, '').trim()
+  if (!token) return response.status(401).json({ ok: false })
+  const { data: userData } = await admin.auth.getUser(token).catch(() => ({ data: { user: null } }))
+  const solicitante = userData?.user
+  if (!solicitante) return response.status(401).json({ ok: false })
+  const { data: perfil } = await admin.from('perfiles').select('rol, activo').eq('id', solicitante.id).maybeSingle()
+  if (!perfil || !perfil.activo || (perfil.rol !== 'admin' && perfil.rol !== 'operador')) {
+    return response.status(403).json({ ok: false, error: 'No autorizado.' })
+  }
+
+  const codigo = String(body.codigo ?? '').trim()
+  const tipo = String(body.tipo ?? '').trim()
+  const estado = TIPO_A_ESTADO[tipo]
+  if (!codigo || !estado) return response.status(400).json({ ok: false, error: 'Datos inválidos.' })
+
+  const { data: pedido, error: pedidoError } = await admin
+    .from('pedidos').select('codigo, clientes(correo, nombre)').eq('codigo', codigo).maybeSingle()
+  if (pedidoError) return response.status(502).json({ ok: false, error: 'No se pudo leer el pedido.' })
+  const cli = Array.isArray(pedido?.clientes) ? pedido.clientes[0] : pedido?.clientes
+  const correo = (cli?.correo ?? '').trim()
+  const nombre = cli?.nombre ?? null
+  if (!correo) return response.status(200).json({ ok: false, error: 'El cliente no tiene correo.' })
+
+  const { fotos } = await obtenerFotosCalidad(codigo, tipo)
+  if (!fotos.length) return response.status(200).json({ ok: false, error: 'No hay fotos para enviar en esta etapa.' })
+
+  try {
+    await enviarCorreoPedido({ correo, nombre, codigo, estado, esNuevo: false, factura: null, fotos, pedirResena: false })
+  } catch (sendError) {
+    console.error('reenviar-fotos: no se pudo enviar', sendError?.message)
+    return response.status(502).json({ ok: false, error: 'No se pudo enviar el correo.' })
+  }
+  return response.status(200).json({ ok: true, sent: correo, fotos: fotos.length })
+}
+
 export default async function handler(request, response) {
   if (request.method !== 'POST') return response.status(405).json({ ok: false, error: 'Method not allowed' })
 
-  // Solo Supabase (con el secreto compartido) puede disparar este envío.
-  const authorization = request.headers?.authorization ?? request.headers?.get?.('authorization')
+  const body = typeof request.body === 'string' ? JSON.parse(request.body || '{}') : (request.body ?? {})
+  const authorization = request.headers?.authorization ?? request.headers?.get?.('authorization') ?? ''
+
+  // Reenvío manual desde el panel (JWT del usuario, no el secreto del webhook).
+  if (body.resend) return reenviarFotosEtapa(request, response, body, authorization)
+
+  // Solo Supabase (con el secreto compartido) puede disparar el aviso automático.
   if (!process.env.NOTIFY_SECRET || authorization !== `Bearer ${process.env.NOTIFY_SECRET}`) {
     return response.status(401).json({ ok: false })
   }
@@ -192,7 +254,6 @@ export default async function handler(request, response) {
     return response.status(500).json({ ok: false, error: 'Missing SMTP configuration' })
   }
 
-  const body = typeof request.body === 'string' ? JSON.parse(request.body || '{}') : (request.body ?? {})
   const record = body.record ?? {}
   const oldRecord = body.old_record ?? {}
 
