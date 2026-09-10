@@ -14,7 +14,7 @@ import { ESTADOS_ITEM, ESTADOS_PEDIDO, estadoLabel, etapaBase, mensajeWhatsAppEs
 import { CancelarPedidoModal } from '../../components/pedidos/CancelarPedidoModal'
 import { DEMO_PEDIDOS } from '../../data/demo'
 import { isSupabaseConfigured } from '../../lib/supabase'
-import { actualizarEstadoItem, actualizarEstadoPedido, actualizarPedidoCompleto, agregarEnvioPedido, cobrarPedido, obtenerDisponibleDesde, obtenerPedido, pagarProveedorPedido, pasarPedidoAStock, type PagoProveedorInput } from '../../services/pedidos.service'
+import { actualizarEstadoItem, actualizarEstadoPedido, actualizarPedidoCompleto, agregarEnvioPedido, cobrarPedido, esLineaEnvio, obtenerDisponibleDesde, obtenerPedido, pagarProveedorPedido, pasarPedidoAStock, type PagoProveedorInput } from '../../services/pedidos.service'
 import { useAuth } from '../../contexts/AuthContext'
 import type { FacturaData } from '../../services/factura.service'
 import { obtenerTipoCambio, registrarGasto } from '../../services/comercial.service'
@@ -202,18 +202,24 @@ export function PedidoDetailPage() {
   }
   // Abre la MISMA factura/comprobante que se le envía al cliente, para descargarla o
   // reenviarla desde el panel cuando haga falta (no solo al momento de cobrar).
-  const abrirFactura = () => setVerFactura({
-    codigo: pedido.codigo,
-    cliente: pedido.clientes?.nombre ?? 'Cliente',
-    whatsapp: pedido.clientes?.whatsapp ?? null,
-    fecha: pedido.fecha_pedido || new Date().toISOString().slice(0, 10),
-    items: facturaItemsDePedido(pedido),
-    total: Number(pedido.total || 0),
-    abono: Number(pedido.abono || 0),
-    saldo: Number(pedido.saldo || 0),
-    variante: Number(pedido.saldo || 0) <= 0.01 ? 'pago' : 'compra',
-    metodoPago: pedido.metodo_pago ?? null,
-  })
+  // comoPagado = imprimir por adelantado el comprobante YA pagado (total = pago recibido,
+  // saldo 0), aunque el pedido todavía tenga saldo pendiente, para tenerlo listo antes.
+  const abrirFactura = (comoPagado = false) => {
+    const total = Number(pedido.total || 0)
+    const pagado = comoPagado || Number(pedido.saldo || 0) <= 0.01
+    setVerFactura({
+      codigo: pedido.codigo,
+      cliente: pedido.clientes?.nombre ?? 'Cliente',
+      whatsapp: pedido.clientes?.whatsapp ?? null,
+      fecha: pedido.fecha_pedido || new Date().toISOString().slice(0, 10),
+      items: facturaItemsDePedido(pedido),
+      total,
+      abono: comoPagado ? total : Number(pedido.abono || 0),
+      saldo: comoPagado ? 0 : Number(pedido.saldo || 0),
+      variante: pagado ? 'pago' : 'compra',
+      metodoPago: pedido.metodo_pago ?? null,
+    })
+  }
   const publicUrl = `${import.meta.env.VITE_PUBLIC_APP_URL ?? window.location.origin}/tracking/${pedido.codigo}`
   const qualityMessageReady = pedido.estado === 'control_calidad' && qualityPhotosReady
   const whatsappMessage = mensajeWhatsAppEstado(pedido.estado, { nombre: pedido.clientes?.nombre, codigo: pedido.codigo, url: publicUrl, saldo: Number(pedido.saldo), fotosCalidad: qualityMessageReady, tipoCambio, departamento: pedido.clientes?.departamento, ciudad: pedido.clientes?.ciudad })
@@ -226,6 +232,11 @@ export function PedidoDetailPage() {
   const recordatorioBodega = cargoBodega?.activo
     ? `Hola${pedido.clientes?.nombre ? `, ${pedido.clientes.nombre}` : ''}. Te recordamos que tu pedido ${pedido.codigo} está *disponible para entrega* desde hace ${cargoBodega.dias} días. Como superó los ${DIAS_GRACIA_BODEGA} días de gracia, se acumula un cargo por bodega de *US$ ${cargoBodega.cargo.toFixed(2)} (≈ C$ ${cordobasBodega})* — US$ ${CARGO_BODEGA_DIARIO} por cada día extra que sigue en bodega. Coordinemos tu entrega y pago para que no siga subiendo. Rastrea tu pedido aquí: ${publicUrl}`
     : ''
+  // Productos "de verdad" para el seguimiento por producto: se excluyen las líneas de
+  // envío/delivery (son un cargo, no algo que se rastree por etapa). El selector y la barra
+  // por producto solo tienen sentido con >1 producto real.
+  const productosSeguibles = (pedido.pedido_items ?? []).filter((it) => !esLineaEnvio(it))
+  const seguimientoPorProducto = productosSeguibles.length > 1
   return <div>
     <Link to="/pedidos" className="mb-5 inline-flex items-center gap-2 text-xs text-muted hover:text-white"><ArrowLeft size={16} /> Volver a pedidos</Link>
     <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
@@ -243,14 +254,14 @@ export function PedidoDetailPage() {
             <button className="primary-button px-5" onClick={() => void updateStatus()} disabled={savingStatus || estadoSeleccionado === pedido.estado}>{savingStatus ? 'Guardando…' : estadoSeleccionado === 'pagado' ? 'Registrar pago' : estadoSeleccionado === 'entregado' ? 'Confirmar entrega' : 'Confirmar etapa'}</button>
           </div>
         </section>
-        <section className="form-section"><div className="flex items-center justify-between"><h2 className="flex items-center gap-2 font-semibold"><Package size={18} className="text-accent" /> Productos{(pedido.pedido_items?.length ?? 0) > 1 && <span className="text-xs font-normal text-muted">({pedido.pedido_items?.length})</span>}</h2>{esAdmin && <button className="table-action" aria-label="Editar pedido" onClick={() => setEditOpen(true)}><Pencil size={16} /></button>}</div>
-          {(pedido.pedido_items?.length ?? 0) > 1 && <ItemsProgreso items={pedido.pedido_items ?? []} />}
-          <div className="mt-4 divide-y divide-line">{pedido.pedido_items?.map((item, index) => <div className="flex flex-wrap items-center gap-3 py-4" key={`${item.producto}-${index}`}><ProductoThumb imagen={item.imagen} cantidad={item.cantidad} alt={item.producto} /><div className="min-w-0 flex-1"><strong className="block truncate text-sm">{item.producto}</strong><span className="block truncate text-xs text-muted">{[item.marca, item.talla, item.color].filter(Boolean).join(' · ')}</span>{item.codigo_producto && <span className="mt-0.5 block font-mono text-[11px] text-accent">Cód. {item.codigo_producto}</span>}</div><strong className="text-sm">${(item.cantidad * item.precio_unitario).toFixed(2)}</strong>{esAdmin && item.id && <select value={item.estado_item ?? 'pendiente'} onChange={(e) => void cambiarEstadoItem(item.id!, e.target.value as EstadoItem)} className="w-full shrink-0 rounded-lg border border-line bg-white/[0.02] px-2 py-1.5 text-xs sm:w-auto">{ESTADOS_ITEM.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</select>}</div>)}</div></section>
+        <section className="form-section"><div className="flex items-center justify-between"><h2 className="flex items-center gap-2 font-semibold"><Package size={18} className="text-accent" /> Productos{seguimientoPorProducto && <span className="text-xs font-normal text-muted">({productosSeguibles.length})</span>}</h2>{esAdmin && <button className="table-action" aria-label="Editar pedido" onClick={() => setEditOpen(true)}><Pencil size={16} /></button>}</div>
+          {seguimientoPorProducto && <ItemsProgreso items={productosSeguibles} />}
+          <div className="mt-4 divide-y divide-line">{pedido.pedido_items?.map((item, index) => <div className="flex flex-wrap items-start gap-3 py-4" key={`${item.producto}-${index}`}><ProductoThumb imagen={item.imagen} cantidad={item.cantidad} alt={item.producto} /><div className="min-w-0 flex-1"><strong className="block text-sm">{item.producto}</strong>{item.marca && <span className="mt-0.5 block text-xs text-muted">{item.marca}</span>}<DetalleProducto talla={item.talla} color={item.color} esLinea={esLineaEnvio(item)} />{item.codigo_producto && <span className="mt-1.5 block font-mono text-[11px] text-accent">Cód. {item.codigo_producto}</span>}</div><strong className="text-sm">${(item.cantidad * item.precio_unitario).toFixed(2)}</strong>{esAdmin && item.id && seguimientoPorProducto && !esLineaEnvio(item) && <select value={item.estado_item ?? 'pendiente'} onChange={(e) => void cambiarEstadoItem(item.id!, e.target.value as EstadoItem)} className="w-full shrink-0 rounded-lg border border-line bg-white/[0.02] px-2 py-1.5 text-xs sm:w-auto">{ESTADOS_ITEM.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</select>}</div>)}</div></section>
         <PedidoArchivos pedidoId={pedido.id} codigo={pedido.codigo} estadoPedido={pedido.estado} items={pedido.pedido_items ?? []} onQualityReady={setQualityPhotosReady} onEstadoAvanzado={(updated) => setPedido((current) => current ? { ...current, ...updated } : updated)} />
         <PedidoLogistica pedidoId={pedido.id} />
         <section className="form-section"><h2 className="flex items-center gap-2 font-semibold"><CalendarDays size={18} className="text-accent" /> Fechas</h2><div className="mt-5 grid gap-4 sm:grid-cols-3"><Info label="Pedido" value={pedido.fecha_pedido} /><Info label="Llegada estimada" value={pedido.fecha_estimada ?? 'Sin definir'} /><Info label="Actualización" value={new Intl.DateTimeFormat('es-NI').format(new Date(pedido.updated_at))} /></div></section>
       </div>
-      <aside className="min-w-0 space-y-5"><section className="form-section"><h2 className="flex items-center gap-2 font-semibold"><UserRound size={18} className="text-accent" /> Cliente</h2><div className="mt-4"><strong>{pedido.clientes?.nombre}</strong><p className="mt-1 text-sm text-muted">{pedido.clientes?.whatsapp}</p></div></section>{esAdmin && <><section className="form-section"><h2 className="font-semibold">Resumen de pago</h2><div className="mt-4 space-y-3 text-sm"><PayRow label="Total" value={pedido.total} /><PayRow label="Abono" value={pedido.abono} /><PayRow label="Costo real" value={costoReal} />{envioCliente > 0 && <PayRow label="Envío del cliente (no es ganancia)" value={envioCliente} />}<PayRow label="Ganancia estimada" value={gananciaEstimada} /><div className="border-t border-line pt-3"><PayRow label="Saldo pendiente" value={pedido.saldo} accent /></div></div>{pedido.estado !== 'entregado' && pedido.estado !== 'cancelado' && <button className="subtle-button mt-4 w-full" onClick={() => { const actual = pedido.pedido_items?.find((it) => it.producto === 'Envío / delivery'); setEnvioMonto(actual ? String(actual.precio_unitario) : ''); setEnvioNota(actual?.talla ?? ''); setEnvioOpen(true) }}><Truck size={16} /> {pedido.pedido_items?.some((it) => it.producto === 'Envío / delivery') ? 'Editar envío' : 'Agregar envío'}</button>}<button className="subtle-button mt-2 w-full" onClick={abrirFactura}><FileText size={16} /> Descargar factura</button></section><section className="form-section"><h2 className="font-semibold">Gastos asociados</h2><div className="mt-4 space-y-3">{pedido.gastos?.length ? pedido.gastos.map((gasto) => <div className="flex justify-between gap-3 text-xs" key={gasto.id}><span className="text-muted">{gasto.categoria}</span><strong>${Number(gasto.monto).toFixed(2)}</strong></div>) : <p className="text-xs text-muted">Todavía no hay gastos registrados para este pedido.</p>}</div>{pedido.estado !== 'cancelado' && <button className="subtle-button mt-4 w-full" onClick={() => setGastoOpen(true)}><Truck size={16} /> Agregar costo de envío</button>}</section></>}</aside>
+      <aside className="min-w-0 space-y-5"><section className="form-section"><h2 className="flex items-center gap-2 font-semibold"><UserRound size={18} className="text-accent" /> Cliente</h2><div className="mt-4"><strong>{pedido.clientes?.nombre}</strong><p className="mt-1 text-sm text-muted">{pedido.clientes?.whatsapp}</p></div></section>{esAdmin && <><section className="form-section"><h2 className="font-semibold">Resumen de pago</h2><div className="mt-4 space-y-3 text-sm"><PayRow label="Total" value={pedido.total} /><PayRow label="Abono" value={pedido.abono} /><PayRow label="Costo real" value={costoReal} />{envioCliente > 0 && <PayRow label="Envío del cliente (no es ganancia)" value={envioCliente} />}<PayRow label="Ganancia estimada" value={gananciaEstimada} /><div className="border-t border-line pt-3"><PayRow label="Saldo pendiente" value={pedido.saldo} accent /></div></div>{pedido.estado !== 'entregado' && pedido.estado !== 'cancelado' && <button className="subtle-button mt-4 w-full" onClick={() => { const actual = pedido.pedido_items?.find((it) => it.producto === 'Envío / delivery'); setEnvioMonto(actual ? String(actual.precio_unitario) : ''); setEnvioNota(actual?.talla ?? ''); setEnvioOpen(true) }}><Truck size={16} /> {pedido.pedido_items?.some((it) => it.producto === 'Envío / delivery') ? 'Editar envío' : 'Agregar envío'}</button>}<button className="subtle-button mt-2 w-full" onClick={() => abrirFactura()}><FileText size={16} /> Descargar factura</button>{Number(pedido.saldo || 0) > 0.01 && <button className="subtle-button mt-2 w-full" onClick={() => abrirFactura(true)}><FileText size={16} /> Comprobante pagado (imprimir antes)</button>}</section><section className="form-section"><h2 className="font-semibold">Gastos asociados</h2><div className="mt-4 space-y-3">{pedido.gastos?.length ? pedido.gastos.map((gasto) => <div className="flex justify-between gap-3 text-xs" key={gasto.id}><span className="text-muted">{gasto.categoria}</span><strong>${Number(gasto.monto).toFixed(2)}</strong></div>) : <p className="text-xs text-muted">Todavía no hay gastos registrados para este pedido.</p>}</div>{pedido.estado !== 'cancelado' && <button className="subtle-button mt-4 w-full" onClick={() => setGastoOpen(true)}><Truck size={16} /> Agregar costo de envío</button>}</section></>}</aside>
     </div>
     <EditarPedidoModal pedido={pedido} open={editOpen} onClose={() => setEditOpen(false)} onSave={async (input) => {
       try {
@@ -381,8 +392,14 @@ function ProveedorPagoModal({ pedido, tipoCambio, montoSugerido, open, onClose, 
     } catch (error) { toast.error(error instanceof Error ? error.message : 'No se pudo registrar el pago al proveedor.') }
     finally { setSaving(false) }
   }
+  const aVerificar = (pedido.pedido_items ?? []).filter((it) => !esLineaEnvio(it))
   return <Modal open={open} onClose={onClose} title={`Pago al proveedor · ${pedido.codigo}`} description="¿Cuánto le pagaste al proveedor? Se descuenta de la cuenta que elijas y queda como costo del pedido. Luego el pedido pasa a En preparación.">
     <div className="form-grid">
+      {aVerificar.length > 0 && <div className="col-span-full rounded-xl border border-amber-300/30 bg-amber-300/[0.06] p-3.5">
+        <div className="flex items-center gap-2 text-amber-200"><AlertTriangle size={16} className="shrink-0" /><strong className="text-sm">Verificá antes de comprarle al proveedor</strong></div>
+        <p className="mt-1 text-[11px] leading-5 text-amber-100/80">Revisá que la talla y el color que vas a pedir coincidan con lo que pidió el cliente.</p>
+        <div className="mt-3 space-y-2.5">{aVerificar.map((item, index) => <div key={`${item.producto}-${index}`}><div className="flex items-baseline justify-between gap-2"><strong className="text-sm">{item.producto}</strong>{item.cantidad > 1 && <span className="shrink-0 text-xs text-muted">{item.cantidad}×</span>}</div><DetalleProducto talla={item.talla} color={item.color} esLinea={false} /></div>)}</div>
+      </div>}
       <MoneyField label="Costo pagado al proveedor" moneda={moneda} montoOriginal={monto} tipoCambio={tipoCambio} onMoneda={setMoneda} onMonto={setMonto} autoFocus />
       <label className="form-field"><span>Método</span><input value={metodo} onChange={(e) => setMetodo(e.target.value)} /></label>
       <CuentaSelect requerido montoUsd={montoUsd} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" proposito="comprar" />
@@ -440,6 +457,38 @@ function ItemsProgreso({ items }: { items: PedidoItem[] }) {
   return <div className="mt-4 rounded-xl border border-line bg-white/[0.02] p-3">
     <div className="flex flex-wrap items-center justify-between gap-2 text-xs"><span className="font-semibold">Seguimiento por producto</span><span className="text-muted">{recibidos} de {total} recibidos · {enviados} enviados · {entregados} entregados</span></div>
     <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-accent transition-all" style={{ width: `${pct}%` }} /></div>
+  </div>
+}
+// Mapa de nombres de color (español e inglés) → color CSS para el puntito. Sirve para que
+// de un vistazo se distinga blanco de negro sin tener que leer la palabra (el error que
+// costó una compra: la camisa decía "white" y se compró negra sin fijarse).
+const COLOR_HEX: Record<string, string> = {
+  blanco: '#ffffff', white: '#ffffff', hueso: '#f2ece1', crema: '#f5f0e1', beige: '#e8dcc4', marfil: '#fffff0',
+  negro: '#111111', black: '#111111',
+  gris: '#9ca3af', gray: '#9ca3af', grey: '#9ca3af', plata: '#c0c0c0', plomo: '#6b7280',
+  rojo: '#dc2626', red: '#dc2626', vino: '#7f1d1d', granate: '#7f1d1d', bordo: '#7f1d1d',
+  azul: '#2563eb', blue: '#2563eb', celeste: '#7dd3fc', marino: '#1e3a5f', navy: '#1e3a5f', turquesa: '#14b8a6',
+  verde: '#16a34a', green: '#16a34a', oliva: '#5b6420', menta: '#a7f3d0',
+  amarillo: '#facc15', yellow: '#facc15', mostaza: '#d4a017', dorado: '#d4af37', oro: '#d4af37', gold: '#d4af37',
+  naranja: '#f97316', orange: '#f97316', coral: '#ff7f50',
+  rosa: '#f472b6', rosado: '#f472b6', pink: '#f472b6', fucsia: '#d946ef',
+  morado: '#9333ea', purpura: '#9333ea', purple: '#9333ea', lila: '#c4b5fd', violeta: '#8b5cf6',
+  cafe: '#7c4a1e', café: '#7c4a1e', marron: '#7c4a1e', marrón: '#7c4a1e', brown: '#7c4a1e', chocolate: '#5c3317', camel: '#c19a6b', khaki: '#c3b091',
+}
+function colorHex(nombre: string): string | null {
+  const key = nombre.trim().toLowerCase().split(/[\s/·,-]+/)[0]
+  return COLOR_HEX[key] ?? null
+}
+// Chips grandes y marcados de talla y color en el detalle del pedido. Antes salían en gris
+// chiquito, truncados y pegados a la marca ("marca · talla · color"), así que un "white" se
+// perdía. Ahora cada dato es un chip legible con su etiqueta; el color lleva su puntito y va
+// resaltado (borde acento) porque es el que más cuesta al equivocarse.
+function DetalleProducto({ talla, color, esLinea }: { talla?: string | null; color?: string | null; esLinea: boolean }) {
+  if (esLinea || (!talla && !color)) return null
+  const hex = color ? colorHex(color) : null
+  return <div className="mt-2 flex flex-wrap items-center gap-2">
+    {talla && <span className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white/[0.04] px-2.5 py-1"><span className="text-[10px] font-semibold uppercase tracking-wide text-muted">Talla</span><span className="text-sm font-bold text-white">{talla}</span></span>}
+    {color && <span className="inline-flex items-center gap-1.5 rounded-lg border border-accent/45 bg-accent/[0.08] px-2.5 py-1"><span className="text-[10px] font-semibold uppercase tracking-wide text-accent">Color</span>{hex && <span className="size-3.5 shrink-0 rounded-full border border-white/40" style={{ backgroundColor: hex }} />}<span className="text-sm font-bold text-white">{color}</span></span>}
   </div>
 }
 // Miniatura del producto. Si no hay imagen —o si la URL está rota/no carga (p. ej.
