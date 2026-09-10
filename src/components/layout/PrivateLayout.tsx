@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { useAuth } from '../../contexts/AuthContext'
 import { isSupabaseConfigured, supabase } from '../../lib/supabase'
 import { prefetchRoute, warmDashboard } from '../../utils/prefetchDashboard'
-import { playEncargoChime } from '../../utils/notify'
+import { playEncargoChime, primeEncargoAudio } from '../../utils/notify'
 import { calcularAlertas, contarUrgentes, type Alerta } from '../../utils/alertas'
 import { Brand } from '../ui/Brand'
 
@@ -97,6 +97,8 @@ export function PrivateLayout() {
     .map((group) => ({ ...group, items: esAdmin ? group.items : group.items.filter((item) => RUTAS_OPERADOR.has(item.to)) }))
     .filter((group) => group.items.length > 0)
   useEffect(() => { warmDashboard() }, [])
+  // Prepara el sonido de encargo SOLO en el panel admin (no en el sitio público de seguimiento).
+  useEffect(() => { primeEncargoAudio() }, [])
   // Refresca los contadores y las alertas al cambiar de página (datos del caché de pedidos).
   useEffect(() => { if (!isSupabaseConfigured) return; let vivo = true; void calcularEstado().then((next) => { if (vivo) { setBadges(next.badges); setAlertas(next.alertas) } }).catch(() => undefined); return () => { vivo = false } }, [location.pathname])
   useEffect(() => { setBellOpen(false) }, [location.pathname])

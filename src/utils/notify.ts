@@ -28,17 +28,22 @@ function ensureAudio(): HTMLAudioElement | null {
   return audio
 }
 
-if (typeof window !== 'undefined') {
-  // Al primer clic: despertamos el AudioContext (fallback) y "primamos" el archivo de audio
-  // (un play muteado + pause) para que luego pueda sonar sin gesto directo del usuario.
+let wakeInstalado = false
+// Registra (UNA vez) el "despertar" del audio al primer clic: precarga el mp3 con un play
+// MUTEADO para que luego pueda sonar sin gesto directo del usuario. Se llama SOLO desde el
+// panel admin (PrivateLayout); así el sitio público de seguimiento NUNCA toca ni reproduce el
+// audio (antes esto corría a nivel de módulo y sonaba también en la web pública).
+export function primeEncargoAudio() {
+  if (typeof window === 'undefined' || wakeInstalado) return
+  wakeInstalado = true
   const wake = () => {
     ensureCtx()
     const a = ensureAudio()
     if (a && !audioListo) {
       audioListo = true
-      const vol = a.volume
-      a.volume = 0
-      a.play().then(() => { a.pause(); a.currentTime = 0; a.volume = vol }).catch(() => { a.volume = vol })
+      // Usamos `muted` (no `volume`): iOS ignora `volume` y el primado sonaría a todo volumen.
+      a.muted = true
+      a.play().then(() => { a.pause(); a.currentTime = 0; a.muted = false }).catch(() => { a.muted = false })
     }
   }
   window.addEventListener('pointerdown', wake, { once: false })
@@ -87,6 +92,7 @@ export function playEncargoChime() {
   const a = ensureAudio()
   if (a) {
     try {
+      a.muted = false
       a.currentTime = 0
       const p = a.play()
       if (p && typeof p.catch === 'function') p.catch(() => tonoDinero())
