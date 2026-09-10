@@ -87,23 +87,8 @@ async function renderFactura(data: FacturaData, visibles: FacturaLinea[], fotos:
   const ITEMS_TOP = 590
   const subDe = (item: FacturaLinea) => { const c = (item.codigo ?? '').trim(); return [c ? `Cód. ${c}` : '', item.detalle].filter(Boolean).join('   ·   ') }
   const altoFila = (item: FacturaLinea) => hayFotos ? 100 : subDe(item) ? 86 : 64
-
-  // Factura de un solo producto: en vez de la miniatura recortada, mostramos la foto COMPLETA
-  // (sin recorte, tipo "contain") en grande, para que la factura salga entera en una hoja blanca.
-  const unico = info.paginas === 1 && visibles.length === 1 && Boolean(fotos[0])
-  const HERO_TOP = 540
-  let heroDrawW = 0, heroDrawH = 0
-  if (unico) {
-    const img = fotos[0]!
-    const boxW = 860, boxH = 900, r = img.width / img.height
-    if (r > boxW / boxH) { heroDrawW = boxW; heroDrawH = boxW / r } else { heroDrawH = boxH; heroDrawW = boxH * r }
-  }
-  const heroSub = unico ? [subDe(visibles[0]), visibles[0].cantidad > 1 ? `Cantidad: ${visibles[0].cantidad}` : ''].filter(Boolean).join('   ·   ') : ''
-  const heroNameY = HERO_TOP + heroDrawH + 66
-  const heroBottom = heroNameY + (heroSub ? 40 : 0) + 14
-
   const itemsAlto = visibles.reduce((sum, item) => sum + altoFila(item), 0)
-  const bodyBottom = unico ? heroBottom : ITEMS_TOP + itemsAlto
+  const bodyBottom = ITEMS_TOP + itemsAlto
   // El alto del canvas es dinámico: crece con los productos de esta página. Los totales y el
   // pie solo van en la última página; las intermedias llevan una nota de "continúa".
   const ty = bodyBottom + 40
@@ -135,43 +120,31 @@ async function renderFactura(data: FacturaData, visibles: FacturaLinea[], fotos:
 
   context.strokeStyle = '#e4e7df'; context.lineWidth = 3; context.beginPath(); context.moveTo(100, 480); context.lineTo(1140, 480); context.stroke()
 
-  if (unico) {
-    // Producto único: foto COMPLETA (sin recorte) + nombre, centrados en la tarjeta.
-    const item0 = visibles[0]; const img = fotos[0]!
-    const x = (W - heroDrawW) / 2
-    context.save(); context.beginPath(); context.roundRect(x, HERO_TOP, heroDrawW, heroDrawH, 20); context.clip()
-    context.drawImage(img, x, HERO_TOP, heroDrawW, heroDrawH); context.restore()
-    context.fillStyle = '#151815'; context.font = '700 34px Arial'; context.textAlign = 'center'
-    context.fillText(truncar(context, item0.producto || 'Producto', 1000), W / 2, heroNameY)
-    if (heroSub) { context.fillStyle = '#8a8f89'; context.font = '500 24px Arial'; context.fillText(truncar(context, heroSub, 1000), W / 2, heroNameY + 38) }
-    context.textAlign = 'left'
-  } else {
-    // Cabecera de la tabla
-    context.fillStyle = '#6f756f'; context.font = '700 22px Arial'; context.fillText('PRODUCTO', 100, 535)
-    context.textAlign = 'center'; context.fillText('CANT.', 860, 535)
-    context.textAlign = 'right'; context.fillText('SUBTOTAL', 1140, 535); context.textAlign = 'left'
+  // Cabecera de la tabla
+  context.fillStyle = '#6f756f'; context.font = '700 22px Arial'; context.fillText('PRODUCTO', 100, 535)
+  context.textAlign = 'center'; context.fillText('CANT.', 860, 535)
+  context.textAlign = 'right'; context.fillText('SUBTOTAL', 1140, 535); context.textAlign = 'left'
 
-    // Líneas. Si hay fotos, se reserva una columna con la miniatura del producto.
-    const textX = hayFotos ? 195 : 100
-    const anchoNombre = hayFotos ? 610 : 700
-    let y = ITEMS_TOP
-    visibles.forEach((item, i) => {
-      const sub = subDe(item)
-      if (hayFotos) {
-        const foto = fotos[i]
-        const top = y - 38
-        context.save(); context.beginPath(); context.roundRect(100, top, 74, 74, 14)
-        if (foto) { context.clip(); dibujarCover(context, foto, 100, top, 74, 74) }
-        else { context.fillStyle = '#eef0ea'; context.fill(); context.fillStyle = '#9aa093'; context.font = '600 22px Arial'; context.textAlign = 'center'; context.fillText(`${item.cantidad}×`, 137, top + 46); context.textAlign = 'left' }
-        context.restore()
-      }
-      context.fillStyle = '#151815'; context.font = '600 30px Arial'; context.fillText(truncar(context, item.producto || 'Producto', anchoNombre), textX, y)
-      if (sub) { context.fillStyle = '#8a8f89'; context.font = '500 22px Arial'; context.fillText(truncar(context, sub, anchoNombre), textX, y + 32) }
-      context.fillStyle = '#343934'; context.font = '600 30px Arial'; context.textAlign = 'center'; context.fillText(`${item.cantidad}`, 860, y)
-      context.textAlign = 'right'; context.fillText(`USD ${(item.cantidad * item.precio).toFixed(2)}`, 1140, y); context.textAlign = 'left'
-      y += altoFila(item)
-    })
-  }
+  // Líneas. Si hay fotos, se reserva una columna con la miniatura del producto.
+  const textX = hayFotos ? 195 : 100
+  const anchoNombre = hayFotos ? 610 : 700
+  let y = ITEMS_TOP
+  visibles.forEach((item, i) => {
+    const sub = subDe(item)
+    if (hayFotos) {
+      const foto = fotos[i]
+      const top = y - 38
+      context.save(); context.beginPath(); context.roundRect(100, top, 74, 74, 14)
+      if (foto) { context.clip(); dibujarCover(context, foto, 100, top, 74, 74) }
+      else { context.fillStyle = '#eef0ea'; context.fill(); context.fillStyle = '#9aa093'; context.font = '600 22px Arial'; context.textAlign = 'center'; context.fillText(`${item.cantidad}×`, 137, top + 46); context.textAlign = 'left' }
+      context.restore()
+    }
+    context.fillStyle = '#151815'; context.font = '600 30px Arial'; context.fillText(truncar(context, item.producto || 'Producto', anchoNombre), textX, y)
+    if (sub) { context.fillStyle = '#8a8f89'; context.font = '500 22px Arial'; context.fillText(truncar(context, sub, anchoNombre), textX, y + 32) }
+    context.fillStyle = '#343934'; context.font = '600 30px Arial'; context.textAlign = 'center'; context.fillText(`${item.cantidad}`, 860, y)
+    context.textAlign = 'right'; context.fillText(`USD ${(item.cantidad * item.precio).toFixed(2)}`, 1140, y); context.textAlign = 'left'
+    y += altoFila(item)
+  })
 
   if (!info.ultima) {
     // Página intermedia: nota de continuación en vez de totales.
