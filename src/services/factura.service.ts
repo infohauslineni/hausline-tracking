@@ -61,7 +61,7 @@ const POR_PAGINA = 10
 
 // Genera TODAS las páginas de la factura (una por cada ~10 productos). Cada página precarga
 // las fotos de sus productos; si el canvas se "contamina" y toBlob falla, reintenta sin fotos.
-async function facturaPaginas(data: FacturaData): Promise<PaginaImagen[]> {
+async function facturaPaginas(data: FacturaData, impresion = false): Promise<PaginaImagen[]> {
   const grupos: FacturaLinea[][] = []
   for (let i = 0; i < data.items.length; i += POR_PAGINA) grupos.push(data.items.slice(i, i + POR_PAGINA))
   if (grupos.length === 0) grupos.push([])
@@ -71,18 +71,24 @@ async function facturaPaginas(data: FacturaData): Promise<PaginaImagen[]> {
     const info: PaginaInfo = { pagina: p + 1, paginas: grupos.length, ultima: p === grupos.length - 1 }
     const fotos = await Promise.all(items.map((item) => { const url = resolverImagenCatalogo(item.imagen); return url ? cargarImagen(url) : Promise.resolve(null) }))
     try {
-      paginas.push(await renderFactura(data, items, fotos, info))
+      paginas.push(await renderFactura(data, items, fotos, info, impresion))
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'SecurityError') paginas.push(await renderFactura(data, items, items.map(() => null), info))
+      if (error instanceof DOMException && error.name === 'SecurityError') paginas.push(await renderFactura(data, items, items.map(() => null), info, impresion))
       else throw error
     }
   }
   return paginas
 }
 
-async function renderFactura(data: FacturaData, visibles: FacturaLinea[], fotos: (HTMLImageElement | null)[], info: PaginaInfo): Promise<PaginaImagen> {
+async function renderFactura(data: FacturaData, visibles: FacturaLinea[], fotos: (HTMLImageElement | null)[], info: PaginaInfo, impresion = false): Promise<PaginaImagen> {
   const esPago = data.variante === 'pago'
   const hayFotos = fotos.some(Boolean)
+  // Paleta: a COLOR para el cliente (WhatsApp); en BLANCO Y NEGRO para la copia impresa (PDF).
+  const bw = impresion
+  const acento = bw ? '#ffffff' : '#b7ff00'
+  const pagadoColor = bw ? '#151815' : '#3f8600'
+  const pieBg = bw ? '#f1f1ef' : '#edf6d8'
+  const pieTxt = bw ? '#333333' : '#4c6500'
   const W = 1240
   const ITEMS_TOP = 590
   const subDe = (item: FacturaLinea) => { const c = (item.codigo ?? '').trim(); return [c ? `Cód. ${c}` : '', item.detalle].filter(Boolean).join('   ·   ') }
@@ -92,9 +98,14 @@ async function renderFactura(data: FacturaData, visibles: FacturaLinea[], fotos:
   // El alto del canvas es dinámico: crece con los productos de esta página. Los totales y el
   // pie solo van en la última página; las intermedias llevan una nota de "continúa".
   const ty = bodyBottom + 40
-  const pieY = ty + (esPago && data.metodoPago ? 266 : 200)
-  const cardBottom = info.ultima ? pieY + 160 : bodyBottom + 120
-  const H = cardBottom + 40
+  const pieYNatural = ty + (esPago && data.metodoPago ? 266 : 200)
+  const naturalCardBottom = info.ultima ? pieYNatural + 160 : bodyBottom + 120
+  // Al IMPRIMIR forzamos hoja completa (proporción carta vertical) y el pie ("¡Muchas gracias!")
+  // baja hasta el fondo. En la versión a color / WhatsApp el alto queda ajustado al contenido.
+  const minH = Math.round(W * 11 / 8.5)
+  const H = impresion && info.ultima ? Math.max(naturalCardBottom + 40, minH) : naturalCardBottom + 40
+  const cardBottom = impresion && info.ultima ? H - 40 : naturalCardBottom
+  const pieY = impresion && info.ultima ? cardBottom - 170 : pieYNatural
 
   const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H
   const context = canvas.getContext('2d'); if (!context) throw new Error('No se pudo crear la factura.')
@@ -102,10 +113,10 @@ async function renderFactura(data: FacturaData, visibles: FacturaLinea[], fotos:
 
   // Encabezado
   context.fillStyle = '#111411'; context.fillRect(0, 0, W, 300)
-  context.fillStyle = '#b7ff00'; context.font = '800 62px Arial'; context.fillText('HAUSLINE', 90, 120)
+  context.fillStyle = acento; context.font = '800 62px Arial'; context.fillText('HAUSLINE', 90, 120)
   context.fillStyle = '#ffffff'; context.font = '600 27px Arial'; context.fillText(esPago ? 'COMPROBANTE DE PAGO' : 'FACTURA DE COMPRA', 92, 180)
-  context.fillStyle = '#b7ff00'; context.font = '600 23px Arial'; context.fillText('King of Shoes', 92, 224); context.fillStyle = '#aab0aa'; context.font = '500 23px Arial'; context.fillText('· hausline.ni', 92 + context.measureText('King of Shoes ').width + 34, 224)
-  context.textAlign = 'right'; context.fillStyle = '#b7ff00'; context.font = '700 30px Arial'; context.fillText(data.codigo, 1150, 120)
+  context.fillStyle = acento; context.font = '600 23px Arial'; context.fillText('King of Shoes', 92, 224); context.fillStyle = '#aab0aa'; context.font = '500 23px Arial'; context.fillText('· hausline.ni', 92 + context.measureText('King of Shoes ').width + 34, 224)
+  context.textAlign = 'right'; context.fillStyle = acento; context.font = '700 30px Arial'; context.fillText(data.codigo, 1150, 120)
   context.fillStyle = '#aab0aa'; context.font = '500 22px Arial'; context.fillText('Código de seguimiento', 1150, 158)
   if (info.paginas > 1) { context.fillStyle = '#ffffff'; context.font = '700 24px Arial'; context.fillText(`Factura ${info.pagina} de ${info.paginas}`, 1150, 202) }
   context.textAlign = 'left'
@@ -162,12 +173,12 @@ async function renderFactura(data: FacturaData, visibles: FacturaLinea[], fotos:
     drawTotal(esPago ? 'Pago recibido' : 'Abono recibido', `USD ${data.abono.toFixed(2)}`, ty + 66)
     if (esPago) {
       if (data.metodoPago) drawTotal('Método de pago', data.metodoPago, ty + 132)
-      drawTotal('Saldo pendiente', 'PAGADO', ty + (data.metodoPago ? 214 : 148), true, '#3f8600')
+      drawTotal('Saldo pendiente', 'PAGADO', ty + (data.metodoPago ? 214 : 148), true, pagadoColor)
     } else {
-      drawTotal('Saldo pendiente', `USD ${Math.max(0, data.saldo).toFixed(2)}`, ty + 148, true, data.saldo > 0.01 ? '#b26a00' : '#3f8600')
+      drawTotal('Saldo pendiente', `USD ${Math.max(0, data.saldo).toFixed(2)}`, ty + 148, true, bw ? '#151815' : (data.saldo > 0.01 ? '#b26a00' : '#3f8600'))
     }
-    context.fillStyle = '#edf6d8'; context.beginPath(); context.roundRect(100, pieY, 1040, 90, 18); context.fill()
-    context.fillStyle = '#4c6500'; context.font = '600 24px Arial'; context.textAlign = 'center'
+    context.fillStyle = pieBg; context.beginPath(); context.roundRect(100, pieY, 1040, 90, 18); context.fill()
+    context.fillStyle = pieTxt; context.font = '600 24px Arial'; context.textAlign = 'center'
     context.fillText(esPago ? `Pago recibido · Pedido ${data.codigo} entregado` : `Rastrea tu pedido con el código ${data.codigo}`, 620, pieY + 46)
     context.fillStyle = '#7a807a'; context.font = '500 20px Arial'
     context.fillText(esPago ? '¡Muchas gracias por tu compra en Hausline! Esperamos verte pronto.' : 'Gracias por comprar en Hausline · Los tiempos pueden variar por logística internacional.', 620, pieY + 140)
@@ -217,8 +228,9 @@ export async function crearFacturaImagenFiles(data: FacturaData) {
   const base = nombreArchivo(data, 'jpg').replace(/\.jpg$/, '')
   return paginas.map((pg, i) => new File([pg.data], paginas.length > 1 ? `${base}-${i + 1}.jpg` : `${base}.jpg`, { type: 'image/jpeg' }))
 }
+// El PDF es la copia para IMPRIMIR: blanco y negro y en hoja completa (tamaño carta).
 export async function crearFacturaPdf(data: FacturaData) {
-  const paginas = await facturaPaginas(data)
+  const paginas = await facturaPaginas(data, true)
   return new File([imagenesPdf(paginas)], nombreArchivo(data, 'pdf'), { type: 'application/pdf' })
 }
 
