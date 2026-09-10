@@ -120,7 +120,7 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], onQ
   // la etapa: el aviso automático por transición no vuelve a dispararse, así que este botón
   // manda el correo con las fotos actuales aunque no cambie el estado.
   const reenviarFotos = async () => {
-    if (categoria !== 'recibido_hausline' && categoria !== 'empaque') return
+    if (categoria !== 'recibido_hausline' && categoria !== 'empaque' && categoria !== 'control_calidad') return
     if (!isSupabaseConfigured) { toast.info('Disponible solo con Supabase configurado.'); return }
     if (!codigo) { toast.error('Falta el código del pedido.'); return }
     setReenviando(true)
@@ -165,6 +165,10 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], onQ
   const productoQc = itemQC ? itemsPorId.get(itemQC) : undefined
   const fotosDelProductoQc = itemQC ? archivos.filter((a) => a.tipo === 'control_calidad' && a.pedido_item_id === itemQC).length : 0
   const qcYaEnviado = Boolean(itemQC && (qcEnviados.has(itemQC) || productoQc?.qc_enviado_at))
+  // Fotos de control de calidad del PEDIDO COMPLETO (sin producto asignado) visibles al
+  // cliente: son las que se mandan en un solo correo. Sirven para reenviarlas si se olvidó
+  // subirlas antes de cambiar de estado.
+  const fotosControlGenerales = archivos.filter((a) => a.tipo === 'control_calidad' && a.visible_cliente && !a.pedido_item_id).length
   const enviarFotosQc = async () => {
     if (!itemQC) return
     setEnviandoQc(true)
@@ -243,5 +247,12 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], onQ
     {categoria === 'control_calidad' && itemQC && fotosDelProductoQc > 0 && <button type="button" onClick={() => void enviarFotosQc()} disabled={enviandoQc || uploading} className={qcYaEnviado ? 'mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-line bg-white/[0.04] px-5 py-2.5 text-sm font-semibold text-muted' : 'primary-button mt-4 w-full'}>
       {enviandoQc ? 'Enviando…' : qcYaEnviado ? `✓ Enviadas a ${productoQc?.producto ?? 'este producto'} · reenviar` : `📸 Enviar fotos de control de calidad al cliente (${productoQc?.producto ?? 'este producto'})`}
     </button>}
+
+    {categoria === 'control_calidad' && !itemQC && fotosControlGenerales > 0 && <div className="mt-4">
+      <button type="button" onClick={() => void reenviarFotos()} disabled={reenviando || uploading} className="primary-button w-full">
+        {reenviando ? 'Reenviando…' : '🔁 Reenviar estas fotos al cliente por correo'}
+      </button>
+      <p className="mt-1.5 text-center text-[11px] text-muted">Manda al cliente las fotos de control de calidad del pedido. Usalo si las subiste después o si te olvidaste al cambiar de estado.</p>
+    </div>}
   </section>
 }
