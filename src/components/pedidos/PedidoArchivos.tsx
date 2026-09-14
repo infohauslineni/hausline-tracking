@@ -176,7 +176,14 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], qcG
   // cliente: son las que se mandan en un solo correo. Sirven para reenviarlas si se olvidó
   // subirlas antes de cambiar de estado.
   const fotosControlGenerales = archivos.filter((a) => a.tipo === 'control_calidad' && a.visible_cliente && !a.pedido_item_id).length
-  const qcGeneralEnviado = enviadosEtapa.has('control_calidad') || Boolean(qcGeneralEnviadoAt)
+  // El correo de control de calidad (con las fotos) sale al ENTRAR el pedido a esa etapa. Por eso,
+  // si el pedido ya está en "control de calidad" o más adelante, esas fotos YA se enviaron —igual
+  // que recibido/empaque, que se derivan del estado (ver 'yaEnviado' abajo)—. Derivarlo del estado
+  // deja el botón en "ya enviadas" al instante tras cambiar de etapa, sin depender del flag
+  // qc_general_enviado_at (que lo marca el webhook del backend de forma asíncrona y no refresca aquí).
+  const idxControlCalidad = ESTADOS_PEDIDO.findIndex((item) => item.value === 'control_calidad')
+  const idxEstadoActual = estadoPedido ? ESTADOS_PEDIDO.findIndex((item) => item.value === etapaBase(estadoPedido)) : -1
+  const qcGeneralEnviado = enviadosEtapa.has('control_calidad') || Boolean(qcGeneralEnviadoAt) || (idxEstadoActual >= 0 && idxEstadoActual >= idxControlCalidad)
   const enviarFotosQc = async () => {
     if (!itemQC) return
     setEnviandoQc(true)

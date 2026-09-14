@@ -822,9 +822,18 @@ export async function enviarCorreoPedido({ correo, nombre, codigo, estado, esNue
     }
   }
 
+  // Copia oculta (BCC) al buzón de archivo del negocio. Estos correos de estado SALEN del
+  // sistema (quedan en "Enviados"), y los filtros de Gmail solo corren sobre el correo que
+  // ENTRA. El BCC hace que cada correo de estado llegue también como entrante a esa cuenta,
+  // donde los filtros por asunto ("Orden confirmada", "Control de calidad", "Entregado"…)
+  // lo etiquetan y archivan solos. El cliente no ve esta copia. Configurable con ARCHIVO_BCC
+  // (vacío = desactivado).
+  const bccArchivo = process.env.ARCHIVO_BCC ?? 'alerta@hauslineshopni.es'
+
   await transporter.sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to: correo,
+    ...(bccArchivo ? { bcc: bccArchivo } : {}),
     subject: esNuevo ? `Pedido ${codigo}: Orden confirmada` : `Pedido ${codigo}: ${estadoLabel}`,
     html: plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, urlSeguimiento, esNuevo, factura, fotos, pedirResena }),
     attachments,
