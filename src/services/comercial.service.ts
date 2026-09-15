@@ -278,14 +278,14 @@ export async function venderStockInmediato(item: Inversion, opts: { fecha: strin
 
 // Ventas directas de stock: se guardan como movimientos de ingreso ligados a una inversión.
 // Se reconstruyen aquí para poder listarlas junto a las ventas por pedido.
-export type VentaStock = { id: string; fecha: string; monto: number; producto: string; codigo: string | null; cliente: string | null; costo: number }
+export type VentaStock = { id: string; fecha: string; monto: number; producto: string; codigo: string | null; cliente: string | null; costo: number; inversion_id: string | null; metodo: string | null }
 export async function listarVentasStock(): Promise<VentaStock[]> {
-  const { data, error } = await client().from('movimientos_cuenta').select('id, fecha, monto, descripcion, inversion_id, inversiones(producto, codigo, costo_unitario, cantidad, gastos_adicionales)').eq('tipo', 'ingreso').not('inversion_id', 'is', null).order('fecha', { ascending: false }).limit(300)
+  const { data, error } = await client().from('movimientos_cuenta').select('id, fecha, monto, descripcion, metodo, inversion_id, inversiones(producto, codigo, costo_unitario, cantidad, gastos_adicionales)').eq('tipo', 'ingreso').not('inversion_id', 'is', null).order('fecha', { ascending: false }).limit(300)
   if (error) throw error
-  return (data as unknown as Array<{ id: string; fecha: string; monto: number; descripcion: string | null; inversiones: { producto: string; codigo: string | null; costo_unitario: number; cantidad: number; gastos_adicionales: number } | null }>).map((row) => {
+  return (data as unknown as Array<{ id: string; fecha: string; monto: number; descripcion: string | null; metodo: string | null; inversion_id: string | null; inversiones: { producto: string; codigo: string | null; costo_unitario: number; cantidad: number; gastos_adicionales: number } | null }>).map((row) => {
     const partes = (row.descripcion ?? '').split(' · ')
     const inv = row.inversiones
-    return { id: row.id, fecha: row.fecha, monto: Number(row.monto), producto: inv?.producto ?? partes[1] ?? 'Producto', codigo: inv?.codigo ?? null, cliente: partes.length >= 3 ? partes.slice(2).join(' · ') : null, costo: inv ? Number(inv.costo_unitario) * Number(inv.cantidad) + Number(inv.gastos_adicionales) : 0 }
+    return { id: row.id, fecha: row.fecha, monto: Number(row.monto), producto: inv?.producto ?? partes[1] ?? 'Producto', codigo: inv?.codigo ?? null, cliente: partes.length >= 3 ? partes.slice(2).join(' · ') : null, costo: inv ? Number(inv.costo_unitario) * Number(inv.cantidad) + Number(inv.gastos_adicionales) : 0, inversion_id: row.inversion_id, metodo: row.metodo ?? null }
   })
 }
 

@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowUpRight, ChevronDown, ChevronLeft, ChevronRight, CircleDollarSign, Coins, CreditCard, History, PackageCheck, Plus, ReceiptText, Scale, Search, Tag, TrendingUp, WalletCards, Zap } from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, ChevronDown, ChevronLeft, ChevronRight, CircleDollarSign, Coins, CreditCard, History, PackageCheck, Plus, Printer, ReceiptText, Scale, Search, Tag, TrendingUp, WalletCards, Zap } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -13,6 +13,7 @@ import type { Inversion, Pago, Pedido } from '../../types/domain'
 import { desglosePedido, estadoPago, type EstadoPago } from '../../utils/pedidoCosto'
 import { periodoDeMes } from '../../utils/periodo'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
+import { imprimirReciboStock, type ProductoRecibo } from '../../utils/reciboStock'
 import { formatDate, PagoModal } from './PagosPage'
 
 const money = (n: number) => new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0)
@@ -32,6 +33,7 @@ export function VentasPage() {
   const [vender, setVender] = useState(false)
   const [abonoPedido, setAbonoPedido] = useState<Pedido | null>(null)
   const [historialPedido, setHistorialPedido] = useState<Pedido | null>(null)
+  const [printingId, setPrintingId] = useState<string | null>(null)
 
   const cargar = () => { if (!isSupabaseConfigured) return Promise.resolve(); return Promise.all([listarPedidos(), listarVentasStock(), listarInversiones(), listarPagos()])
     .then(([orders, sales, inventory, payments]) => { setPedidos(orders); setVentasStock(sales); setStock(inventory); setPagos(payments) })
@@ -42,6 +44,16 @@ export function VentasPage() {
   const cambiarMes = (delta: number) => setMesRef((prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1))
   const esMesActual = claveMes(periodo.desde) === claveMes(new Date().toISOString())
   const disponibles = useMemo(() => stock.filter((item) => item.estado === 'en_inventario' || item.estado === 'reservado'), [stock])
+  // Reimprime el recibo de una venta de stock ya registrada (usa la inversión para foto/talla/cantidad si existe).
+  const imprimirVenta = async (v: VentaStock) => {
+    const inv = stock.find((item) => item.id === v.inversion_id)
+    const item: ProductoRecibo = inv ?? { producto: v.producto, codigo: v.codigo, cantidad: 1 }
+    setPrintingId(v.id)
+    try {
+      await imprimirReciboStock(item, { cliente: v.cliente ?? '', precioTotal: inv ? Number(inv.precio_venta_estimado) * Number(inv.cantidad) : v.monto, montoRecibido: v.monto, fecha: v.fecha.slice(0, 10), metodo: v.metodo })
+      toast.success('Recibo generado. Ábrelo para imprimir.')
+    } catch { toast.error('No se pudo generar el recibo.') } finally { setPrintingId(null) }
+  }
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
@@ -102,7 +114,7 @@ export function VentasPage() {
     <div className="mt-5 overflow-hidden rounded-2xl border border-line bg-panel"><div className="hidden grid-cols-[.7fr_1.1fr_.9fr_.7fr_.7fr_.7fr_32px] gap-3 border-b border-line px-5 py-3 text-[10px] font-semibold uppercase tracking-wider text-muted md:grid"><span>Pedido</span><span>Cliente</span><span>Pago</span><span>Total</span><span>Cobrado</span><span>Saldo</span><span /></div>
       {filtered.map((row) => row.kind === 'pedido'
         ? <VentaRow key={`p-${row.id}`} pedido={row.data} activo={row.activo} onAbono={() => setAbonoPedido(row.data)} onHistorial={() => setHistorialPedido(row.data)} />
-        : <div key={`s-${row.id}`} className="grid gap-2 border-b border-line px-5 py-4 last:border-0 md:grid-cols-[.7fr_1.1fr_.9fr_.7fr_.7fr_.7fr_32px] md:items-center"><strong className="flex items-center gap-1.5 text-sm text-accent">{row.data.codigo || 'STOCK'}</strong><span className="truncate text-sm">{row.data.cliente || row.data.producto}</span><span className="flex items-center gap-1 text-xs text-accent"><Zap size={12} /> Inmediata</span><strong className="tabular-nums">${money(row.data.monto)}</strong><strong className="tabular-nums text-emerald-300">${money(row.data.monto)}</strong><strong className="tabular-nums text-accent">$0.00</strong><span /></div>)}
+        : <div key={`s-${row.id}`} className="grid gap-2 border-b border-line px-5 py-4 last:border-0 md:grid-cols-[.7fr_1.1fr_.9fr_.7fr_.7fr_.7fr_32px] md:items-center"><strong className="flex items-center gap-1.5 text-sm text-accent">{row.data.codigo || 'STOCK'}</strong><span className="truncate text-sm">{row.data.cliente || row.data.producto}</span><span className="flex items-center gap-1 text-xs text-accent"><Zap size={12} /> Inmediata</span><strong className="tabular-nums">${money(row.data.monto)}</strong><strong className="tabular-nums text-emerald-300">${money(row.data.monto)}</strong><strong className="tabular-nums text-accent">$0.00</strong><button type="button" onClick={() => void imprimirVenta(row.data)} disabled={printingId === row.data.id} className="table-action justify-self-end" aria-label="Imprimir recibo" title="Imprimir recibo"><Printer size={15} /></button></div>)}
       {!filtered.length && <p className="p-10 text-center text-sm text-muted">No hay ventas en {periodo.etiqueta}.</p>}</div>
     <PagoModal open={!!abonoPedido} pedidos={pedidos} tipoCambio={tipoCambio} fijarPedido={abonoPedido?.id} onClose={() => setAbonoPedido(null)} onSaved={recargarTrasAbono} />
     <HistorialModal pedido={historialPedido} pagos={historialPedido ? pagosDe(historialPedido.id) : []} onClose={() => setHistorialPedido(null)} />
@@ -120,8 +132,20 @@ function VentaStockModal({ open, stock, onClose, onSold }: { open: boolean; stoc
   const [destino, setDestino] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
   const [tipoCambio, setTipoCambio] = useState(37)
   const [saving, setSaving] = useState(false)
+  const [printing, setPrinting] = useState(false)
   const [buscar, setBuscar] = useState('')
   useEffect(() => { if (open) { setSelected(null); setBuscar(''); setDestino({ cuentaId: null, montoCuenta: 0 }); void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined) } }, [open])
+  // Imprime el recibo con lo del formulario, sin registrar la venta todavía.
+  const imprimir = async () => {
+    if (!selected) return
+    const p = Number(form.precio_venta)
+    if (p <= 0) return toast.error('Indica el precio de venta.')
+    setPrinting(true)
+    try {
+      await imprimirReciboStock(selected, { cliente: form.cliente, precioTotal: p, montoRecibido: Math.max(0, Number(form.monto_recibido)), fecha: form.fecha, metodo: form.metodo })
+      toast.success('Recibo generado. Ábrelo para imprimir.')
+    } catch { toast.error('No se pudo generar el recibo.') } finally { setPrinting(false) }
+  }
   const elegir = (item: Inversion) => { const precio = (Number(item.precio_venta_estimado) * Number(item.cantidad)).toFixed(2); setSelected(item); setForm({ fecha: new Date().toISOString().slice(0, 10), cliente: '', precio_venta: precio, monto_recibido: precio, metodo: 'Transferencia', observaciones: '' }) }
 
   const lista = useMemo(() => { const t = buscar.trim().toLowerCase(); return stock.filter((i) => !t || [i.producto, i.codigo, i.marca].some((v) => v?.toLowerCase().includes(t))) }, [stock, buscar])
@@ -168,7 +192,7 @@ function VentaStockModal({ open, stock, onClose, onSold }: { open: boolean; stoc
       {recibido > 0 && <CuentaSelect requerido proposito="recibir" montoUsd={recibido} tipoCambio={tipoCambio} value={destino} onChange={setDestino} />}
       <div className="col-span-full grid grid-cols-3 gap-3 rounded-xl border border-line bg-white/[.02] p-4 text-center"><div><span className="text-[10px] uppercase text-muted">Costo</span><strong className="mt-1 block text-sm">USD {costo.toFixed(2)}</strong></div><div><span className="text-[10px] uppercase text-muted">Venta</span><strong className="mt-1 block text-sm text-accent">USD {(precio || 0).toFixed(2)}</strong></div><div><span className="text-[10px] uppercase text-muted">Ganancia</span><strong className="mt-1 block text-sm text-green-300">USD {Math.max(0, (precio || 0) - costo).toFixed(2)}</strong></div></div>
       {recibido < precio && recibido >= 0 && <p className="col-span-full rounded-xl border border-amber-300/20 bg-amber-300/[.05] p-3 text-[11px] leading-5 text-amber-200/90">Se registra como ingreso solo el monto recibido (USD {Math.max(0, recibido).toFixed(2)}). El resto queda como acuerdo directo con el cliente.</p>}
-      <div className="col-span-full flex justify-end gap-2"><button type="button" className="subtle-button" onClick={onClose}>Cancelar</button><button className="primary-button px-5" disabled={saving}>{saving ? 'Registrando…' : 'Registrar venta'}</button></div>
+      <div className="col-span-full flex flex-wrap justify-end gap-2"><button type="button" className="subtle-button" onClick={onClose}>Cancelar</button><button type="button" className="subtle-button" onClick={() => void imprimir()} disabled={printing}><Printer size={15} /> {printing ? 'Generando…' : 'Imprimir recibo'}</button><button className="primary-button px-5" disabled={saving}>{saving ? 'Registrando…' : 'Registrar venta'}</button></div>
     </form>
   </Modal>
 }
