@@ -184,8 +184,20 @@ export default async function handler(request, response) {
   if (!process.env.CRON_SECRET || authorization !== `Bearer ${process.env.CRON_SECRET}`) return response.status(401).json({ ok: false })
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(500).json({ ok: false, error: 'Missing server configuration' })
   const client = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
-  const { data, error } = await client.rpc('recalcular_fechas_estimadas')
-  if (error) return response.status(500).json({ ok: false, error: 'Estimate recalculation failed' })
+
+  // Recálculo de estimaciones AISLADO: si falla, NO debe abortar los auto-avances de
+  // etapa (control de calidad → tránsito, despachado → tránsito internacional) ni el
+  // resto del trabajo diario. Antes un error aquí devolvía 500 y no corría nada más:
+  // por eso el auto-avance de control de calidad "nunca funcionaba" aunque el SQL
+  // estuviera aplicado.
+  let updated = 0
+  try {
+    const { data, error } = await client.rpc('recalcular_fechas_estimadas')
+    if (error) throw new Error(error.message)
+    updated = Number(data ?? 0)
+  } catch (estimError) {
+    console.error('cron: recálculo de estimaciones falló', estimError?.message)
+  }
 
   // Auto-avances de etapa. Van AISLADOS en try/catch: si una función todavía no existe
   // (migración pendiente) o falla puntualmente, NO debe tumbar el resto del cron (17track,
@@ -273,7 +285,7 @@ export default async function handler(request, response) {
 
   return response.status(200).json({
     ok: true,
-    updated: Number(data ?? 0),
+    updated,
     avanzados: Number(avanzados ?? 0),
     avanzados_calidad: Number(avanzadosCalidad ?? 0),
     registrados,
