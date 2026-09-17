@@ -2,7 +2,7 @@
 export type CuentaPago = { banco: string; numero: string; titular: string }
 
 export const CUENTAS_PAGO: CuentaPago[] = [
-  { banco: 'LAFISE (USD)', numero: '133210618', titular: 'Xiomara Rivas López' },
+  { banco: 'LAFISE (USD)', numero: '133254039', titular: 'Alejandro Uzziel Linares Flores' },
   { banco: 'LAFISE (Córdobas)', numero: '138038710', titular: 'Alejandro Uzziel Linares Flores' },
   { banco: 'BAC (USD)', numero: '374570968', titular: 'Alejandro Uzziel Linares Flores' },
   { banco: 'BAC (Córdobas)', numero: '374570869', titular: 'Alejandro Uzziel Linares Flores' },

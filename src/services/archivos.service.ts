@@ -15,9 +15,10 @@ export function marcaParaTipo(tipo: TipoArchivo, codigo?: string): MarcaImagen {
   // Control de calidad: marca de agua "HAUSLINE.NI" repetida en diagonal por TODA la foto,
   // con opacidad baja (protege la evidencia de revisión sin tapar el producto).
   if (tipo === 'control_calidad') return true
-  // Las demás fotos que ve el cliente (producto recibido en HAUSLINE y paquete empacado)
-  // llevan el logo "HAUS/LINE" limpio arriba al centro, para que también sirvan en redes.
-  if (tipo === 'recibido_hausline' || tipo === 'empaque') return 'logo'
+  // "Recibido en HAUSLINE" (categoría ya retirada del panel, pero puede haber fotos viejas)
+  // lleva el logo "HAUS/LINE" arriba al centro. El paquete empacado va SIN marca de agua.
+  if (tipo === 'recibido_hausline') return 'logo'
+  if (tipo === 'empaque') return false
   if (tipo === 'recepcion_miami') return 'esquina'
   return tipo === 'producto'
 }

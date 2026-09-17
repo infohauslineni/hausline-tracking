@@ -7,12 +7,11 @@ import { avanzarADisponiblePorRecibido, avanzarAEmpaquetadoPorFoto, marcarQcEnvi
 import { ESTADOS_PEDIDO, etapaBase } from '../../constants/orders'
 import type { ArchivoPedido, EstadoPedido, Pedido, PedidoItem, TipoArchivo } from '../../types/domain'
 
-// Categorías visibles para subir fotos. "Recibido en HAUSLINE" mueve el pedido
-// automáticamente a "Disponible para entrega" y "Empaque para envío" a "Empaquetado,
-// listo para envío" (ver cargar()); ambas le llegan al cliente por correo con sus fotos.
+// Categorías visibles para subir fotos. "Empaque para envío" pasa el pedido a
+// "Empaquetado, listo para envío" (ver confirmarEtapa()) y le llega al cliente por correo
+// con sus fotos.
 const CATEGORIAS: { id: TipoArchivo; label: string; description: string }[] = [
   { id: 'control_calidad', label: 'Control de calidad', description: 'Evidencia de revisión y empaque' },
-  { id: 'recibido_hausline', label: 'Recibido en HAUSLINE', description: 'Fotos reales del producto que llegó · pasa el pedido a “Disponible para entrega” y se las envía al cliente' },
   { id: 'empaque', label: 'Empaque para envío', description: 'Foto del paquete empacado · pasa el pedido a “Empaquetado, listo para envío” y avisa al cliente' },
 ]
 
@@ -234,7 +233,7 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], qcG
     </button>
     {(categoria === 'control_calidad' || categoria === 'producto') && <div className="mt-2 text-center text-[10px] font-semibold text-accent">Marca de agua HAUSLINE.NI automática</div>}
     {categoria === 'recibido_local' && <div className="mt-2 text-center text-[10px] font-semibold text-accent">Se agrega sello “✓ RECIBIDO” con código y fecha automáticamente</div>}
-    {(categoria === 'empaque' || categoria === 'recibido_hausline') && <div className="mt-2 text-center text-[10px] font-semibold text-accent">Logo HAUSLINE arriba · subí todas las fotos y confirmá para avisar al cliente en un solo correo</div>}
+    {categoria === 'empaque' && <div className="mt-2 text-center text-[10px] font-semibold text-accent">Subí todas las fotos y confirmá para avisar al cliente en un solo correo</div>}
     <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={(event) => event.target.files && void cargar(event.target.files)} />
 
     {loading ? <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3"><div className="aspect-square animate-pulse rounded-xl bg-white/[0.04]" /><div className="aspect-square animate-pulse rounded-xl bg-white/[0.04]" /></div>
