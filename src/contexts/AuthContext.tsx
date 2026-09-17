@@ -1,4 +1,5 @@
 import type { Session, User } from '@supabase/supabase-js'
+import { isAuthRetryableFetchError } from '@supabase/supabase-js'
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 
@@ -26,6 +27,16 @@ function conTiempoLimite<T, F>(promesa: Promise<T>, ms: number, fallback: F): Pr
   return Promise.race([promesa, new Promise<F>((resolve) => setTimeout(() => resolve(fallback), ms))])
 }
 const TIMEOUT = Symbol('timeout')
+
+// Un fallo al renovar la sesión NO siempre significa que el token murió. En redes móviles
+// flojas (o WiFi que se corta un segundo) lo más común es un error TEMPORAL de red o del
+// servidor (5xx). Antes, cualquier error de refresh cerraba la sesión y sacaba al usuario al
+// login "sin razón". Ahora solo tratamos el token como muerto cuando el servidor lo RECHAZA
+// de verdad (400/401): esos NO son "retryable". Si fue temporal, conservamos la sesión y
+// dejamos que autoRefreshToken reintente en segundo plano.
+function tokenRechazadoPorServidor(error: unknown): boolean {
+  return error != null && !isAuthRetryableFetchError(error)
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
@@ -68,9 +79,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             if (refreshed !== TIMEOUT && !refreshed.error && refreshed.data.session) {
               validSession = refreshed.data.session
-            } else if (refreshed !== TIMEOUT) {
-              // El token ya no sirve (no fue un timeout): evita que un token viejo siga
-              // mostrando al usuario como conectado mientras todas las consultas se rechazan.
+            } else if (refreshed !== TIMEOUT && tokenRechazadoPorServidor(refreshed.error)) {
+              // El servidor rechazó el token (no fue timeout ni un bache de red): evita que un
+              // token viejo siga mostrando al usuario como conectado mientras las consultas se
+              // rechazan. Ante un fallo temporal NO cerramos: conservamos la sesión guardada.
               await client.auth.signOut({ scope: 'local' })
               validSession = null
             }
@@ -110,9 +122,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (expiraEnMs > 60_000) return
         const yaVencido = expiraEnMs <= 0
         const { data: refreshed, error } = await client.auth.refreshSession()
-        if (error || !refreshed.session) {
+        if (tokenRechazadoPorServidor(error)) {
+          // El servidor rechazó el token: ya no se puede renovar → al login.
           await client.auth.signOut({ scope: 'local' }).catch(() => undefined)
           if (active) setSession(null)
+          return
+        }
+        if (error || !refreshed.session) {
+          // Fallo TEMPORAL (red/servidor) o sin sesión nueva: NO cerramos sesión. Se reintenta
+          // al volver a primer plano y autoRefreshToken lo renueva cuando vuelva la conexión.
           return
         }
         if (active) setSession(refreshed.session)
