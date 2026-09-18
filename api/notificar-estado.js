@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { ESTADO_LABEL, enviarCorreoPedido } from './_correo.js'
+import { ESTADO_LABEL, enviarCorreoPedido, enviarCorreoCancelacion } from './_correo.js'
 import { facturaPdfBuffer } from './_factura-pdf.js'
 import { subirFacturaDrive, subirArchivoDrive } from './_drive.js'
 
@@ -257,6 +257,52 @@ async function reenviarFotosEtapa(request, response, body, authorization) {
   return response.status(200).json({ ok: true, sent: correo, fotos: fotos.length, fotosArchivadas })
 }
 
+// Correo de CANCELACIÓN al cliente. Lo dispara el panel (JWT del usuario) al confirmar la
+// cancelación, con el motivo y —si hubo devolución— el monto. Va acá (no por el webhook)
+// para llevar el motivo real. Valida que quien llama sea admin/operador activo, igual que el
+// reenvío de fotos. Lee el correo del cliente con la llave de servicio (RLS).
+async function enviarCancelacion(request, response, body, authorization) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return response.status(500).json({ ok: false, error: 'Missing server configuration' })
+  }
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    return response.status(500).json({ ok: false, error: 'Missing SMTP configuration' })
+  }
+  const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+  const token = String(authorization).replace(/^Bearer\s+/i, '').trim()
+  if (!token) return response.status(401).json({ ok: false })
+  const { data: userData } = await admin.auth.getUser(token).catch(() => ({ data: { user: null } }))
+  const solicitante = userData?.user
+  if (!solicitante) return response.status(401).json({ ok: false })
+  const { data: perfil } = await admin.from('perfiles').select('rol, activo').eq('id', solicitante.id).maybeSingle()
+  if (!perfil || !perfil.activo || (perfil.rol !== 'admin' && perfil.rol !== 'operador')) {
+    return response.status(403).json({ ok: false, error: 'No autorizado.' })
+  }
+
+  const codigo = String(body.codigo ?? '').trim()
+  const motivo = String(body.motivo ?? '').trim()
+  const monto = Math.max(0, Number(body.monto || 0))
+  if (!codigo) return response.status(400).json({ ok: false, error: 'Datos inválidos.' })
+
+  const { data: pedido, error: pedidoError } = await admin
+    .from('pedidos').select('codigo, clientes(correo, nombre)').eq('codigo', codigo).maybeSingle()
+  if (pedidoError) return response.status(502).json({ ok: false, error: 'No se pudo leer el pedido.' })
+  const cli = Array.isArray(pedido?.clientes) ? pedido.clientes[0] : pedido?.clientes
+  const correo = (cli?.correo ?? '').trim()
+  const nombre = cli?.nombre ?? null
+  if (!correo) return response.status(200).json({ ok: false, error: 'El cliente no tiene correo.' })
+
+  try {
+    await enviarCorreoCancelacion({ correo, nombre, codigo, motivo, monto })
+  } catch (sendError) {
+    console.error('cancelacion: no se pudo enviar', sendError?.message)
+    return response.status(502).json({ ok: false, error: 'No se pudo enviar el correo.' })
+  }
+  return response.status(200).json({ ok: true, sent: correo })
+}
+
 export default async function handler(request, response) {
   if (request.method !== 'POST') return response.status(405).json({ ok: false, error: 'Method not allowed' })
 
@@ -265,6 +311,8 @@ export default async function handler(request, response) {
 
   // Reenvío manual desde el panel (JWT del usuario, no el secreto del webhook).
   if (body.resend) return reenviarFotosEtapa(request, response, body, authorization)
+  // Correo de cancelación desde el panel (también con JWT del usuario).
+  if (body.cancelacion) return enviarCancelacion(request, response, body, authorization)
 
   // Solo Supabase (con el secreto compartido) puede disparar el aviso automático.
   if (!process.env.NOTIFY_SECRET || authorization !== `Bearer ${process.env.NOTIFY_SECRET}`) {

@@ -269,6 +269,25 @@ export async function reenviarFotosEtapa(codigo: string, tipo: 'recibido_hauslin
   return json as { ok: true; sent: string; fotos: number }
 }
 
+// Envía al cliente el correo de "tu pedido fue cancelado". Lo dispara el panel (con el JWT
+// del usuario, que el server valida como admin/operador) al confirmar la cancelación, así el
+// correo lleva el motivo real y, si hubo devolución, el monto y la política de 1 a 3 días.
+// El endpoint lee el correo del cliente con la llave de servicio (RLS), no hace falta acá.
+export async function enviarCorreoCancelacion(codigo: string, opts: { motivo: MotivoCancelacion; monto?: number }) {
+  const client = requireSupabase()
+  const { data: sessionData } = await client.auth.getSession()
+  const token = sessionData.session?.access_token
+  if (!token) throw new Error('Sesión no disponible.')
+  const res = await fetch('/api/notificar-estado', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ cancelacion: true, codigo, motivo: opts.motivo, monto: opts.monto ?? 0 }),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok || !json.ok) throw new Error(json.error || 'No se pudo enviar el correo de cancelación.')
+  return json as { ok: true; sent: string }
+}
+
 export async function actualizarEstadoPedido(id: string, estado: EstadoPedido) {
   const client = requireSupabase()
   const { data, error } = await client

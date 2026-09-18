@@ -121,10 +121,13 @@ export function mensajeWhatsAppEstado(estado: EstadoPedido, data: { nombre?: str
   return mensajes[estado]
 }
 
-// Motivos por los que se cancela un pedido. "no_entregado" es el caso de la agencia que
-// no entrega el paquete: implica devolverle el dinero al cliente (reembolso).
-export type MotivoCancelacion = 'cliente_cancelo' | 'no_entregado' | 'otro'
+// Motivos por los que se cancela un pedido. Los que llevan `devolucion: true` implican
+// devolverle el dinero al cliente (reembolso): producto que ya no está disponible con el
+// proveedor, producto que dejamos de vender, o el paquete que la agencia no entregó/perdió.
+export type MotivoCancelacion = 'no_disponible' | 'sin_venta' | 'no_entregado' | 'cliente_cancelo' | 'otro'
 export const MOTIVOS_CANCELACION: { value: MotivoCancelacion; label: string; devolucion: boolean }[] = [
+  { value: 'no_disponible', label: 'El producto ya no está disponible — devolución', devolucion: true },
+  { value: 'sin_venta', label: 'Ya no lo tenemos a la venta — devolución', devolucion: true },
   { value: 'no_entregado', label: 'Paquete no entregado / pérdida — devolución', devolucion: true },
   { value: 'cliente_cancelo', label: 'El cliente canceló', devolucion: false },
   { value: 'otro', label: 'Otro motivo', devolucion: false },
@@ -132,15 +135,35 @@ export const MOTIVOS_CANCELACION: { value: MotivoCancelacion; label: string; dev
 export const motivoCancelacionLabel = (motivo?: string | null) =>
   MOTIVOS_CANCELACION.find((item) => item.value === motivo)?.label ?? (motivo || null)
 
+// Frase (dirigida al cliente) que explica por qué se canceló, según el motivo. Se usa tanto
+// en el WhatsApp como en el correo de cancelación para que el mensaje diga el motivo real.
+export const MOTIVO_CANCELACION_RAZON: Record<MotivoCancelacion, string> = {
+  no_disponible: 'el producto que elegiste ya no está disponible con el proveedor',
+  sin_venta: 'el producto que elegiste ya no lo tenemos a la venta',
+  no_entregado: 'tu paquete no pudo entregarse',
+  cliente_cancelo: 'nos pediste cancelarlo',
+  otro: 'no pudimos completarlo',
+}
+
+// Política de devolución que se le comunica al cliente: 1 a 3 días hábiles y a la misma
+// cuenta desde la que pagó. Igual texto en el panel, el WhatsApp y el correo.
+export const POLITICA_DEVOLUCION = 'El reembolso se procesa en un plazo de 1 a 3 días hábiles y se devuelve a la misma cuenta desde la que realizaste el pago.'
+
 // Mensaje para avisar al cliente que su paquete (que se daba por no entregado) apareció,
 // y preguntarle si todavía le interesa.
 export function mensajeWhatsAppReaparicion(data: { nombre?: string | null; codigo: string }) {
   return `Hola${data.nombre ? `, ${data.nombre}` : ''}. ¡Buenas noticias! Tu paquete del pedido ${data.codigo} apareció y ya lo tenemos. ¿Todavía te interesa recibirlo? Si nos confirmás, coordinamos la entrega; si preferís, no hay problema y queda cerrado.`
 }
 
-// Mensaje para confirmarle al cliente que se le hizo la devolución del dinero.
-export function mensajeWhatsAppReembolso(data: { nombre?: string | null; codigo: string; monto: number }) {
-  return `Hola${data.nombre ? `, ${data.nombre}` : ''}. Lamentamos que el paquete del pedido ${data.codigo} no pudiera entregarse. Ya procesamos la *devolución de US$ ${Math.max(0, data.monto).toFixed(2)}* que habías pagado. Cualquier cosa quedamos a la orden y gracias por tu paciencia.`
+// Mensaje para avisarle al cliente que su orden se canceló. Explica el motivo y, si hubo
+// pago que se devuelve (monto > 0), agrega la devolución y la política de 1 a 3 días.
+export function mensajeWhatsAppCancelacion(data: { nombre?: string | null; codigo: string; motivo: MotivoCancelacion; monto?: number }) {
+  const razon = MOTIVO_CANCELACION_RAZON[data.motivo] ?? MOTIVO_CANCELACION_RAZON.otro
+  const monto = Math.max(0, Number(data.monto || 0))
+  const partes = [`Hola${data.nombre ? `, ${data.nombre}` : ''}. Lamentamos informarte que tu pedido ${data.codigo} fue cancelado porque ${razon}.`]
+  if (monto > 0) partes.push(`Ya iniciamos la *devolución de US$ ${monto.toFixed(2)}* que habías pagado. ${POLITICA_DEVOLUCION}`)
+  partes.push('Cualquier duda quedamos a la orden y gracias por tu comprensión.')
+  return partes.join('\n\n')
 }
 
 // Cada etapa tiene su propio color para reconocerla de un vistazo en toda la app.

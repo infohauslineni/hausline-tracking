@@ -1,10 +1,10 @@
 import { AlertTriangle, MessageCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { MOTIVOS_CANCELACION, mensajeWhatsAppReembolso, type MotivoCancelacion } from '../../constants/orders'
+import { MOTIVOS_CANCELACION, POLITICA_DEVOLUCION, mensajeWhatsAppCancelacion, type MotivoCancelacion } from '../../constants/orders'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { obtenerTipoCambio, registrarReembolso } from '../../services/comercial.service'
-import { cancelarPedido } from '../../services/pedidos.service'
+import { cancelarPedido, enviarCorreoCancelacion } from '../../services/pedidos.service'
 import type { Pedido } from '../../types/domain'
 import { whatsappUrl } from '../../utils/whatsapp'
 import { CuentaSelect, type DestinoPago } from '../finanzas/CuentaSelect'
@@ -14,7 +14,7 @@ import { Modal } from '../ui/Modal'
 // entregado / pérdida", ofrece registrar la devolución del dinero al cliente (reembolso):
 // sale de la caja y del saldo de la cuenta desde la que se devolvió.
 export function CancelarPedidoModal({ pedido, open, onClose, onDone }: { pedido: Pedido; open: boolean; onClose: () => void; onDone: (updated: Pedido) => void }) {
-  const [motivo, setMotivo] = useState<MotivoCancelacion>('no_entregado')
+  const [motivo, setMotivo] = useState<MotivoCancelacion>('no_disponible')
   const [reembolsar, setReembolsar] = useState(true)
   const [monto, setMonto] = useState(0)
   const [metodo, setMetodo] = useState('Transferencia')
@@ -24,7 +24,7 @@ export function CancelarPedidoModal({ pedido, open, onClose, onDone }: { pedido:
 
   const abono = Math.max(0, Number(pedido.abono || 0))
   useEffect(() => {
-    if (open) { setMotivo('no_entregado'); setReembolsar(true); setMonto(Number(abono.toFixed(2))); setMetodo('Transferencia'); setDestino({ cuentaId: null, montoCuenta: 0 }); if (isSupabaseConfigured) void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined) }
+    if (open) { setMotivo('no_disponible'); setReembolsar(true); setMonto(Number(abono.toFixed(2))); setMetodo('Transferencia'); setDestino({ cuentaId: null, montoCuenta: 0 }); if (isSupabaseConfigured) void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, pedido.id])
 
@@ -39,20 +39,28 @@ export function CancelarPedidoModal({ pedido, open, onClose, onDone }: { pedido:
       if (isSupabaseConfigured) {
         const updated = await cancelarPedido(pedido.id, motivo)
         if (haraReembolso) {
-          await registrarReembolso({ pedido_id: pedido.id, cliente_id: pedido.cliente_id, codigo: pedido.codigo, fecha: new Date().toISOString().slice(0, 10), monto, metodo_pago: metodo || null, observaciones: `Devolución por paquete no entregado · ${pedido.codigo}` }, destino)
+          await registrarReembolso({ pedido_id: pedido.id, cliente_id: pedido.cliente_id, codigo: pedido.codigo, fecha: new Date().toISOString().slice(0, 10), monto, metodo_pago: metodo || null, observaciones: `Devolución por cancelación (${motivo}) · ${pedido.codigo}` }, destino)
         }
         onDone({ ...pedido, ...updated })
+        // Avisa al cliente por correo que su pedido se canceló (best-effort: si falla el
+        // envío, la cancelación ya quedó guardada; solo avisamos que el correo no salió).
+        try {
+          await enviarCorreoCancelacion(pedido.codigo, { motivo, monto: haraReembolso ? monto : 0 })
+          toast.success(haraReembolso ? `Pedido cancelado, devolución de US$ ${monto.toFixed(2)} registrada y correo enviado al cliente.` : 'Pedido cancelado y correo enviado al cliente.')
+        } catch (mailError) {
+          toast.warning(mailError instanceof Error ? `Pedido cancelado, pero el correo no se envió: ${mailError.message}` : 'Pedido cancelado, pero el correo no se envió.')
+        }
       } else {
         onDone({ ...pedido, estado: 'cancelado', motivo_cancelacion: motivo, updated_at: new Date().toISOString() })
+        toast.success(haraReembolso ? `Pedido cancelado y devolución de US$ ${monto.toFixed(2)} registrada.` : 'Pedido cancelado.')
       }
-      toast.success(haraReembolso ? `Pedido cancelado y devolución de US$ ${monto.toFixed(2)} registrada.` : 'Pedido cancelado.')
       onClose()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo cancelar el pedido.')
     } finally { setSaving(false) }
   }
 
-  return <Modal open={open} onClose={onClose} title={`Cancelar pedido ${pedido.codigo}`} description="El pedido queda como “Cancelado” (no se le avisa al cliente automáticamente). Elegí el motivo.">
+  return <Modal open={open} onClose={onClose} title={`Cancelar pedido ${pedido.codigo}`} description="El pedido queda como “Cancelado” y al cliente le llega un correo automático con el motivo. Elegí el motivo.">
     <div className="space-y-4">
       <label className="form-field"><span>Motivo</span>
         <select value={motivo} onChange={(e) => setMotivo(e.target.value as MotivoCancelacion)}>{MOTIVOS_CANCELACION.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}</select>
@@ -64,19 +72,22 @@ export function CancelarPedidoModal({ pedido, open, onClose, onDone }: { pedido:
             <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-accent" checked={reembolsar} onChange={(e) => setReembolsar(e.target.checked)} />
             <span className="flex flex-col"><span className="text-sm font-medium text-red-100">Registrar la devolución del dinero</span><span className="text-[11px] text-red-100/70">El cliente pagó US$ {abono.toFixed(2)}. Se registra como reembolso (sale de la caja).</span></span>
           </label>
-          {reembolsar && <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <label className="form-field"><span>Monto a devolver (US$)</span><input type="number" min="0" step=".01" value={monto} onChange={(e) => setMonto(Number(e.target.value))} /></label>
-            <label className="form-field"><span>Método</span><input value={metodo} onChange={(e) => setMetodo(e.target.value)} /></label>
-            <CuentaSelect requerido montoUsd={monto} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" />
-          </div>}
+          {reembolsar && <>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="form-field"><span>Monto a devolver (US$)</span><input type="number" min="0" step=".01" value={monto} onChange={(e) => setMonto(Number(e.target.value))} /></label>
+              <label className="form-field"><span>Método</span><input value={metodo} onChange={(e) => setMetodo(e.target.value)} /></label>
+              <CuentaSelect requerido montoUsd={monto} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" />
+            </div>
+            <p className="mt-3 text-[11px] leading-relaxed text-red-100/70">Al cliente se le avisa que {POLITICA_DEVOLUCION.charAt(0).toLowerCase() + POLITICA_DEVOLUCION.slice(1)}</p>
+          </>}
         </div>
       )}
 
-      {haraReembolso && pedido.clientes?.whatsapp && (
-        <a className="inline-flex items-center gap-2 text-xs text-accent hover:underline" href={whatsappUrl(pedido.clientes.whatsapp, mensajeWhatsAppReembolso({ nombre: pedido.clientes?.nombre, codigo: pedido.codigo, monto }))} target="_blank" rel="noreferrer"><MessageCircle size={14} /> Avisar la devolución al cliente por WhatsApp</a>
+      {pedido.clientes?.whatsapp && (
+        <a className="inline-flex items-center gap-2 text-xs text-accent hover:underline" href={whatsappUrl(pedido.clientes.whatsapp, mensajeWhatsAppCancelacion({ nombre: pedido.clientes?.nombre, codigo: pedido.codigo, motivo, monto: haraReembolso ? monto : 0 }))} target="_blank" rel="noreferrer"><MessageCircle size={14} /> Avisar la cancelación al cliente por WhatsApp</a>
       )}
 
-      <div className="flex items-center gap-2 rounded-xl border border-line bg-white/[.02] p-3 text-xs text-muted"><AlertTriangle size={15} className="shrink-0 text-amber-300" /> Podés reactivar el pedido desde su detalle si hace falta.</div>
+      <div className="flex items-center gap-2 rounded-xl border border-line bg-white/[.02] p-3 text-xs text-muted"><AlertTriangle size={15} className="shrink-0 text-amber-300" /> Al confirmar, se le envía al cliente el correo de cancelación. Podés reactivar el pedido desde su detalle si hace falta.</div>
 
       <div className="flex justify-end gap-2"><button className="subtle-button" onClick={onClose}>No cancelar</button><button className="primary-button px-5" disabled={saving} onClick={() => void confirmar()}>{saving ? 'Guardando…' : haraReembolso ? 'Cancelar y devolver' : 'Cancelar pedido'}</button></div>
     </div>

@@ -785,6 +785,49 @@ export async function enviarCorreoRetraso({ correo, nombre, codigo, estado }) {
   })
 }
 
+// Frase (al cliente) que explica el motivo de la cancelación. Espejo de MOTIVO_CANCELACION_RAZON
+// en src/constants/orders.ts (los api son JS independientes, no importan el TS de la app).
+const MOTIVO_CANCELACION_RAZON = {
+  no_disponible: 'el producto que elegiste ya no está disponible con el proveedor',
+  sin_venta: 'el producto que elegiste ya no lo tenemos a la venta',
+  no_entregado: 'tu paquete no pudo entregarse',
+  cliente_cancelo: 'nos pediste cancelarlo',
+  otro: 'no pudimos completarlo',
+}
+const POLITICA_DEVOLUCION = 'El reembolso se procesa en un plazo de 1 a 3 días hábiles y se devuelve a la misma cuenta desde la que realizaste el pago.'
+
+// Correo de CANCELACIÓN al cliente. Lo dispara el panel al confirmar la cancelación (no el
+// webhook, para que lleve el motivo real y el monto de la devolución). Explica el motivo y,
+// si hubo pago que se devuelve (monto > 0), agrega la devolución y la política de 1 a 3 días.
+export async function enviarCorreoCancelacion({ correo, nombre, codigo, motivo, monto }) {
+  const razon = MOTIVO_CANCELACION_RAZON[motivo] || MOTIVO_CANCELACION_RAZON.otro
+  const hayReembolso = (Number(monto) || 0) > 0
+  const appUrl = (process.env.APP_URL ?? process.env.VITE_PUBLIC_APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
+  const urlSeguimiento = `${appUrl}/tracking/${codigo}`
+  let nota = `Lamentamos informarte que tu pedido <strong>${esc(codigo)}</strong> fue cancelado porque ${razon}.`
+  if (hayReembolso) nota += ` Ya iniciamos la <strong>devolución de ${montoUSD(monto)}</strong> que habías pagado. ${POLITICA_DEVOLUCION}`
+  nota += ' Cualquier duda quedamos a la orden y gracias por tu comprensión.'
+
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
+    port: Number(process.env.SMTP_PORT ?? 465),
+    secure: true,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  })
+
+  const bccArchivo = process.env.ARCHIVO_BCC ?? 'alerta@hauslineshopni.es'
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
+    to: correo,
+    ...(bccArchivo ? { bcc: bccArchivo } : {}),
+    subject: `Pedido ${codigo}: tu pedido fue cancelado`,
+    html: plantillaCorreo({
+      nombre, codigo, estado: 'cancelado', estadoLabel: ESTADO_LABEL.cancelado, nota,
+      urlSeguimiento, esNuevo: false, factura: null, fotos: [],
+    }),
+  })
+}
+
 // Envía el correo del pedido (creación o cambio de estado). Lanza si el SMTP falla.
 // `factura` es opcional: cuando llega, el correo incluye la tabla de la compra
 // (al crear el pedido) o del pago (al entregarlo).
