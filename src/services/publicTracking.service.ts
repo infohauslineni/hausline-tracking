@@ -6,19 +6,20 @@ import type { PublicImage, PublicOrder } from '../types/publicTracking'
 import { estadoLabelPublico } from '../constants/orders'
 import { estimateDateForPreview } from '../utils/estimates'
 
-// Cancelado / incidencia NO se le muestran al cliente: el seguimiento se queda en el
-// último estado "normal" (sin estado especial, sin nota, sin entrada en el historial).
-// Así, si un pedido se cancela o tiene una novedad, el cliente no ve ningún cambio.
+// CANCELADO sí se le muestra al cliente (pidió el dueño): el seguimiento dice "Cancelado".
+// INCIDENCIA / "requiere atención" siguen siendo internos: el cliente ve el último estado
+// "normal" (sin estado especial, sin nota) para no alarmarlo por una novedad logística.
 const CODIGO_POR_ETIQUETA: Record<string, EstadoPedido> = {
   'Orden confirmada': 'pedido_confirmado', 'En preparación': 'en_preparacion',
   'En tránsito': 'transito_internacional', 'País de destino': 'llego_nicaragua',
   'Disponible para entrega': 'disponible_entrega', 'Pagado': 'pagado',
   'Empaquetado, listo para envío': 'empaquetado', 'Entregado': 'entregado',
 }
-const esEstadoOculto = (label: string) => { const v = label.toLowerCase(); return v.includes('cancel') || v.includes('incidencia') || v.includes('requiere') || v.includes('atenci') }
+const esEstadoOculto = (label: string) => { const v = label.toLowerCase(); return v.includes('incidencia') || v.includes('requiere') || v.includes('atenci') }
 function ocultarEstadoInterno(order: PublicOrder): PublicOrder {
   const historial = order.historial.map((entry) => ({ ...entry, estado: normalizarEstadoHistorial(entry.estado) }))
-  if (order.estado_codigo !== 'cancelado' && order.estado_codigo !== 'incidencia') {
+  // Solo 'incidencia' se oculta; 'cancelado' se muestra tal cual ("Cancelado").
+  if (order.estado_codigo !== 'incidencia') {
     return { ...order, estado: estadoLabelPublico(order.estado_codigo), historial }
   }
   const visibles = historial.filter((entry) => !esEstadoOculto(entry.estado)) // más antiguo → más reciente
