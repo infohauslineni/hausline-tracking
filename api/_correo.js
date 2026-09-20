@@ -638,11 +638,17 @@ export function plantillaEncargoAdminGrupo({ solicitudes, panelUrl }) {
 }
 
 // Envía UN aviso interno con todos los productos del carrito del cliente.
-export async function enviarCorreoEncargoAdminGrupo({ to, solicitudes }) {
+export async function enviarCorreoEncargoAdminGrupo({ to, solicitudes, pagoReportado = false }) {
   const appUrl = (process.env.APP_URL ?? process.env.VITE_PUBLIC_APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
   const panelUrl = `${appUrl}/solicitudes`
   const totalUsd = solicitudes.reduce((sum, s) => sum + (Number(s.total) || 0), 0)
   const nombre = solicitudes[0]?.cliente_nombre || 'Cliente'
+  const monto = montoUSD(totalUsd).replace('USD ', '$')
+  // El correo al admin se manda cuando el cliente REPORTA el pago (subió comprobante o tocó
+  // "ya pagué"), no al crear el encargo — así el buzón no se llena de encargos sin pagar.
+  const subject = pagoReportado
+    ? `💰 Pago reportado · ${nombre} · ${solicitudes.length} ${solicitudes.length === 1 ? 'producto' : 'productos'} · ${monto} — verificá`
+    : `Nuevo encargo · ${nombre} · ${solicitudes.length} productos · ${monto}`
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST ?? 'smtp.gmail.com', port: Number(process.env.SMTP_PORT ?? 465), secure: true,
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
@@ -650,7 +656,7 @@ export async function enviarCorreoEncargoAdminGrupo({ to, solicitudes }) {
   await transporter.sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to,
-    subject: `Nuevo encargo · ${nombre} · ${solicitudes.length} productos · ${montoUSD(totalUsd).replace('USD ', '$')}`,
+    subject,
     html: plantillaEncargoAdminGrupo({ solicitudes, panelUrl }),
   })
 }

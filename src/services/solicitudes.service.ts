@@ -27,6 +27,7 @@ export type Solicitud = {
   pago_tipo: string
   abono: number
   comprobante_url: string | null
+  pago_reportado_at?: string | null
   estado: EstadoSolicitud
   notas: string | null
   vence_at: string
@@ -96,6 +97,19 @@ export async function confirmarSolicitudesGrupo(ids: string[], abono?: number, c
   if (error) throw error
   invalidateComercial()
   return String(data)
+}
+
+// Comprobante que el cliente subió desde el checkout: se guarda como RUTA dentro del
+// bucket privado `comprobantes` (el sitio solo puede escribir, no leer). El admin lo abre
+// con una URL firmada de corta duración. Si por compatibilidad `ruta` ya es una URL, se
+// devuelve tal cual.
+export async function urlComprobanteSolicitud(ruta: string | null | undefined): Promise<string | null> {
+  if (!ruta) return null
+  if (/^https?:\/\//i.test(ruta)) return ruta
+  const client = supabase
+  if (!client) return null
+  const { data } = await client.storage.from('comprobantes').createSignedUrl(ruta, 3600)
+  return data?.signedUrl ?? null
 }
 
 export async function descartarSolicitud(id: string) {

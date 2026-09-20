@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowRight, Check, Clock3, Inbox, Mail, MapPin, MessageCircle, PackagePlus, Trash2, Upload, X, Zap } from 'lucide-react'
+import { AlertCircle, ArrowRight, Check, Clock3, Copy, Inbox, Mail, MapPin, MessageCircle, PackagePlus, Paperclip, Trash2, Upload, X, Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Modal } from '../../components/ui/Modal'
@@ -6,7 +6,7 @@ import { CuentaSelect, type DestinoPago } from '../../components/finanzas/Cuenta
 import { DEMO_SOLICITUDES } from '../../data/demoSolicitudes'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { archivarComprobanteDrive } from '../../services/archivos.service'
-import { confirmarSolicitud, confirmarSolicitudesGrupo, descartarSolicitud, descartarSolicitudes, eliminarSolicitud, listarSolicitudes, suscribirSolicitudes, type Solicitud } from '../../services/solicitudes.service'
+import { confirmarSolicitud, confirmarSolicitudesGrupo, descartarSolicitud, descartarSolicitudes, eliminarSolicitud, listarSolicitudes, suscribirSolicitudes, urlComprobanteSolicitud, type Solicitud } from '../../services/solicitudes.service'
 import { useAuth } from '../../contexts/AuthContext'
 import { whatsappUrl } from '../../utils/whatsapp'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
@@ -31,6 +31,22 @@ const usdNio = (monto: number, tipoCambio: number | null) => {
 }
 const fechaCorta = (iso: string) => new Intl.DateTimeFormat('es-NI', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(iso))
 
+// Mensaje para EL PROVEEDOR con el código del pedido (HS####), el código de cada producto y
+// la talla. Se manda al confirmar el pago para pedirle la mercadería al proveedor.
+function mensajeProveedor(codigo: string, grupo: Solicitud[]): string {
+  const bloques = grupo.map((s) => `🏷️ PRODUCT CODE: ${s.producto_codigo || s.producto || '—'}\n📏 SIZE: ${s.talla || 'N/A'}`)
+  return `📦 ORDER CODE: ${codigo}\n\n${bloques.join('\n\n')}`
+}
+// WhatsApp del proveedor: número guardado (localStorage) o VITE_PROVEEDOR_WHATSAPP; si no hay,
+// abre WhatsApp para elegir el contacto con el mensaje ya escrito.
+function urlProveedor(mensaje: string): string {
+  let num = ''
+  try { num = (localStorage.getItem('hausline_proveedor_wa') || '').replace(/\D/g, '') } catch { /* */ }
+  const env = ((import.meta.env.VITE_PROVEEDOR_WHATSAPP as string | undefined) || '').replace(/\D/g, '')
+  const phone = num || env
+  return phone ? `https://wa.me/${phone}?text=${encodeURIComponent(mensaje)}` : `https://wa.me/?text=${encodeURIComponent(mensaje)}`
+}
+
 // Agrupa los encargos pendientes por cliente (teléfono normalizado: últimos 8 dígitos), así
 // varios encargos del mismo cliente se pueden confirmar como UN solo pedido con la suma.
 function claveCliente(s: Solicitud) {
@@ -51,6 +67,7 @@ export function SolicitudesPage() {
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [busy, setBusy] = useState<string | null>(null)
   const [confirmando, setConfirmando] = useState<Solicitud[] | null>(null)
+  const [resultado, setResultado] = useState<{ codigo: string; grupo: Solicitud[]; comprobante: boolean } | null>(null)
 
   const cargar = useCallback(async (silencioso = false) => {
     if (!isSupabaseConfigured) return
@@ -90,11 +107,9 @@ export function SolicitudesPage() {
           try { await archivarComprobanteDrive(codigo, comprobante) }
           catch { toast.error('El pedido se creó, pero no se pudo archivar el comprobante en Drive.') }
         }
-        // Avisar al cliente por WhatsApp con su código y el enlace de seguimiento.
-        const link = `${window.location.origin}/tracking/${codigo}`
-        const msg = `¡Hola ${c.cliente_nombre}! Confirmamos tu pago ✅. Tu pedido ya está en proceso.\n\nCódigo de pedido: ${codigo}\nSeguí tu pedido aquí: ${link}\n\n¡Gracias por comprar en HAUSLINE!`
-        window.open(whatsappUrl(c.cliente_whatsapp, msg), '_blank', 'noopener,noreferrer')
-        toast.success(`Pedido ${codigo} creado con ${grupo.length} ${grupo.length === 1 ? 'producto' : 'productos'}${comprobante ? ' y comprobante archivado' : ''}. Abrimos WhatsApp para avisarle al cliente.`)
+        // Modal con el pedido: mensaje para el PROVEEDOR (ORDER/PRODUCT/SIZE) y aviso al cliente.
+        setResultado({ codigo, grupo, comprobante: !!comprobante })
+        toast.success(`Pedido ${codigo} creado con ${grupo.length} ${grupo.length === 1 ? 'producto' : 'productos'}${comprobante ? ' y comprobante archivado' : ''}.`)
       } else { toast.success('Encargo confirmado (vista previa).') }
       const ids = new Set(grupo.map((g) => g.id))
       setItems((all) => all.map((x) => ids.has(x.id) ? { ...x, estado: 'confirmada' } : x))
@@ -158,6 +173,8 @@ export function SolicitudesPage() {
 
     {confirmando && <ConfirmarModal grupo={confirmando} busy={busy === confirmando[0].id} onClose={() => setConfirmando(null)} onConfirm={(abono, comprobante, destino, descuento) => void confirmar(confirmando, abono, comprobante, destino, descuento)} />}
 
+    {resultado && <ResultadoModal codigo={resultado.codigo} grupo={resultado.grupo} onClose={() => setResultado(null)} />}
+
     {vencidas.length > 0 && <div className="mt-8">
       <h2 className="flex items-center gap-2 text-sm font-semibold text-muted"><Trash2 size={15} /> Vencidas · nunca pagaron (no gastaron código)</h2>
       <div className="mt-3 space-y-2">{vencidas.map((s) => <div key={s.id} className="flex items-center gap-3 rounded-xl border border-line bg-panel px-4 py-3 opacity-70"><span className="font-mono text-xs font-semibold">{s.codigo}</span><span className="text-xs text-muted">{s.cliente_nombre} · {s.producto}</span><button className="table-action table-action-danger ml-auto" onClick={() => void eliminar(s)} aria-label="Eliminar"><Trash2 size={16} /></button></div>)}</div>
@@ -177,12 +194,20 @@ function ConfirmarModal({ grupo, busy, onClose, onConfirm }: { grupo: Solicitud[
   const [monto, setMonto] = useState<string>((grupo.reduce((sum, s) => sum + (Number(s.abono) || 0), 0) || totalBruto).toFixed(2))
   const [comprobante, setComprobante] = useState<File | null>(null)
   const [destino, setDestino] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
+  // Comprobante que YA subió el cliente desde el checkout (si hay). Se muestra acá para
+  // que el admin lo revise antes de confirmar; si existe, el subir uno propio es opcional.
+  const clienteRuta = grupo.find((s) => s.comprobante_url)?.comprobante_url || null
+  const clienteEsPdf = !!clienteRuta && /\.pdf$/i.test(clienteRuta)
+  const [clienteUrl, setClienteUrl] = useState<string | null>(null)
+  useEffect(() => { let vivo = true; if (clienteRuta) { urlComprobanteSolicitud(clienteRuta).then((u) => { if (vivo) setClienteUrl(u) }).catch(() => {}) } return () => { vivo = false } }, [clienteRuta])
   // Descuento (USD) que el admin aplica al total antes de confirmar; acota a [0, total].
   const descuento = Math.min(totalBruto, Math.max(0, Number(descuentoStr) || 0))
   const total = Math.max(0, totalBruto - descuento)
   const mitad = Math.round(total * 50) / 100
   const abono = Math.min(total, Math.max(0, Number(monto) || 0))
   const saldo = Math.max(0, total - abono)
+  // El comprobante propio es obligatorio solo si hay abono Y el cliente NO subió el suyo.
+  const requiereComp = abono > 0 && !clienteRuta
   return <Modal open title="Confirmar pago" description={esGrupo ? `${c.cliente_nombre} · ${grupo.length} productos en un solo pedido` : `${c.codigo} · ${c.cliente_nombre} · ${c.producto}`} onClose={onClose}>
     {esGrupo && <div className="mb-4 max-h-44 overflow-y-auto rounded-xl border border-line bg-white/[0.02] p-1.5">{grupo.map((s) => <div key={s.id} className="flex items-center justify-between gap-3 px-2 py-1.5 text-xs"><span className="min-w-0 truncate"><span className="font-mono text-muted">{s.codigo}</span> · {s.producto}</span><strong className="shrink-0 font-mono">{usd(s.total)}</strong></div>)}</div>}
     <div className="flex items-center justify-between rounded-xl border border-line bg-white/[0.02] p-4 text-sm"><span className="text-muted">{esGrupo ? `Total del pedido (${grupo.length} productos)` : 'Total del pedido'}</span><span className="text-right">{descuento > 0 && <span className="mr-2 font-mono text-muted line-through">{usd(totalBruto)}</span>}<strong className="font-mono">{usd(total)}</strong></span></div>
@@ -208,14 +233,23 @@ function ConfirmarModal({ grupo, busy, onClose, onConfirm }: { grupo: Solicitud[
 
     {abono > 0 && <div className="mt-4"><CuentaSelect montoUsd={abono} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="suma" proposito="recibir" requerido label="¿A qué cuenta entró el abono?" /></div>}
 
-    <p className="mt-5 text-xs font-semibold text-muted">Comprobante de pago {abono > 0 ? <span className="font-normal text-accent">(obligatorio)</span> : <span className="font-normal">(opcional)</span>}</p>
+    {clienteRuta && <div className="mt-5 rounded-xl border border-[#62eaa0]/30 bg-[#62eaa0]/[0.06] p-3">
+      <p className="flex items-center gap-1.5 text-xs font-semibold text-[#62eaa0]"><Check size={14} /> El cliente subió su comprobante desde la web</p>
+      {clienteUrl
+        ? (clienteEsPdf
+            ? <a href={clienteUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-accent hover:underline"><Paperclip size={13} /> Abrir comprobante (PDF)</a>
+            : <a href={clienteUrl} target="_blank" rel="noopener noreferrer" title="Ver en grande"><img src={clienteUrl} alt="Comprobante del cliente" className="mt-2 max-h-60 w-auto rounded-lg border border-line" /></a>)
+        : <p className="mt-1.5 text-[11px] text-muted">Cargando comprobante…</p>}
+    </div>}
+
+    <p className="mt-5 text-xs font-semibold text-muted">{clienteRuta ? 'Adjuntar otro comprobante ' : 'Comprobante de pago '}{requiereComp ? <span className="font-normal text-accent">(obligatorio)</span> : <span className="font-normal">(opcional)</span>}</p>
     {comprobante
       ? <div className="mt-1.5 flex items-center gap-3 rounded-xl border border-accent/40 bg-accent/[0.06] p-2.5 text-sm">
           <img src={URL.createObjectURL(comprobante)} alt="Comprobante" className="size-11 shrink-0 rounded-lg object-cover" />
           <div className="min-w-0 flex-1"><p className="flex items-center gap-1 text-xs font-medium text-accent"><Check size={14} /> Comprobante listo</p><p className="truncate text-[11px] text-muted">{comprobante.name}</p></div>
           <button type="button" className="table-action" onClick={() => setComprobante(null)} aria-label="Quitar comprobante"><X size={16} /></button>
         </div>
-      : <label className={`mt-1.5 flex cursor-pointer items-center gap-2.5 rounded-xl border border-dashed px-3 py-3 text-sm transition ${abono > 0 ? 'border-accent/50 bg-accent/[0.04] hover:border-accent hover:bg-accent/[0.08]' : 'border-line bg-white/[0.02] hover:border-accent/40'}`}>
+      : <label className={`mt-1.5 flex cursor-pointer items-center gap-2.5 rounded-xl border border-dashed px-3 py-3 text-sm transition ${requiereComp ? 'border-accent/50 bg-accent/[0.04] hover:border-accent hover:bg-accent/[0.08]' : 'border-line bg-white/[0.02] hover:border-accent/40'}`}>
           <Upload size={17} className="shrink-0 text-accent" />
           <span className="min-w-0 flex-1 text-xs text-muted">Subir imagen del comprobante — se guarda en la carpeta de Drive del pedido</span>
           <input type="file" accept="image/*" className="hidden" onChange={(e) => setComprobante(e.target.files?.[0] ?? null)} />
@@ -223,7 +257,7 @@ function ConfirmarModal({ grupo, busy, onClose, onConfirm }: { grupo: Solicitud[
 
     <div className="mt-6 flex justify-end gap-2">
       <button className="subtle-button" onClick={onClose}>Cancelar</button>
-      <button className="primary-button px-5" disabled={busy || (abono > 0 && !comprobante)} onClick={() => { if (abono > 0 && !comprobante) return toast.error('Subí la foto del comprobante para confirmar el encargo.'); onConfirm(abono, comprobante, destino, descuento) }}>{busy ? 'Creando…' : <><Check size={16} /> Confirmar y crear pedido</>}</button>
+      <button className="primary-button px-5" disabled={busy || (requiereComp && !comprobante)} onClick={() => { if (requiereComp && !comprobante) return toast.error('Subí la foto del comprobante (o el cliente debe subirlo) para confirmar el encargo.'); onConfirm(abono, comprobante, destino, descuento) }}>{busy ? 'Creando…' : <><Check size={16} /> Confirmar y crear pedido</>}</button>
     </div>
   </Modal>
 }
@@ -231,6 +265,22 @@ function ConfirmarModal({ grupo, busy, onClose, onConfirm }: { grupo: Solicitud[
 function Count({ value, label, tone }: { value: number; label: string; tone: 'accent' | 'amber' | 'muted' }) {
   const color = tone === 'accent' ? 'text-accent' : tone === 'amber' ? 'text-amber-300' : 'text-muted'
   return <div className="rounded-xl border border-line bg-panel px-4 py-3"><strong className={`font-display block text-2xl font-bold tracking-tight ${color}`}>{value}</strong><span className="text-[11px] text-muted">{label}</span></div>
+}
+
+// Chip "Ver comprobante": el cliente subió su comprobante desde el checkout. Al tocarlo,
+// pide una URL firmada (bucket privado) y lo abre en otra pestaña.
+function ComprobanteChip({ ruta }: { ruta: string | null | undefined }) {
+  const [cargando, setCargando] = useState(false)
+  if (!ruta) return null
+  const abrir = async () => {
+    setCargando(true)
+    try {
+      const url = await urlComprobanteSolicitud(ruta)
+      if (url) window.open(url, '_blank', 'noopener,noreferrer')
+      else toast.error('No se pudo abrir el comprobante.')
+    } catch { toast.error('No se pudo abrir el comprobante.') } finally { setCargando(false) }
+  }
+  return <button type="button" onClick={abrir} disabled={cargando} className="inline-flex items-center gap-1.5 rounded-full bg-[#62eaa0]/12 px-2.5 py-1 text-[11px] font-semibold text-[#62eaa0] hover:underline disabled:opacity-60"><Paperclip size={12} /> {cargando ? 'Abriendo…' : 'Ver comprobante'}</button>
 }
 
 function SolicitudCard({ s, busy, onConfirm, onDiscard }: { s: Solicitud; busy: boolean; onConfirm: () => void; onDiscard: () => void }) {
@@ -251,7 +301,7 @@ function SolicitudCard({ s, busy, onConfirm, onDiscard }: { s: Solicitud; busy: 
       <div className="flex items-start gap-3">
         <span className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/[0.04] text-muted">{resolverImagenCatalogo(s.imagen) ? <img src={resolverImagenCatalogo(s.imagen)} alt="" className="size-full object-cover" /> : <PackagePlus size={20} />}</span>
         <div>
-          <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm font-bold">{s.codigo}</span><span className="rounded-full bg-[#8ec5ff]/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#8ec5ff]">Web</span>{rapido && <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300"><Zap size={10} /> Rápido</span>}</div>
+          <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm font-bold">{s.codigo}</span><span className="rounded-full bg-[#8ec5ff]/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#8ec5ff]">Web</span>{rapido && <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300"><Zap size={10} /> Rápido</span>}{s.pago_reportado_at && <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-300">💰 Reportó pago</span>}</div>
           <p className="mt-1 text-sm font-semibold">{s.cliente_nombre}</p>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted"><span className="inline-flex items-center gap-1"><MessageCircle size={11} /> {s.cliente_whatsapp}</span>{s.cliente_correo && <span className="inline-flex items-center gap-1"><Mail size={11} /> {s.cliente_correo}</span>}{s.cliente_ciudad && <span className="inline-flex items-center gap-1"><MapPin size={11} /> {s.cliente_ciudad}</span>}</p>
           <p className="mt-1 inline-flex items-center gap-1 text-[10px] text-muted"><Clock3 size={10} /> Recibido {fechaCorta(s.created_at)}</p>
@@ -272,6 +322,7 @@ function SolicitudCard({ s, busy, onConfirm, onDiscard }: { s: Solicitud; busy: 
     <div className="mt-4 flex flex-wrap items-center gap-2">
       <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200"><AlertCircle size={12} /> Verificá la transferencia antes de confirmar</span>
       <a href={whatsappUrl(s.cliente_whatsapp, mensaje)} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1.5 text-[11px] font-semibold hover:underline ${urgente ? 'text-red-300' : 'text-[#62eaa0]'}`}><MessageCircle size={13} /> {urgente ? 'Avisar que vence' : 'Recordar por WhatsApp'}</a>
+      <ComprobanteChip ruta={s.comprobante_url} />
       <div className="ml-auto flex gap-2">
         {esAdmin ? <>
           <button className="subtle-button min-h-10" disabled={busy} onClick={onDiscard}><Trash2 size={15} /> Descartar</button>
@@ -296,13 +347,19 @@ function GrupoCard({ grupo, busy, onConfirm, onDiscard, onDiscardAll }: { grupo:
   const urgente = t.tono === 'crit'
   const tonoTexto = t.tono === 'crit' ? 'text-red-300' : t.tono === 'warn' ? 'text-amber-300' : 'text-muted'
   const rapido = grupo.some((s) => s.envio === 'rapido')
-  const mensaje = `Hola ${c.cliente_nombre}, tenés ${grupo.length} productos encargados (${usdNio(total, c.tipo_cambio)} en total). Para confirmarlos necesito el comprobante de la transferencia. ¡Gracias!`
+  // El recordatorio de WhatsApp lista cada producto (talla/color/cantidad y su precio),
+  // no solo "N productos", para que el cliente sepa exactamente qué está confirmando.
+  const detalleLista = grupo.map((s) => {
+    const extras = [s.talla ? `talla ${s.talla}` : '', s.color, Number(s.cantidad) > 1 ? `×${s.cantidad}` : ''].filter(Boolean).join(', ')
+    return `• ${s.producto}${extras ? ` (${extras})` : ''} — ${usd(s.total)}`
+  }).join('\n')
+  const mensaje = `Hola ${c.cliente_nombre}, tenés ${grupo.length} productos encargados (${usdNio(total, c.tipo_cambio)} en total):\n${detalleLista}\n\nPara confirmarlos necesito el comprobante de la transferencia. ¡Gracias!`
   return <article className={`panel-card ${urgente ? 'border-red-400/40' : ''}`}>
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex items-start gap-3">
         <span className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/[0.04] text-muted">{resolverImagenCatalogo(c.imagen) ? <img src={resolverImagenCatalogo(c.imagen)} alt="" className="size-full object-cover" /> : <PackagePlus size={20} />}</span>
         <div>
-          <div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent">{grupo.length} productos</span><span className="rounded-full bg-[#8ec5ff]/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#8ec5ff]">Web</span>{rapido && <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300"><Zap size={10} /> Rápido</span>}</div>
+          <div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent">{grupo.length} productos</span><span className="rounded-full bg-[#8ec5ff]/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#8ec5ff]">Web</span>{rapido && <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300"><Zap size={10} /> Rápido</span>}{grupo.some((s) => s.pago_reportado_at) && <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-300">💰 Reportó pago</span>}</div>
           <p className="mt-1 text-sm font-semibold">{c.cliente_nombre}</p>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted"><span className="inline-flex items-center gap-1"><MessageCircle size={11} /> {c.cliente_whatsapp}</span>{c.cliente_correo && <span className="inline-flex items-center gap-1"><Mail size={11} /> {c.cliente_correo}</span>}{c.cliente_ciudad && <span className="inline-flex items-center gap-1"><MapPin size={11} /> {c.cliente_ciudad}</span>}</p>
         </div>
@@ -327,6 +384,7 @@ function GrupoCard({ grupo, busy, onConfirm, onDiscard, onDiscardAll }: { grupo:
     <div className="mt-4 flex flex-wrap items-center gap-2">
       <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200"><AlertCircle size={12} /> Verificá la transferencia antes de confirmar</span>
       <a href={whatsappUrl(c.cliente_whatsapp, mensaje)} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1.5 text-[11px] font-semibold hover:underline ${urgente ? 'text-red-300' : 'text-[#62eaa0]'}`}><MessageCircle size={13} /> Recordar por WhatsApp</a>
+      <ComprobanteChip ruta={grupo.find((s) => s.comprobante_url)?.comprobante_url} />
       <div className="ml-auto flex gap-2">
         {esAdmin
           ? <><button className="subtle-button min-h-10" disabled={busy} onClick={onDiscardAll}><Trash2 size={15} /> Descartar todo</button><button className="primary-button min-h-10 px-4" disabled={busy} onClick={onConfirm}>{busy ? 'Procesando…' : <><Check size={16} /> Confirmar pago ({grupo.length}) <ArrowRight size={14} /></>}</button></>
@@ -334,6 +392,38 @@ function GrupoCard({ grupo, busy, onConfirm, onDiscard, onDiscardAll }: { grupo:
       </div>
     </div>
   </article>
+}
+
+// Modal tras confirmar el pago: muestra el mensaje para EL PROVEEDOR (ORDER/PRODUCT/SIZE) con
+// botón para enviarlo por WhatsApp + copiar, y el aviso al cliente.
+function ResultadoModal({ codigo, grupo, onClose }: { codigo: string; grupo: Solicitud[]; onClose: () => void }) {
+  const c = grupo[0]
+  const msgProv = mensajeProveedor(codigo, grupo)
+  const link = `${window.location.origin}/tracking/${codigo}`
+  const msgCliente = `¡Hola ${c.cliente_nombre}! Confirmamos tu pago ✅. Tu pedido ya está en proceso.\n\nCódigo de pedido: ${codigo}\nSeguí tu pedido aquí: ${link}\n\n¡Gracias por comprar en HAUSLINE!`
+  const [prov, setProv] = useState(() => { try { return localStorage.getItem('hausline_proveedor_wa') || '' } catch { return '' } })
+  const guardar = (v: string) => { setProv(v); try { localStorage.setItem('hausline_proveedor_wa', v) } catch { /* */ } }
+  const copiar = () => { navigator.clipboard?.writeText(msgProv).catch(() => {}); toast.success('Mensaje del proveedor copiado.') }
+  return <Modal open title={`Pedido ${codigo} creado`} description="Enviá el pedido al proveedor y avisá al cliente." onClose={onClose}>
+    <div className="space-y-4">
+      <div>
+        <p className="mb-1.5 text-xs font-semibold text-muted">📦 Mensaje para el proveedor</p>
+        <pre className="whitespace-pre-wrap rounded-xl border border-line bg-panel p-3 font-mono text-[13px] leading-relaxed text-white">{msgProv}</pre>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <a href={urlProveedor(msgProv)} target="_blank" rel="noopener noreferrer" className="primary-button min-h-10 px-4"><MessageCircle size={16} /> Enviar al proveedor</a>
+          <button className="subtle-button min-h-10" onClick={copiar}><Copy size={15} /> Copiar mensaje</button>
+        </div>
+        <label className="mt-2 block text-[11px] text-muted">Número del proveedor (se guarda en este equipo)
+          <input value={prov} onChange={(e) => guardar(e.target.value)} placeholder="Ej. +86… (dejalo vacío para elegir el contacto)" className="mt-1 w-full rounded-lg border border-line bg-panel px-3 py-2 text-sm text-white" />
+        </label>
+      </div>
+      <div className="border-t border-line pt-4">
+        <p className="mb-1.5 text-xs font-semibold text-muted">Avisar al cliente</p>
+        <a href={whatsappUrl(c.cliente_whatsapp, msgCliente)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-xl bg-[#25d366]/12 px-3 py-2 text-sm font-semibold text-[#62eaa0] hover:underline"><MessageCircle size={15} /> Enviar confirmación al cliente</a>
+      </div>
+      <button className="primary-button min-h-11 w-full" onClick={onClose}>Listo</button>
+    </div>
+  </Modal>
 }
 
 function EmptyState() {

@@ -23,30 +23,37 @@ async function fotoProducto(codigo) {
 // mismo cliente creados en los últimos minutos, y los devuelve. Como el UPDATE bloquea las
 // filas, de todas las invocaciones concurrentes del carrito SOLO UNA se lleva las filas (las
 // demás reciben []), así se manda un único correo. Si no hay service role, devuelve null.
-async function reclamarEncargos(record) {
+// Reclama de forma ATÓMICA (marca la columna `campo`) los encargos del mismo cliente que
+// cumplen `extra` (aún sin marcar), y los devuelve. Como el UPDATE bloquea las filas, de
+// todas las invocaciones concurrentes SOLO UNA se lleva las filas (las demás reciben []),
+// así se manda un único correo. Si no hay service role, devuelve null.
+async function reclamar(record, campo, extra) {
   const base = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!base || !key) return null
   const root = base.replace(/\/$/, '')
   const wa = String(record.cliente_whatsapp || '').trim()
-  const desde = new Date(Date.now() - 15 * 60 * 1000).toISOString()
-  const filtro = wa
-    ? `cliente_whatsapp=eq.${encodeURIComponent(wa)}&estado=eq.pendiente&aviso_admin_at=is.null&created_at=gte.${encodeURIComponent(desde)}`
-    : `id=eq.${encodeURIComponent(record.id)}&aviso_admin_at=is.null`
+  const desde = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  const base_filtro = wa
+    ? `cliente_whatsapp=eq.${encodeURIComponent(wa)}&estado=eq.pendiente&created_at=gte.${encodeURIComponent(desde)}`
+    : `id=eq.${encodeURIComponent(record.id)}`
+  const filtro = `${base_filtro}&${campo}=is.null${extra ? `&${extra}` : ''}`
   const res = await fetch(`${root}/rest/v1/solicitudes?${filtro}`, {
     method: 'PATCH',
     headers: { apikey: key, authorization: `Bearer ${key}`, 'content-type': 'application/json', prefer: 'return=representation' },
-    body: JSON.stringify({ aviso_admin_at: new Date().toISOString() }),
+    body: JSON.stringify({ [campo]: new Date().toISOString() }),
   })
   if (!res.ok) throw new Error(`claim ${res.status}`)
   const rows = await res.json()
   return Array.isArray(rows) ? rows : []
 }
 
-// Aviso INTERNO (para ti) cuando cae un ENCARGO WEB nuevo. Lo dispara el Database Webhook de
-// Supabase sobre `solicitudes` (INSERT), con el secreto NOTIFY_SECRET. Un carrito crea un
-// encargo por producto, así que agrupamos: mandamos UN correo por cliente con todos sus
-// productos (y un solo correo al cliente).
+// Correos del encargo web. Lo dispara el Database Webhook de Supabase sobre `solicitudes`
+// (INSERT y UPDATE), con el secreto NOTIFY_SECRET. Regla nueva para NO llenar el buzón del
+// admin de encargos que nadie paga:
+//   • INSERT (se crea el encargo)               → correo SOLO al CLIENTE ("esperamos tu pago").
+//   • UPDATE con pago_reportado_at recién puesto → correo SOLO al ADMIN ("cliente reportó pago").
+// Un carrito comparte grupo, así que agrupamos y mandamos UN correo por cliente.
 export default async function handler(request, response) {
   if (request.method !== 'POST') return response.status(405).json({ ok: false, error: 'Method not allowed' })
 
@@ -60,38 +67,52 @@ export default async function handler(request, response) {
 
   const body = typeof request.body === 'string' ? JSON.parse(request.body || '{}') : (request.body ?? {})
   const record = body.record ?? {}
-
-  if (body.table !== 'solicitudes' || body.type !== 'INSERT') {
+  const old = body.old_record ?? body.old ?? {}
+  if (body.table !== 'solicitudes') {
     return response.status(200).json({ ok: true, skipped: 'no aplica' })
-  }
-  if (record.estado && record.estado !== 'pendiente') {
-    return response.status(200).json({ ok: true, skipped: 'no pendiente' })
   }
   if (!record.codigo || !record.producto) {
     return response.status(200).json({ ok: true, skipped: 'encargo incompleto' })
   }
 
-  const destino = (process.env.AVISO_ADMIN || process.env.SMTP_USER || '').trim()
-  if (!destino) return response.status(200).json({ ok: true, skipped: 'sin destinatario' })
+  // ── UPDATE: el cliente REPORTÓ el pago → avisamos al ADMIN (una vez por grupo) ──
+  if (body.type === 'UPDATE') {
+    if (!record.pago_reportado_at || old.pago_reportado_at) {
+      return response.status(200).json({ ok: true, skipped: 'sin pago reportado nuevo' })
+    }
+    const destino = (process.env.AVISO_ADMIN || process.env.SMTP_USER || '').trim()
+    if (!destino) return response.status(200).json({ ok: true, skipped: 'sin destinatario' })
+    let encargos
+    try { encargos = await reclamar(record, 'aviso_pago_at', 'pago_reportado_at=not.is.null') }
+    catch (e) { console.error('notificar-encargo: claim pago falló', e?.message); encargos = null }
+    if (encargos === null) encargos = [record]
+    if (!encargos.length) return response.status(200).json({ ok: true, skipped: 'pago ya avisado' })
+    encargos.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    for (const s of encargos) { if (!s.imagen) s.imagen = await fotoProducto(s.producto_codigo) }
+    try {
+      await enviarCorreoEncargoAdminGrupo({ to: destino, solicitudes: encargos, pagoReportado: true })
+    } catch (e) {
+      console.error('notificar-encargo: no se pudo enviar al admin', e?.message)
+      return response.status(502).json({ ok: false, error: 'No se pudo enviar el correo' })
+    }
+    return response.status(200).json({ ok: true, admin: destino, count: encargos.length })
+  }
 
-  // Espera a que caiga el resto del carrito y luego reclama todos los del cliente.
+  // ── INSERT: nuevo encargo → correo SOLO al CLIENTE (empuja el pago), NADA al admin ──
+  if (body.type !== 'INSERT') {
+    return response.status(200).json({ ok: true, skipped: 'evento no aplica' })
+  }
+  if (record.estado && record.estado !== 'pendiente') {
+    return response.status(200).json({ ok: true, skipped: 'no pendiente' })
+  }
+  // Espera a que caiga el resto del carrito y luego reclama para avisar al cliente UNA vez.
   await new Promise((resolve) => setTimeout(resolve, ESPERA_CARRITO_MS))
   let encargos
-  try { encargos = await reclamarEncargos(record) }
+  try { encargos = await reclamar(record, 'aviso_admin_at') }
   catch (claimError) { console.error('notificar-encargo: claim falló', claimError?.message); encargos = null }
-  // Sin service role (o falla el claim): comportamiento simple con este único encargo.
   if (encargos === null) encargos = [record]
   if (!encargos.length) return response.status(200).json({ ok: true, skipped: 'ya avisado (agrupado)' })
-
   encargos.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-  for (const s of encargos) { if (!s.imagen) s.imagen = await fotoProducto(s.producto_codigo) }
-
-  try {
-    await enviarCorreoEncargoAdminGrupo({ to: destino, solicitudes: encargos })
-  } catch (sendError) {
-    console.error('notificar-encargo: no se pudo enviar', sendError?.message)
-    return response.status(502).json({ ok: false, error: 'No se pudo enviar el correo' })
-  }
 
   // Correo automático AL CLIENTE (uno solo con todos sus códigos). Best-effort.
   let avisoCliente = false
@@ -109,5 +130,5 @@ export default async function handler(request, response) {
     }
   }
 
-  return response.status(200).json({ ok: true, sent: destino, count: encargos.length, avisoCliente })
+  return response.status(200).json({ ok: true, avisoCliente, count: encargos.length })
 }
