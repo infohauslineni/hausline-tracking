@@ -3,7 +3,17 @@
 -- `comprobantes` con la anon key. Faltaba (o no quedó aplicada) la política de INSERT
 -- para el rol anon en storage.objects. Este archivo la deja garantizada (re-ejecutable).
 --
--- Correlo en Supabase → SQL editor (proyecto epslwaxjemlysqtubbfu).
+-- ⚠️ OJO: en el SQL editor esto DA ERROR "42501: must be owner of table objects" porque
+-- storage.objects pertenece a supabase_storage_admin. Por eso HAY QUE HACERLO DESDE EL
+-- DASHBOARD (Storage → Policies), no por SQL. Pasos:
+--   1) Storage → Buckets → confirmá que existe "comprobantes" (Private). Si no, crealo.
+--   2) Storage → Policies → en la tabla objects, bucket comprobantes → New policy →
+--      "For full customization":
+--      • Política 1: nombre comprobantes_anon_insert · Operation: INSERT ·
+--        Target roles: anon, authenticated · WITH CHECK: bucket_id = 'comprobantes'
+--      • Política 2: nombre comprobantes_auth_read · Operation: SELECT ·
+--        Target roles: authenticated · USING: bucket_id = 'comprobantes'
+-- El SQL de abajo queda solo de referencia (falla por permisos en el editor).
 
 -- 1) El bucket existe (privado).
 insert into storage.buckets (id, name, public)
