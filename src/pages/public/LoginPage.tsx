@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { Brand } from '../../components/ui/Brand'
 import { useAuth } from '../../contexts/AuthContext'
+import { supabase } from '../../lib/supabase'
 
 const schema = z.object({ email: z.email('Escribe un correo válido.'), password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres.') })
 type FormValues = z.infer<typeof schema>
@@ -14,15 +15,29 @@ type FormValues = z.infer<typeof schema>
 export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [sendingReset, setSendingReset] = useState(false)
-  const { user, configured, signIn, resetPassword } = useAuth()
+  const { user, configured, personal, signIn, signOut, resetPassword } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const { register, handleSubmit, getValues, formState: { errors, isSubmitting } } = useForm<FormValues>({ resolver: zodResolver(schema) })
-  if (user) return <Navigate to="/dashboard" replace />
+  // Acceso SOLO para el personal. Una cuenta de cliente con sesión abierta va a su panel.
+  // (mientras se verifica el acceso tras enviar el formulario no redirigimos)
+  if (user && !isSubmitting && personal === false) return <Navigate to="/cuenta" replace />
+  if (user && !isSubmitting && personal !== false) return <Navigate to="/dashboard" replace />
 
   const onSubmit = async (values: FormValues) => {
     try {
       await signIn(values.email, values.password)
+      // Este es el acceso INTERNO: si la cuenta no es personal activo (p. ej. un cliente que
+      // se registró en la tienda), cerramos la sesión aquí mismo y no entra al panel.
+      if (supabase) {
+        const { data: { user: nuevo } } = await supabase.auth.getUser()
+        const { data: perfil, error } = nuevo ? await supabase.from('perfiles').select('activo').eq('id', nuevo.id).maybeSingle() : { data: null, error: null }
+        if (!error && !perfil?.activo) {
+          await signOut().catch(() => undefined)
+          toast.error('Esta cuenta no tiene acceso al panel interno. Si sos cliente, ingresá en Mi cuenta.')
+          return
+        }
+      }
       toast.success('Sesión iniciada.')
       const target = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? '/dashboard'
       navigate(target, { replace: true })

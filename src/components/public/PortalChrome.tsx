@@ -45,7 +45,6 @@ export function PortalShell({ children, nav }: { children: ReactNode; nav?: Reac
         <nav className="flex flex-wrap justify-center gap-x-5 gap-y-1">
           <Link to="/privacidad" className="hsp-muted hover:text-black">Privacidad</Link>
           <Link to="/terminos" className="hsp-muted hover:text-black">Términos</Link>
-          <Link to="/login" className="hsp-faint hover:text-black">Acceso interno</Link>
         </nav>
       </footer>
     </main>
