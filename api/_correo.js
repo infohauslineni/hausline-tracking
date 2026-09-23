@@ -913,9 +913,13 @@ export async function enviarCorreoItemEstado({ correo, nombre, codigo, producto,
   if (Array.isArray(fotos) && fotos.length) {
     for (const f of fotos) attachments.push({ filename: f.filename, content: f.content, contentType: f.contentType || 'image/webp', cid: f.cid })
   }
+  // Copia oculta al buzón de archivo (igual que los correos de etapa): así este correo
+  // por-producto también entra a esa cuenta y los filtros de Gmail lo etiquetan por asunto.
+  const bccArchivo = process.env.ARCHIVO_BCC ?? 'alerta@hauslineshopni.es'
   await transporter.sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to: correo,
+    ...(bccArchivo ? { bcc: bccArchivo } : {}),
     subject: `Pedido ${codigo}: ${label} — ${producto}`,
     html: plantillaCorreo({ nombre, codigo, estado: null, estadoLabel: label, nota, urlSeguimiento, esNuevo: false, factura: null, fotos: fotos || [] }),
     attachments,

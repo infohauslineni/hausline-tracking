@@ -98,14 +98,14 @@ export default async function handler(request, response) {
     return response.status(200).json({ ok: true, admin: destino, count: encargos.length })
   }
 
-  // ── INSERT: nuevo encargo → correo SOLO al CLIENTE (empuja el pago), NADA al admin ──
+  // ── INSERT: nuevo encargo → avisa al ADMIN (cada encargo web) y al CLIENTE ("esperamos tu pago") ──
   if (body.type !== 'INSERT') {
     return response.status(200).json({ ok: true, skipped: 'evento no aplica' })
   }
   if (record.estado && record.estado !== 'pendiente') {
     return response.status(200).json({ ok: true, skipped: 'no pendiente' })
   }
-  // Espera a que caiga el resto del carrito y luego reclama para avisar al cliente UNA vez.
+  // Espera a que caiga el resto del carrito y luego reclama para avisar UNA vez.
   await new Promise((resolve) => setTimeout(resolve, ESPERA_CARRITO_MS))
   let encargos
   try { encargos = await reclamar(record, 'aviso_admin_at') }
@@ -113,6 +113,22 @@ export default async function handler(request, response) {
   if (encargos === null) encargos = [record]
   if (!encargos.length) return response.status(200).json({ ok: true, skipped: 'ya avisado (agrupado)' })
   encargos.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+
+  // Aviso interno AL ADMIN por cada encargo web nuevo (uno solo por carrito). Best-effort:
+  // si falla, igual sigue el correo al cliente. El aviso "fuerte" de pago reportado (UPDATE)
+  // sigue vivo aparte, para cuando el cliente suba el comprobante.
+  let avisoAdmin = false
+  const destinoAdmin = (process.env.AVISO_ADMIN || process.env.SMTP_USER || '').trim()
+  if (destinoAdmin) {
+    try {
+      for (const s of encargos) { if (!s.imagen) s.imagen = await fotoProducto(s.producto_codigo) }
+      await enviarCorreoEncargoAdminGrupo({ to: destinoAdmin, solicitudes: encargos, pagoReportado: false })
+      avisoAdmin = true
+    } catch (adminError) {
+      console.error('notificar-encargo: no se pudo avisar al admin', adminError?.message)
+    }
+  }
+  console.log('notificar-encargo INSERT →', JSON.stringify({ avisoAdmin, destinoAdmin: destinoAdmin ? destinoAdmin.replace(/(.{2}).*(@.*)/, '$1***$2') : '(vacío)', count: encargos.length }))
 
   // Correo automático AL CLIENTE (uno solo con todos sus códigos). Best-effort.
   let avisoCliente = false
@@ -130,5 +146,5 @@ export default async function handler(request, response) {
     }
   }
 
-  return response.status(200).json({ ok: true, avisoCliente, count: encargos.length })
+  return response.status(200).json({ ok: true, avisoAdmin, avisoCliente, count: encargos.length })
 }

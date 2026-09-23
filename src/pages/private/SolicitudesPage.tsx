@@ -268,19 +268,42 @@ function Count({ value, label, tone }: { value: number; label: string; tone: 'ac
 }
 
 // Chip "Ver comprobante": el cliente subió su comprobante desde el checkout. Al tocarlo,
-// pide una URL firmada (bucket privado) y lo abre en otra pestaña.
+// pide una URL firmada (bucket privado) y lo muestra en una galería dentro de la app.
 function ComprobanteChip({ ruta }: { ruta: string | null | undefined }) {
   const [cargando, setCargando] = useState(false)
+  const [vista, setVista] = useState<{ url: string; esPdf: boolean } | null>(null)
   if (!ruta) return null
   const abrir = async () => {
     setCargando(true)
     try {
       const url = await urlComprobanteSolicitud(ruta)
-      if (url) window.open(url, '_blank', 'noopener,noreferrer')
+      if (url) setVista({ url, esPdf: /\.pdf(\?|$)/i.test(ruta) })
       else toast.error('No se pudo abrir el comprobante.')
     } catch { toast.error('No se pudo abrir el comprobante.') } finally { setCargando(false) }
   }
-  return <button type="button" onClick={abrir} disabled={cargando} className="inline-flex items-center gap-1.5 rounded-full bg-[#62eaa0]/12 px-2.5 py-1 text-[11px] font-semibold text-[#62eaa0] hover:underline disabled:opacity-60"><Paperclip size={12} /> {cargando ? 'Abriendo…' : 'Ver comprobante'}</button>
+  return <>
+    <button type="button" onClick={abrir} disabled={cargando} className="inline-flex items-center gap-1.5 rounded-full bg-[#62eaa0]/12 px-2.5 py-1 text-[11px] font-semibold text-[#62eaa0] hover:underline disabled:opacity-60"><Paperclip size={12} /> {cargando ? 'Abriendo…' : 'Ver comprobante'}</button>
+    {vista && <ComprobanteLightbox url={vista.url} esPdf={vista.esPdf} onClose={() => setVista(null)} />}
+  </>
+}
+
+// Galería a pantalla completa para ver el comprobante sin salir de la app; se cierra con la
+// X, tocando fuera de la imagen, o con Escape.
+function ComprobanteLightbox({ url, esPdf, onClose }: { url: string; esPdf: boolean; onClose: () => void }) {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [onClose])
+  return <div className="fixed inset-0 z-[70] grid place-items-center overflow-y-auto bg-black/90 p-3 backdrop-blur-md sm:p-6" role="dialog" aria-modal="true" aria-label="Comprobante de pago">
+    <button className="absolute inset-0" aria-label="Cerrar comprobante" onClick={onClose} />
+    <button type="button" className="fixed right-4 z-[90] grid size-12 place-items-center rounded-full border border-white/25 bg-black text-white shadow-2xl" style={{ top: 'calc(env(safe-area-inset-top) + 12px)' }} onClick={onClose} aria-label="Cerrar comprobante"><X size={23} /></button>
+    <section className="relative max-h-[92vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-white/15 bg-[#080a08] shadow-2xl">
+      {esPdf
+        ? <iframe src={url} title="Comprobante de pago" className="h-[80vh] w-full bg-white" />
+        : <img src={url} alt="Comprobante de pago" className="max-h-[88vh] w-full object-contain" />}
+    </section>
+  </div>
 }
 
 function SolicitudCard({ s, busy, onConfirm, onDiscard }: { s: Solicitud; busy: boolean; onConfirm: () => void; onDiscard: () => void }) {
@@ -294,8 +317,8 @@ function SolicitudCard({ s, busy, onConfirm, onDiscard }: { s: Solicitud; busy: 
   // El mensaje de WhatsApp cambia según urgencia: por vencer vs pedir comprobante.
   const montoRecordar = usdNio(abono50 ? s.abono : s.total, s.tipo_cambio)
   const mensaje = urgente
-    ? `Hola ${s.cliente_nombre} 👋, tu encargo ${s.codigo} de ${s.producto} está por vencer (te quedan pocas horas). Para no perderlo, transferí ${montoRecordar} y envianos el comprobante. ¡Gracias!`
-    : `Hola ${s.cliente_nombre}, vi tu encargo ${s.codigo} de ${s.producto} (${montoRecordar}). Para confirmarlo necesito el comprobante de la transferencia. ¡Gracias!`
+    ? `Hola ${s.cliente_nombre}, le saluda el equipo de HAUSLINE. 🛍️\n\nSu encargo *${s.codigo}* — ${s.producto} está próximo a vencer y no queremos que lo pierda. Para asegurarlo, por favor realice la transferencia de ${montoRecordar} y compártanos el comprobante por este mismo medio.\n\nQuedamos atentos para gestionar su pedido. ¡Muchas gracias por su preferencia!`
+    : `Hola ${s.cliente_nombre}, le saluda el equipo de HAUSLINE. 🛍️\n\nHemos recibido su encargo *${s.codigo}* — ${s.producto}, por un total de ${montoRecordar}. Para confirmarlo y comenzar a gestionarlo, por favor compártanos el comprobante de su transferencia por este mismo medio.\n\nQuedamos atentos. ¡Muchas gracias por su compra!`
   return <article className={`panel-card ${urgente ? 'border-red-400/40' : ''}`}>
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex items-start gap-3">
@@ -353,7 +376,7 @@ function GrupoCard({ grupo, busy, onConfirm, onDiscard, onDiscardAll }: { grupo:
     const extras = [s.talla ? `talla ${s.talla}` : '', s.color, Number(s.cantidad) > 1 ? `×${s.cantidad}` : ''].filter(Boolean).join(', ')
     return `• ${s.producto}${extras ? ` (${extras})` : ''} — ${usd(s.total)}`
   }).join('\n')
-  const mensaje = `Hola ${c.cliente_nombre}, tenés ${grupo.length} productos encargados (${usdNio(total, c.tipo_cambio)} en total):\n${detalleLista}\n\nPara confirmarlos necesito el comprobante de la transferencia. ¡Gracias!`
+  const mensaje = `Hola ${c.cliente_nombre}, le saluda el equipo de HAUSLINE. 🛍️\n\nHemos recibido su encargo de ${grupo.length} productos, por un total de ${usdNio(total, c.tipo_cambio)}:\n${detalleLista}\n\nPara confirmarlo y comenzar a gestionarlo, por favor compártanos el comprobante de su transferencia por este mismo medio.\n\nQuedamos atentos. ¡Muchas gracias por su compra!`
   return <article className={`panel-card ${urgente ? 'border-red-400/40' : ''}`}>
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex items-start gap-3">
