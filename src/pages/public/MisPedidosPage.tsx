@@ -57,7 +57,7 @@ export function MisPedidosPage() {
       <div className="mt-8 rounded-2xl border p-5 text-sm" style={{ borderColor: 'var(--hair)', background: '#fbfbfa' }}>
         <p className="font-semibold">¿Querés acceder a tus pedidos desde cualquier teléfono?</p>
         <p className="hsp-muted mt-1.5 text-xs leading-5">Creá tu cuenta gratis: guardás tu historial, tus direcciones y solicitás el envío cuando tu pedido esté disponible.</p>
-        <Link to="/cuenta/ingresar?crear=1" className="hsp-btn mt-3 inline-flex h-10 min-h-0 text-[13px]">Crear mi cuenta</Link>
+        <a href="https://hauslineshopni.es/cuenta/ingresar/?crear=1" className="hsp-btn mt-3 inline-flex h-10 min-h-0 text-[13px]">Crear mi cuenta</a>
       </div>
     </section>
   </PortalShell>

@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { ESTADO_LABEL, enviarCorreoPedido, enviarCorreoCancelacion } from './_correo.js'
 import { facturaPdfBuffer } from './_factura-pdf.js'
 import { subirFacturaDrive, subirArchivoDrive } from './_drive.js'
+import { cerrarEmail, reservarEmail } from './_email-eventos.js'
 
 // Reenvío manual (panel): cada tipo de foto corresponde a la etapa/correo que la lleva.
 const TIPO_A_ESTADO = {
@@ -349,6 +350,11 @@ export default async function handler(request, response) {
   const nombre = body.cliente_nombre ?? null
   if (!correo) return response.status(200).json({ ok: true, skipped: 'cliente sin correo' })
 
+  // Candado anti-duplicados + registro (email_eventos): un correo por pedido y estado. Si el
+  // admin vuelve a poner el mismo estado (o el webhook se reintenta), no se manda otra vez.
+  const reserva = await reservarEmail({ clave: `estado:${record.codigo}:${esNuevo ? 'nuevo' : estado}`, tipo: 'estado', estado, codigo: record.codigo, destinatario: correo })
+  if (reserva.duplicado) return response.status(200).json({ ok: true, skipped: 'correo ya enviado para este estado' })
+
   // Factura dentro del correo: al confirmar el pedido (INSERT → tabla de compra con
   // producto, precio, abono y saldo) y al cobrar (comprobante PAGADO). El pago ahora se
   // marca en el estado "Pagado", así que el comprobante sale ahí. Si el pedido va directo
@@ -378,8 +384,10 @@ export default async function handler(request, response) {
   try {
     await enviarCorreoPedido({ correo, nombre, codigo: record.codigo, estado, esNuevo, factura, fotos, pedirResena })
   } catch (sendError) {
+    await cerrarEmail(reserva.id, sendError?.message || 'error de envío')
     return response.status(502).json({ ok: false, error: 'No se pudo enviar el correo' })
   }
+  await cerrarEmail(reserva.id)
 
   // Archiva las MISMAS fotos de control de calidad en la carpeta del pedido en Drive,
   // junto a las facturas. Best-effort: si falla, no rompe el aviso.

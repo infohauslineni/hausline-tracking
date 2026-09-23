@@ -21,7 +21,7 @@ export function LoginPage() {
   const { register, handleSubmit, getValues, formState: { errors, isSubmitting } } = useForm<FormValues>({ resolver: zodResolver(schema) })
   // Acceso SOLO para el personal. Una cuenta de cliente con sesión abierta va a su panel.
   // (mientras se verifica el acceso tras enviar el formulario no redirigimos)
-  if (user && !isSubmitting && personal === false) return <Navigate to="/cuenta" replace />
+  if (user && !isSubmitting && personal === false) { window.location.replace('https://hauslineshopni.es/cuenta/'); return null }
   if (user && !isSubmitting && personal !== false) return <Navigate to="/dashboard" replace />
 
   const onSubmit = async (values: FormValues) => {

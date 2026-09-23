@@ -45,6 +45,14 @@ export const ESTADO_NOTA = {
   incidencia: 'Tenemos una novedad con tu pedido y ya la estamos gestionando. Te contactaremos pronto.',
 }
 
+// Botón de los correos: el pedido dentro de "Mi cuenta" en la tienda (pide iniciar sesión;
+// el pedido se enlaza solo a la cuenta con el MISMO correo verificado al que llega este aviso).
+// Sin datos sensibles en el link: solo el código.
+export function urlPedidoCuenta(codigo) {
+  const base = (process.env.CATALOGO_BASE_URL ?? 'https://hauslineshopni.es/').replace(/\/$/, '')
+  return `${base}/cuenta/pedido/?id=${encodeURIComponent(codigo)}`
+}
+
 // Las fotos del catálogo se guardan como RUTA RELATIVA (p.ej. "imgP/.../1.jpg"), no
 // como URL. En el correo/PDF hay que volverlas absolutas contra el dominio del catálogo
 // o el cliente de correo no las carga (sale la imagen rota). Deja intactas las que ya
@@ -315,7 +323,7 @@ function bloqueResena(codigo) {
 
 export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, urlSeguimiento, esNuevo, factura, fotos, ctaTexto, ctaUrl, pedirResena }) {
   const btnUrl = ctaUrl || urlSeguimiento
-  const btnTxt = ctaTexto || 'Ver seguimiento'
+  const btnTxt = ctaTexto || 'Ver mi pedido'
   const esEntregado = (ETAPA_BASE[estado] || estado) === 'entregado'
   // Caja "deja tu reseña": la decide quien llama (pagado y/o entregado); si no lo indica,
   // se conserva el comportamiento histórico de mostrarla al entregar.
@@ -666,8 +674,7 @@ export async function enviarCorreoEncargoAdminGrupo({ to, solicitudes, pagoRepor
 // cliente cuántos días lleva y cuánto se sumó a su factura final, para presionar el pago.
 // Reusa la plantilla base con una nota a medida (sin factura ni fotos).
 export async function enviarCorreoBodega({ correo, nombre, codigo, dias, diasCobrados, cargo, cordobas }) {
-  const appUrl = (process.env.APP_URL ?? process.env.VITE_PUBLIC_APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
-  const urlSeguimiento = `${appUrl}/tracking/${codigo}`
+  const urlSeguimiento = urlPedidoCuenta(codigo)
   const cargoTxt = montoUSD(cargo) + (cordobas ? ` (≈ C$ ${Number(cordobas).toLocaleString('es-NI')})` : '')
   const nota = `Tu pedido lleva <strong>${dias} días</strong> disponible para entrega. Pasados los 2 días de gracia, se cobran US$ 5 por cada día extra en bodega. Hasta hoy se han sumado <strong>${cargoTxt}</strong> (${diasCobrados} ${diasCobrados === 1 ? 'día' : 'días'}) a tu factura final. Coordiná tu entrega y pago para que no siga subiendo.`
 
@@ -769,8 +776,7 @@ export async function enviarCorreoEsperandoPagoGrupo({ correo, nombre, codigos, 
 // de 27 días en tránsito internacional. Mensaje suave de disculpa; muestra el timeline en
 // la etapa de tránsito y un botón al seguimiento. Sin factura ni reseña. Lanza si SMTP falla.
 export async function enviarCorreoRetraso({ correo, nombre, codigo, estado }) {
-  const appUrl = (process.env.APP_URL ?? process.env.VITE_PUBLIC_APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
-  const urlSeguimiento = `${appUrl}/tracking/${codigo}`
+  const urlSeguimiento = urlPedidoCuenta(codigo)
   const nota = `Queremos contarte que tu pedido <strong>${esc(codigo)}</strong> está tardando un poco más de lo habitual en su tránsito internacional. Los envíos internacionales a veces tienen demoras en aduana o transporte que no dependen de nosotros; ya le estamos dando seguimiento para que llegue lo antes posible. Gracias por tu paciencia y por confiar en nosotros — cualquier duda, escríbenos.`
 
   const transporter = nodemailer.createTransport({
@@ -808,8 +814,7 @@ const POLITICA_DEVOLUCION = 'El reembolso se procesa en un plazo de 1 a 3 días 
 export async function enviarCorreoCancelacion({ correo, nombre, codigo, motivo, monto }) {
   const razon = MOTIVO_CANCELACION_RAZON[motivo] || MOTIVO_CANCELACION_RAZON.otro
   const hayReembolso = (Number(monto) || 0) > 0
-  const appUrl = (process.env.APP_URL ?? process.env.VITE_PUBLIC_APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
-  const urlSeguimiento = `${appUrl}/tracking/${codigo}`
+  const urlSeguimiento = urlPedidoCuenta(codigo)
   let nota = `Lamentamos informarte que tu pedido <strong>${esc(codigo)}</strong> fue cancelado porque ${razon}.`
   if (hayReembolso) nota += ` Ya iniciamos la <strong>devolución de ${montoUSD(monto)}</strong> que habías pagado. ${POLITICA_DEVOLUCION}`
   nota += ' Cualquier duda quedamos a la orden y gracias por tu comprensión.'
@@ -840,8 +845,7 @@ export async function enviarCorreoCancelacion({ correo, nombre, codigo, motivo, 
 export async function enviarCorreoPedido({ correo, nombre, codigo, estado, esNuevo, factura, fotos, pedirResena }) {
   const estadoLabel = ESTADO_LABEL[estado]
   const nota = ESTADO_NOTA[estado] ?? 'Tu pedido fue actualizado.'
-  const appUrl = (process.env.APP_URL ?? process.env.VITE_PUBLIC_APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
-  const urlSeguimiento = `${appUrl}/tracking/${codigo}`
+  const urlSeguimiento = urlPedidoCuenta(codigo)
 
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
@@ -903,8 +907,7 @@ export async function enviarCorreoItemEstado({ correo, nombre, codigo, producto,
   const label = ITEM_ESTADO_LABEL[estadoItem]
   if (!label) return false
   const nota = (ITEM_ESTADO_NOTA[estadoItem] || (() => `Tu producto <strong>${esc(producto)}</strong> fue actualizado.`))(producto)
-  const appUrl = (process.env.APP_URL ?? process.env.VITE_PUBLIC_APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
-  const urlSeguimiento = `${appUrl}/tracking/${codigo}`
+  const urlSeguimiento = urlPedidoCuenta(codigo)
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST ?? 'smtp.gmail.com', port: Number(process.env.SMTP_PORT ?? 465), secure: true,
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
@@ -925,4 +928,34 @@ export async function enviarCorreoItemEstado({ correo, nombre, codigo, producto,
     attachments,
   })
   return true
+}
+
+// Bienvenida a "Mi cuenta" (se dispara cuando el cliente verifica su correo). Sin datos
+// sensibles: solo un saludo y el acceso a su cuenta en la tienda.
+export async function enviarCorreoBienvenida({ correo, nombre }) {
+  const base = (process.env.CATALOGO_BASE_URL ?? 'https://hauslineshopni.es/').replace(/\/$/, '')
+  const url = `${base}/cuenta/`
+  const primer = String(nombre || '').trim().split(/\s+/)[0]
+  const html = `<!doctype html><html lang="es"><body style="margin:0;background:#f4f3f0;font-family:Helvetica,Arial,sans-serif;color:#1a1a1a;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f3f0;padding:32px 12px;"><tr><td align="center">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:14px;padding:40px 32px;">
+      <tr><td style="text-align:center;font-weight:800;letter-spacing:6px;font-size:20px;">HAUSLINE</td></tr>
+      <tr><td style="padding-top:32px;font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.2;">${primer ? `Bienvenido, ${esc(primer)}.` : 'Bienvenido.'}</td></tr>
+      <tr><td style="padding-top:14px;font-size:15px;line-height:1.6;color:#4a4a4a;">Tu cuenta de HAUSLINE ya está activa. Desde <b>Mi cuenta</b> vas a ver tus pedidos, su estado y su historial en tiempo real, y te avisaremos por correo cada vez que avancen.</td></tr>
+      <tr><td style="padding-top:28px;"><a href="${url}" target="_blank" style="display:block;background:#050505;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:2px;text-transform:uppercase;text-align:center;padding:17px 20px;border-radius:6px;">Ir a mi cuenta</a></td></tr>
+      <tr><td style="padding-top:24px;font-size:12px;line-height:1.6;color:#8b8b8b;">¿Compraste antes con este mismo correo? Tus pedidos aparecen solos en tu cuenta.</td></tr>
+    </table>
+  </td></tr></table></body></html>`
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
+    port: Number(process.env.SMTP_PORT ?? 465),
+    secure: true,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  })
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
+    to: correo,
+    subject: 'Bienvenido a HAUSLINE',
+    html,
+  })
 }

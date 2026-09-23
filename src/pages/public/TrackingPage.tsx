@@ -120,11 +120,22 @@ function ResultArea({ order, loading, notFound }: { order: PublicOrder | null; l
       {/* 5 · Detalle del pedido (montos ocultos hasta iniciar sesión) */}
       <div className="hsp-rise" style={{ animationDelay: '190ms' }}><DetailCard order={order} /></div>
 
+      {/* Detalle completo (fotos de calidad, montos, guía) solo en Mi cuenta de la tienda */}
+      <div className="hsp-rise" style={{ animationDelay: '210ms' }}><CuentaCard codigo={order.codigo} /></div>
+
       {/* 6 · Ayuda */}
       <div className="hsp-rise" style={{ animationDelay: '230ms' }}><HelpCard codigo={order.codigo} /></div>
     </div>
 
     <TrustFooter />
+  </section>
+}
+
+function CuentaCard({ codigo }: { codigo: string }) {
+  return <section className="hsp-card p-4">
+    <p className="text-[14px] font-semibold">Detalle completo en Mi cuenta</p>
+    <p className="hsp-muted mt-1 text-[13px] leading-5">Fotos de control de calidad, montos, número de guía e historial completo. Ingresá (o creá tu cuenta) con el mismo correo de tu compra.</p>
+    <a href={`https://hauslineshopni.es/cuenta/pedido/?id=${codigo}`} className="hsp-btn mt-3 h-11 w-full text-sm">Ver mi pedido <ArrowRight size={15} /></a>
   </section>
 }
 

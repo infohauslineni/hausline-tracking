@@ -36,7 +36,7 @@ export function PortalShell({ children, nav }: { children: ReactNode; nav?: Reac
         <div className="flex items-center gap-1.5">
           {nav}
           <Link to="/mis-pedidos" className="hsp-btn--ghost inline-flex items-center rounded-lg">Mis pedidos</Link>
-          <Link to="/cuenta" className="hsp-btn--ghost inline-flex items-center rounded-lg" style={{ color: 'var(--ink)' }}>Mi cuenta</Link>
+          <a href="https://hauslineshopni.es/cuenta/" className="hsp-btn--ghost inline-flex items-center rounded-lg" style={{ color: 'var(--ink)' }}>Mi cuenta</a>
         </div>
       </header>
       {children}

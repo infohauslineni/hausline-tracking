@@ -14,7 +14,7 @@ import { ESTADOS_ITEM, ESTADOS_PEDIDO, estadoLabel, etapaBase, mensajeWhatsAppEs
 import { CancelarPedidoModal } from '../../components/pedidos/CancelarPedidoModal'
 import { DEMO_PEDIDOS } from '../../data/demo'
 import { isSupabaseConfigured } from '../../lib/supabase'
-import { actualizarEstadoItem, actualizarEstadoPedido, actualizarPedidoCompleto, agregarEnvioPedido, cobrarPedido, esLineaEnvio, obtenerDisponibleDesde, obtenerPedido, pagarProveedorPedido, pasarPedidoAStock, type PagoProveedorInput } from '../../services/pedidos.service'
+import { actualizarEstadoItem, actualizarEstadoPedido, anotarUltimoHistorial, actualizarPedidoCompleto, agregarEnvioPedido, cobrarPedido, esLineaEnvio, obtenerDisponibleDesde, obtenerPedido, pagarProveedorPedido, pasarPedidoAStock, type PagoProveedorInput } from '../../services/pedidos.service'
 import { useAuth } from '../../contexts/AuthContext'
 import type { FacturaData } from '../../services/factura.service'
 import { obtenerTipoCambio, registrarGasto } from '../../services/comercial.service'
@@ -47,6 +47,8 @@ export function PedidoDetailPage() {
   const [pedido, setPedido] = useState<Pedido | null>(DEMO_PEDIDOS.find((item) => item.id === id) ?? DEMO_PEDIDOS[0])
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [estadoSeleccionado, setEstadoSeleccionado] = useState<EstadoPedido>(pedido?.estado ?? 'pedido_confirmado')
+  const [notaEtapa, setNotaEtapa] = useState('')
+  const [notaInternaEtapa, setNotaInternaEtapa] = useState('')
   const [savingStatus, setSavingStatus] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [paymentOpen, setPaymentOpen] = useState(false)
@@ -120,6 +122,8 @@ export function PedidoDetailPage() {
     setSavingStatus(true)
     try {
       const updated = isSupabaseConfigured ? await actualizarEstadoPedido(pedido.id, estadoSeleccionado) : { ...pedido, estado: estadoSeleccionado, updated_at: new Date().toISOString() }
+      if (isSupabaseConfigured) await anotarUltimoHistorial(pedido.id, { nota: notaEtapa, notaInterna: notaInternaEtapa }).catch(() => toast.error('La etapa cambió, pero no se guardaron las notas.'))
+      setNotaEtapa(''); setNotaInternaEtapa('')
       setPedido((current) => current ? { ...current, ...updated } : updated)
       toast.success(estadoSeleccionado === 'disponible_entrega' ? 'Pedido disponible. El mensaje de WhatsApp está listo.' : estadoSeleccionado === 'control_calidad' && qualityPhotosReady ? 'Control de calidad actualizado. El mensaje de WhatsApp está listo.' : 'Etapa del pedido actualizada.')
     } catch { toast.error('No se pudo actualizar la etapa.') }
@@ -258,6 +262,10 @@ export function PedidoDetailPage() {
       <div className="min-w-0 space-y-5">
         <section className="form-section"><div><h2 className="flex items-center gap-2 font-semibold"><CheckCircle2 size={18} className="text-accent" /> Actualizar etapa</h2><p className="mt-2 text-xs leading-5 text-muted">Toca una etapa para seleccionarla y confirma el cambio. Las etapas de transporte también pueden avanzar desde Logística.</p></div>
           <EtapaTracker actual={pedido.estado} seleccionado={estadoSeleccionado} onSelect={setEstadoSeleccionado} />
+          {estadoSeleccionado !== pedido.estado && estadoSeleccionado !== 'pagado' && estadoSeleccionado !== 'entregado' && estadoSeleccionado !== 'en_preparacion' && <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <label className="form-field"><span>Nota para el cliente (opcional)</span><input value={notaEtapa} maxLength={300} onChange={(e) => setNotaEtapa(e.target.value)} placeholder="La ve en Mi cuenta" /></label>
+            <label className="form-field"><span>Nota interna (opcional)</span><input value={notaInternaEtapa} maxLength={500} onChange={(e) => setNotaInternaEtapa(e.target.value)} placeholder="Solo la ve el equipo" /></label>
+          </div>}
           <div className="mt-5 flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs text-muted">{estadoSeleccionado === pedido.estado ? 'Selecciona una etapa diferente para actualizar.' : <>Cambiarás de <strong className="text-white">{estadoLabel(pedido.estado)}</strong> a <strong className="text-accent">{estadoLabel(estadoSeleccionado)}</strong>.</>}</p>
             <button className="primary-button px-5" onClick={() => void updateStatus()} disabled={savingStatus || estadoSeleccionado === pedido.estado}>{savingStatus ? 'Guardando…' : estadoSeleccionado === 'pagado' ? 'Registrar pago' : estadoSeleccionado === 'entregado' ? 'Confirmar entrega' : 'Confirmar etapa'}</button>

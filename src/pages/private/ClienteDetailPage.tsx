@@ -11,6 +11,7 @@ import type { Cliente, Pago, Pedido } from '../../types/domain'
 import { estadoPago } from '../../utils/pedidoCosto'
 import { whatsappUrl } from '../../utils/whatsapp'
 import { ClienteModal } from './ClientesPage'
+import { CuentaWebCard } from '../../components/clientes/CuentaWebCard'
 import { estadoLabel, estadoTone } from '../../constants/orders'
 import { formatDate, PagoModal } from './PagosPage'
 
@@ -75,6 +76,8 @@ export function ClienteDetailPage() {
         <Link to="/pedidos/nuevo" className="primary-button px-5"><PackagePlus size={17} /> Nuevo pedido</Link>
       </div>
     </header>
+
+    {isSupabaseConfigured && <CuentaWebCard clienteId={cliente.id} correoCliente={cliente.correo} />}
 
     <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       <Stat label="Pedidos" value={String(stats.total)} />

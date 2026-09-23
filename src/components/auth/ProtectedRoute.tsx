@@ -11,6 +11,7 @@ export function ProtectedRoute() {
   if (!user && !localPreview) return <Navigate to="/login" replace state={{ from: location }} />
   // Una cuenta de CLIENTE que entró por el login interno va a su panel, no al del personal.
   if (user && isSupabaseConfigured && personal === null) return <div className="grid min-h-screen place-items-center bg-app"><div className="loader" /></div>
-  if (user && isSupabaseConfigured && personal === false) return <Navigate to="/cuenta" replace />
+  // (su panel es "Mi cuenta" en la tienda; /cuenta aquí es la caja del ADMIN)
+  if (user && isSupabaseConfigured && personal === false) { window.location.replace('https://hauslineshopni.es/cuenta/'); return null }
   return <Outlet />
 }

@@ -288,6 +288,20 @@ export async function enviarCorreoCancelacion(codigo: string, opts: { motivo: Mo
   return json as { ok: true; sent: string }
 }
 
+// Notas del último cambio de etapa: `nota` la ve el cliente (Mi cuenta / seguimiento) y
+// `nota_interna` solo el personal. Se escriben sobre el registro que crea el trigger
+// registrar_historial_estado al cambiar el estado.
+export async function anotarUltimoHistorial(pedidoId: string, notas: { nota?: string; notaInterna?: string }) {
+  const nota = notas.nota?.trim() || null
+  const notaInterna = notas.notaInterna?.trim() || null
+  if (!nota && !notaInterna) return
+  const client = requireSupabase()
+  const { data, error } = await client.from('historial_pedidos').select('id').eq('pedido_id', pedidoId).order('created_at', { ascending: false }).limit(1).maybeSingle()
+  if (error || !data) return
+  const { error: updError } = await client.from('historial_pedidos').update({ ...(nota ? { nota } : {}), ...(notaInterna ? { nota_interna: notaInterna } : {}) }).eq('id', data.id)
+  if (updError) throw updError
+}
+
 export async function actualizarEstadoPedido(id: string, estado: EstadoPedido) {
   const client = requireSupabase()
   const { data, error } = await client
