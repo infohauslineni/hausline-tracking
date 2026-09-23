@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "rewrites": [{ "source": "/api/notificar-cuenta", "destination": "/api/notificar-estado" }, { "source": "/(.*)", "destination": "/index.html" }],
   "crons": [{ "path": "/api/cron-estimaciones", "schedule": "0 9 * * *" }],
   "headers": [
     {

@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { ESTADO_LABEL, enviarCorreoPedido, enviarCorreoCancelacion } from './_correo.js'
+import { ESTADO_LABEL, enviarCorreoPedido, enviarCorreoCancelacion, enviarCorreoBienvenida } from './_correo.js'
 import { facturaPdfBuffer } from './_factura-pdf.js'
 import { subirFacturaDrive, subirArchivoDrive } from './_drive.js'
 import { cerrarEmail, reservarEmail } from './_email-eventos.js'
@@ -200,6 +200,9 @@ async function reenviarFotosEtapa(request, response, body, authorization) {
   if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
     return response.status(500).json({ ok: false, error: 'Missing SMTP configuration' })
   }
+  // Bienvenida a Mi cuenta (trigger notificar_cuenta_verificada → /api/notificar-cuenta, que
+  // vercel.json reescribe aquí: el plan Hobby permite máximo 12 funciones).
+  if (body.table === 'cuentas_cliente') return enviarBienvenida(body, response)
   const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
@@ -301,6 +304,25 @@ async function enviarCancelacion(request, response, body, authorization) {
     console.error('cancelacion: no se pudo enviar', sendError?.message)
     return response.status(502).json({ ok: false, error: 'No se pudo enviar el correo.' })
   }
+  return response.status(200).json({ ok: true, sent: correo })
+}
+
+// Correo de bienvenida cuando el cliente verifica su correo. Uno solo por cuenta (candado).
+async function enviarBienvenida(body, response) {
+  const record = body.record ?? {}
+  if (body.table !== 'cuentas_cliente' || !record.verificada_at) return response.status(200).json({ ok: true, skipped: 'no aplica' })
+  const correo = String(record.correo ?? '').trim()
+  if (!correo) return response.status(200).json({ ok: true, skipped: 'sin correo' })
+
+  const reserva = await reservarEmail({ clave: `bienvenida:${record.user_id}`, tipo: 'bienvenida', destinatario: correo, userId: record.user_id ?? null })
+  if (reserva.duplicado) return response.status(200).json({ ok: true, skipped: 'ya enviado' })
+  try {
+    await enviarCorreoBienvenida({ correo, nombre: record.nombre })
+  } catch (error) {
+    await cerrarEmail(reserva.id, error?.message || 'error de envío')
+    return response.status(502).json({ ok: false, error: 'No se pudo enviar el correo' })
+  }
+  await cerrarEmail(reserva.id)
   return response.status(200).json({ ok: true, sent: correo })
 }
 
