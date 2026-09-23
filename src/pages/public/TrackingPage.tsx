@@ -1,40 +1,36 @@
-import { AlertCircle, ArrowLeft, ArrowRight, CalendarDays, Check, Clock3, Images, MapPin, MessageCircle, Package, PackageCheck, PartyPopper, Plane, Search, ShieldCheck, Truck } from 'lucide-react'
-import { type FormEvent, useCallback, useEffect, useState } from 'react'
+import { ArrowLeft, ArrowRight, Check, ChevronLeft, ChevronRight, Images, MessageCircle, Package, Search, Share2, X } from 'lucide-react'
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Brand } from '../../components/ui/Brand'
-import { HauslineLogo } from '../../components/ui/HauslineLogo'
+import { PortalShell, Wordmark } from '../../components/public/PortalChrome'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { buscarPedidoPublico } from '../../services/publicTracking.service'
 import type { EstadoPedido } from '../../types/domain'
-import type { PublicImage, PublicOrder } from '../../types/publicTracking'
+import type { PublicOrder } from '../../types/publicTracking'
 import { estimateAfterArrival, postponeToMinFuture, postponeUntilFuture } from '../../utils/estimates'
 import { whatsappUrl } from '../../utils/whatsapp'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
-import { DELIVERY_OPCIONES } from '../../constants/pagos'
-import { estadoColor } from '../../constants/orders'
-import { CARGO_BODEGA_DIARIO, DIAS_GRACIA_BODEGA, calcularCargoBodega } from '../../utils/bodega'
+import { pedidosGuardados, recordarPedido } from '../../utils/pedidosLocales'
+import { etapaBase, notaPublicaEstado } from '../../constants/orders'
 
-const STEPS: { code: EstadoPedido; label: string }[] = [
-  { code: 'pedido_confirmado', label: 'Orden confirmada' }, { code: 'en_preparacion', label: 'En preparación' },
-  { code: 'control_calidad', label: 'Control de calidad' },
-  { code: 'transito_internacional', label: 'En tránsito' },
-  { code: 'llego_nicaragua', label: 'País de destino' }, { code: 'disponible_entrega', label: 'Disponible para entrega' },
-  { code: 'empaquetado', label: 'Empaquetado, listo para envío' },
-  { code: 'entregado', label: 'Entregado' },
+// Base monocromo (negro/gris). Los indicadores de progreso llevan color:
+// barra + "En curso" del resumen = VERDE; lista de etapas ("Estado del pedido") = AZUL.
+const ACCENT = '#1a1a1a'
+const SOFT_BG = '#faf8f3'     // fondo cálido de tarjetas destacadas (entrega, ayuda)
+const GREEN = '#16a34a'; const GREEN_BG = '#e7f6ec'
+const BLUE = '#2563eb'; const BLUE_BG = '#e8eefc'
+
+// Las 8 etapas que ve el cliente.
+const STEPS = [
+  'Pedido recibido', 'Pedido confirmado', 'Preparación', 'Control de calidad',
+  'En tránsito', 'Llegó a Nicaragua', 'Listo para entregar', 'Entregado',
 ]
-// Etapas viejas / internas → una de las 7 visibles. "En tránsito" agrupa despacho y bodega.
-const aliases: Partial<Record<EstadoPedido, EstadoPedido>> = {
-  etiqueta_creada: 'transito_internacional',
-  despachado: 'transito_internacional',
-  recibido_estados_unidos: 'transito_internacional',
-  transito_nicaragua: 'transito_internacional',
-  // El pago NO es un paso visible en la barra del cliente (hay quienes pagan al recibir, y
-  // marcar "Pagado" como cumplido confundía). Un pedido pagado se muestra en "Disponible
-  // para entrega". El pago se sigue registrando en el panel (congela bodega, etc.).
-  pagado: 'disponible_entrega',
+// Estado real del pedido (colapsado) → índice de etapa mostrada.
+const STEP_INDEX: Partial<Record<EstadoPedido, number>> = {
+  pedido_confirmado: 1, en_preparacion: 2, control_calidad: 3, transito_internacional: 4,
+  llego_nicaragua: 5, disponible_entrega: 6, empaquetado: 6, pagado: 6, entregado: 7,
 }
-// Índice canónico de una etapa según su etiqueta pública (para limpiar el historial).
-const indiceEtapa = (label: string) => STEPS.findIndex((step) => step.label === label)
+const indiceActual = (estado: EstadoPedido) => STEP_INDEX[etapaBase(estado)] ?? 0
 
 export function TrackingPage() {
   const { codigo } = useParams()
@@ -45,284 +41,361 @@ export function TrackingPage() {
   const [notFound, setNotFound] = useState(false)
   const load = useCallback(async (code: string, silent = false) => {
     if (!silent) { setLoading(true); setNotFound(false); setOrder(null) }
-    try { const data = await buscarPedidoPublico(code); setOrder(data); setNotFound(!data) }
+    const inicio = Date.now()
+    try {
+      const data = await buscarPedidoPublico(code)
+      // La animación "Buscando tu pedido" se muestra al menos un momento (evita el parpadeo).
+      if (!silent) { const resto = 900 - (Date.now() - inicio); if (resto > 0) await new Promise((r) => setTimeout(r, resto)) }
+      setOrder(data); setNotFound(!data); if (data) recordarPedido(data.codigo)
+    }
     catch { if (!silent) setNotFound(true) }
     finally { if (!silent) setLoading(false) }
   }, [])
 
   useEffect(() => { if (codigo) void Promise.resolve().then(() => load(codigo)) }, [codigo, load])
   useEffect(() => { if (!codigo || !order || !isSupabaseConfigured) return; const timer = window.setInterval(() => void load(codigo, true), 60_000); return () => window.clearInterval(timer) }, [codigo, load, order])
-  const submit = (event: FormEvent) => { event.preventDefault(); const code = input.trim().toUpperCase(); if (!/^HS\d{6}$/.test(code)) { setNotFound(true); setOrder(null); return } navigate(`/tracking/${code}`) }
+  const submit = (event: FormEvent) => { event.preventDefault(); const code = input.replace(/[^A-Za-z0-9]/g, '').toUpperCase(); if (!/^HS\d{6}$/.test(code)) { setNotFound(true); setOrder(null); return } navigate(`/pedido/${code}`) }
 
-  return <main className="relative min-h-screen overflow-hidden bg-app text-white">
-    <div className="tracking-glow" />
-    <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-6 sm:px-8"><Link to="/tracking" aria-label="Inicio de rastreo"><Brand /></Link><Link to="/login" className="subtle-button"><span className="hidden sm:inline">Acceso administrativo</span><ArrowRight size={16} /></Link></header>
-    {!codigo ? <Landing input={input} setInput={setInput} submit={submit} notFound={notFound} /> : <ResultArea order={order} loading={loading} input={input} setInput={setInput} submit={submit} notFound={notFound} />}
-    <footer className="relative mx-auto flex w-full max-w-6xl flex-col gap-3 border-t border-line px-5 py-5 text-center text-xs text-muted sm:flex-row sm:items-center sm:justify-between sm:px-8"><span>© 2026 Hausline · King of Shoes</span><nav className="flex flex-wrap justify-center gap-x-4 gap-y-1"><Link to="/privacidad" className="hover:text-white">Política de privacidad</Link><Link to="/terminos" className="hover:text-white">Términos y condiciones</Link></nav></footer>
-  </main>
+  return <PortalShell>
+    {!codigo
+      ? <Landing input={input} setInput={setInput} submit={submit} notFound={notFound} />
+      : <ResultArea order={order} loading={loading} notFound={notFound} />}
+  </PortalShell>
 }
 
+/* ----------------------------------- Landing ----------------------------------- */
 function Landing({ input, setInput, submit, notFound }: SearchProps & { notFound: boolean }) {
-  return <section className="relative mx-auto flex min-h-[calc(100vh-170px)] w-full max-w-2xl flex-col items-center justify-center px-5 py-16 text-center"><HauslineLogo size={72} glow className="rounded-2xl shadow-accent" /><p className="mt-4 text-xs font-semibold uppercase tracking-[0.32em] text-accent">King of Shoes</p><p className="eyebrow mt-3">Seguimiento de pedidos</p><h1 className="mt-4 text-4xl font-semibold tracking-[-0.04em] sm:text-6xl">¿Dónde está tu pedido?</h1><p className="mt-5 max-w-lg text-sm leading-6 text-muted sm:text-base">Ingresa el código Hausline que recibiste al confirmar tu compra.</p><TrackingSearch input={input} setInput={setInput} submit={submit} />{notFound && <NotFound />}<p className="mt-5 text-xs text-muted">Tu código comienza con HS y contiene 6 números.</p></section>
+  const recientes = useMemo(() => pedidosGuardados().slice(0, 4), [])
+  return <section className="mx-auto w-full max-w-xl px-5 pb-10 pt-10 text-center sm:pt-20">
+    <p className="hsp-eyebrow hsp-rise">Seguimiento de pedidos</p>
+    <h1 className="hsp-display hsp-rise mt-4 text-4xl font-semibold leading-[1.05] sm:text-6xl" style={{ animationDelay: '40ms' }}>¿Dónde está<br />tu pedido?</h1>
+    <p className="hsp-muted hsp-rise mx-auto mt-5 max-w-md text-[15px] leading-7" style={{ animationDelay: '80ms' }}>Ingresá el código que recibiste al confirmar tu compra y seguí tu pedido paso a paso. Sin cuenta, sin contraseñas.</p>
+    <div className="hsp-rise mt-8" style={{ animationDelay: '120ms' }}><TrackingSearch input={input} setInput={setInput} submit={submit} /></div>
+    {notFound && <NotFound />}
+    <p className="hsp-faint mt-4 text-xs">Tu código empieza con <span className="hsp-mono font-semibold">HS</span> y tiene 6 números.</p>
+
+    {recientes.length > 0 && <div className="hsp-rise mx-auto mt-10 max-w-md text-left" style={{ animationDelay: '160ms' }}>
+      <p className="hsp-eyebrow mb-2.5">Tus pedidos en este dispositivo</p>
+      <div className="hsp-card hsp-divide overflow-hidden">
+        {recientes.map((item) => <Link key={item.codigo} to={`/pedido/${item.codigo}`} className="hsp-row px-4 py-3.5 transition-colors hover:bg-black/[0.02]">
+          <span className="hsp-mono text-sm font-bold">{item.codigo}</span>
+          <ChevronRight size={16} className="hsp-faint" />
+        </Link>)}
+      </div>
+      <Link to="/mis-pedidos" className="hsp-muted mt-2.5 inline-flex items-center gap-1 text-xs font-semibold hover:text-black">Ver todos mis pedidos <ArrowRight size={13} /></Link>
+    </div>}
+
+    <TrustFooter />
+  </section>
 }
 
-function ResultArea({ order, loading, input, setInput, submit, notFound }: SearchProps & { order: PublicOrder | null; loading: boolean; notFound: boolean }) {
-  if (loading) return <TrackingSkeleton />
-  if (!order || notFound) return <section className="relative mx-auto min-h-[calc(100vh-170px)] max-w-2xl px-5 py-14"><Link to="/tracking" className="inline-flex items-center gap-2 text-xs text-muted hover:text-white"><ArrowLeft size={15} /> Nueva búsqueda</Link><div className="mt-20 text-center"><NotFound /><TrackingSearch input={input} setInput={setInput} submit={submit} /></div></section>
-  const statusCode = aliases[order.estado_codigo] ?? order.estado_codigo
-  const colorEstado = estadoColor(order.estado_codigo)
-  const stepIndex = STEPS.findIndex((step) => step.code === statusCode)
-  const currentIndex = Math.max(0, stepIndex)
-  // La cuenta regresiva ("faltan X días") solo aparece cuando el pedido ya fue despachado.
-  // Antes de eso mostramos solo la fecha estimada para no asustar al cliente con "faltan muchos días".
-  // "Despachado" se agrupa en "En tránsito" (transito_internacional), que es el primer paso visible del envío.
-  const mostrarCuenta = stepIndex >= STEPS.findIndex((step) => step.code === 'transito_internacional')
+/* --------------------------------- Result area --------------------------------- */
+function ResultArea({ order, loading, notFound }: { order: PublicOrder | null; loading: boolean; notFound: boolean }) {
+  if (loading) return <SearchingLoader />
+  if (!order || notFound) return <section className="mx-auto max-w-xl px-5 py-16 text-center">
+    <NotFound />
+    <Link to="/pedido" className="hsp-btn hsp-btn--line mt-6 inline-flex"><ArrowLeft size={16} /> Consultar otro pedido</Link>
+  </section>
+
+  const isCancelled = order.estado_codigo === 'cancelado'
   const isDelivered = order.estado_codigo === 'entregado'
-  const isIssue = order.estado_codigo === 'incidencia' || order.estado_codigo === 'cancelado'
-  // Tope del historial: nunca mostramos una etapa más avanzada que la actual.
-  // Así, si un pedido se adelantó por error y luego se regresó, el cliente solo ve el avance real.
-  const capIndex = stepIndex >= 0 ? currentIndex : STEPS.length - 1
-  const progress = isDelivered ? 100 : isIssue ? Math.max(8, currentIndex * (100 / (STEPS.length - 1))) : (currentIndex / (STEPS.length - 1)) * 100
-  const whatsapp = import.meta.env.VITE_WHATSAPP_NUMBER
-  const llegadaPais = [...order.historial].reverse().find((entry) => entry.estado === 'País de destino')
-  // Momento en que el pedido quedó disponible para entrega (para la política de bodega).
-  const disponibleDesde = order.historial.find((entry) => entry.estado === 'Disponible para entrega')?.fecha ?? order.ultima_actualizacion
-  // Despacho = primer registro de "En tránsito" (agrupa despacho + bodega internacional).
-  const despachoEntry = order.historial.find((entry) => entry.estado === 'En tránsito')
-  // Días en tránsito visibles para el cliente: del despacho a la llegada al país (o hasta hoy si sigue en camino).
-  const transitoDias = despachoEntry ? Math.max(0, Math.round(((llegadaPais ? new Date(llegadaPais.fecha) : new Date()).getTime() - new Date(despachoEntry.fecha).getTime()) / 86_400_000)) : null
-  const entregaRegistrada = order.fecha_entrega ?? [...order.historial].reverse().find((entry) => entry.estado === 'Entregado')?.fecha
-  // Fecha clave que ve el cliente. Si ya llegó al país pero no se marcó "disponible",
-  // la estimación se recalcula agregando días hábiles (ver estimateAfterArrival).
-  const fechaClave = entregaRegistrada
-    ? entregaRegistrada
-    : order.estado_codigo === 'disponible_entrega'
-      ? order.fecha_estimada
-      : llegadaPais && order.estado_codigo === 'llego_nicaragua'
-        ? estimateAfterArrival(llegadaPais.fecha)
-        // Mientras sigue EN TRÁNSITO, la entrega no puede ser hoy/mañana: se empuja a
-        // varios días vista para no prometer una fecha imposible (aún viene en camino).
-        : order.fecha_estimada
-          ? statusCode === 'transito_internacional'
-            ? postponeToMinFuture(order.fecha_estimada, 3)
-            : postponeUntilFuture(order.fecha_estimada, 3)
-          : null
-  const estimacion: Estimacion = {
-    label: entregaRegistrada ? 'Entregado' : order.estado_codigo === 'disponible_entrega' ? 'Disponible desde' : 'Entrega estimada',
-    value: fechaClave ? formatDate(fechaClave) : 'Por confirmar',
-    date: fechaClave,
-    delivered: Boolean(entregaRegistrada),
-  }
+  const currentIndex = indiceActual(order.estado_codigo)
 
-  return <section key={order.codigo} className="tracking-result relative mx-auto min-h-[calc(100vh-170px)] w-full max-w-6xl px-5 py-7 sm:px-8 sm:py-12">
-    <div className="reveal-up flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between" style={{ animationDelay: '0ms' }}><div><Link to="/tracking" className="inline-flex items-center gap-2 text-xs text-muted hover:text-white"><ArrowLeft size={15} /> Consultar otro pedido</Link><p className="eyebrow mt-6">Pedido {order.codigo}</p><div className="mt-2 flex flex-wrap items-center gap-3"><span aria-hidden className="size-3 shrink-0 rounded-full" style={{ backgroundColor: colorEstado, boxShadow: `0 0 10px ${colorEstado}66` }} /><h1 className="text-2xl font-semibold tracking-tight sm:text-4xl">{order.estado}</h1>{order.estado_codigo === 'incidencia' && <span className="status-badge status-danger"><AlertCircle size={13} /> Requiere atención</span>}</div><p className="mt-2 flex items-center gap-2 text-xs text-muted sm:text-sm"><Clock3 size={15} /> Actualizado {formatDateTime(order.ultima_actualizacion)}</p></div><div className="w-full max-w-sm"><TrackingSearch input={input} setInput={setInput} submit={submit} compact /></div></div>
+  return <section key={order.codigo} className="mx-auto w-full max-w-xl px-4 pb-4 sm:px-6">
+    <Link to="/pedido" className="hsp-muted hsp-rise inline-flex items-center gap-1.5 text-xs font-semibold hover:text-black"><ArrowLeft size={14} /> Consultar otro pedido</Link>
 
-    <div className="reveal-up" style={{ animationDelay: '90ms' }}><ProgressCard steps={STEPS} currentIndex={currentIndex} progress={progress} isDelivered={isDelivered} estimacion={estimacion} mostrarCuenta={mostrarCuenta} /></div>
+    <div className="mt-4 space-y-3">
+      {/* 1 · Pedido + producto */}
+      <div className="hsp-rise"><OrderHero order={order} /></div>
 
-    <div className="mt-5 grid gap-5 lg:grid-cols-[1.45fr_.75fr]">
-      <div className="reveal-up min-w-0 space-y-5" style={{ animationDelay: '180ms' }}><Products order={order} /><OrderPhotos order={order} /><Timeline order={order} capIndex={capIndex} /><Journeys order={order} /></div>
-      <aside className="reveal-up min-w-0 space-y-5 lg:sticky lg:top-6 lg:self-start" style={{ animationDelay: '270ms' }}>{order.estado_codigo === 'disponible_entrega' && <DeliveryCard codigo={order.codigo} whatsapp={whatsapp} disponibleDesde={disponibleDesde} />}<section className="public-card"><h2 className="flex items-center gap-2 text-sm font-semibold"><CalendarDays size={17} className="text-accent" /> Fechas importantes</h2>{transitoDias != null && <div className="mt-4 flex items-center gap-3 rounded-xl border border-accent/25 bg-accent/[0.06] p-3"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-accent/15 text-accent"><Plane size={17} /></span><div><strong className="block text-lg leading-none text-white">{transitoDias} {transitoDias === 1 ? 'día' : 'días'} en tránsito</strong><span className="mt-1 block text-[11px] text-muted">{llegadaPais ? 'Desde el despacho hasta que llegó al país' : 'Desde el despacho, tu pedido sigue en camino'}</span></div></div>}<div className="mt-5 space-y-4"><DateRow label="Pedido realizado" value={formatDate(order.fecha_pedido)} />{llegadaPais && <DateRow label="Llegó al país" value={formatDate(llegadaPais.fecha)} />}<DateRow label={estimacion.label} value={estimacion.value} highlight /><DateRow label="Última actualización" value={formatDate(order.ultima_actualizacion)} /></div></section>{order.notas_publicas && <section className="public-card"><h2 className="text-sm font-semibold">Nota sobre tu pedido</h2><p className="mt-3 text-sm leading-6 text-muted">{order.notas_publicas}</p></section>}<section className="public-card"><ShieldCheck size={20} className="text-accent" /><h2 className="mt-3 text-sm font-semibold">Información segura</h2><p className="mt-2 text-xs leading-5 text-muted">Esta página solo muestra información pública de tu pedido. Las fechas son estimadas y pueden variar por la logística internacional.</p>{whatsapp && <a href={whatsappUrl(whatsapp, `Hola, necesito ayuda con mi pedido ${order.codigo}.`)} target="_blank" rel="noopener noreferrer" className="primary-button mt-5 w-full"><MessageCircle size={17} /> Contactar por WhatsApp</a>}</section></aside>
+      {/* 2 · Seguimiento (resumen) */}
+      <div className="hsp-rise" style={{ animationDelay: '60ms' }}><TrackerCard order={order} currentIndex={currentIndex} isCancelled={isCancelled} isDelivered={isDelivered} /></div>
+
+      {/* 3 · Fotos de control de calidad (van ARRIBA del estado del pedido) */}
+      {!isCancelled && <div className="hsp-rise" style={{ animationDelay: '110ms' }}><OrderPhotos order={order} /></div>}
+
+      {/* 4 · Estado del pedido (8 etapas) */}
+      {!isCancelled && <div className="hsp-rise" style={{ animationDelay: '150ms' }}><StagesCard currentIndex={currentIndex} isDelivered={isDelivered} /></div>}
+
+      {/* 5 · Detalle del pedido (montos ocultos hasta iniciar sesión) */}
+      <div className="hsp-rise" style={{ animationDelay: '190ms' }}><DetailCard order={order} /></div>
+
+      {/* 6 · Ayuda */}
+      <div className="hsp-rise" style={{ animationDelay: '230ms' }}><HelpCard codigo={order.codigo} /></div>
+    </div>
+
+    <TrustFooter />
+  </section>
+}
+
+/* --------------------------- 1 · Pedido + producto ----------------------------- */
+function OrderHero({ order }: { order: PublicOrder }) {
+  const productos = order.productos ?? []
+  const principal = productos[0]
+  const foto = principal ? resolverImagenCatalogo(principal.imagen) : null
+  const extra = productos.length - 1
+  return <section className="hsp-card p-4">
+    <div className="flex items-center justify-between gap-2">
+      <span className="hsp-eyebrow">Pedido</span>
+      <span className="hsp-chip">{order.codigo}</span>
+    </div>
+    <div className="mt-3 flex items-center gap-3.5">
+      <span className="grid size-16 shrink-0 place-items-center overflow-hidden rounded-xl" style={{ background: 'var(--chip)', color: 'var(--faint)' }}>{foto ? <img src={foto} alt="" className="size-full object-cover" /> : <Package size={22} />}</span>
+      <div className="min-w-0 flex-1">
+        <strong className="block truncate text-[15px] leading-tight">{principal?.producto ?? 'Tu pedido'}</strong>
+        <span className="hsp-muted mt-0.5 block text-xs">{[principal?.talla && `Talla ${principal.talla}`, principal ? `×${principal.cantidad}` : null, principal?.color].filter(Boolean).join(' · ')}{extra > 0 ? ` · +${extra} más` : ''}</span>
+        <span className="hsp-faint mt-1 block text-[11px]">Pedido realizado: {formatDate(order.fecha_pedido)}</span>
+      </div>
     </div>
   </section>
 }
 
-type Estimacion = { label: string; value: string; date: string | null; delivered: boolean }
+/* --------------------------- 2 · Seguimiento + etapas -------------------------- */
+function TrackerCard({ order, currentIndex, isCancelled, isDelivered }: { order: PublicOrder; currentIndex: number; isCancelled: boolean; isDelivered: boolean }) {
+  const [copiado, setCopiado] = useState(false)
+  const nota = order.notas_publicas ?? notaPublicaEstado(order.estado_codigo)
 
-// Días de calendario que faltan para la fecha estimada (positivo = futuro, 0 = hoy, negativo = pasó).
-function diasRestantes(dateStr: string) {
-  const target = new Date(dateStr.includes('T') ? dateStr : `${dateStr}T12:00:00`)
-  const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
-  target.setHours(0, 0, 0, 0)
-  return Math.round((target.getTime() - hoy.getTime()) / 86_400_000)
+  if (isCancelled) return <section className="hsp-card p-4">
+    <div className="flex items-center gap-2.5">
+      <span className="size-2.5 rounded-full" style={{ background: '#dc2626' }} />
+      <h2 className="hsp-display text-xl font-semibold">Pedido cancelado</h2>
+    </div>
+    <p className="hsp-muted mt-1.5 text-xs leading-5">{nota}</p>
+  </section>
+
+  const etapaNum = currentIndex + 1
+  const progreso = isDelivered ? 100 : Math.round((etapaNum / STEPS.length) * 100)
+  const fechaClave = calcularFechaClave(order)
+  const dias = fechaClave && !isDelivered && currentIndex >= 4 ? diasRestantes(fechaClave) : null
+
+  const compartir = async () => {
+    const url = `${window.location.origin}/pedido/${order.codigo}`
+    try {
+      if (navigator.share) { await navigator.share({ title: `Pedido ${order.codigo} · HAUSLINE`, text: 'Seguí mi pedido HAUSLINE', url }) }
+      else { await navigator.clipboard.writeText(url); setCopiado(true); window.setTimeout(() => setCopiado(false), 2000) }
+    } catch { /* el usuario canceló el compartir */ }
+  }
+
+  return <section className="hsp-card p-4">
+    {/* Estado actual */}
+    <div className="flex items-center gap-2">
+      <h2 className="hsp-display text-xl font-semibold">{STEPS[currentIndex]}</h2>
+      {isDelivered
+        ? <span className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide" style={{ color: '#16a34a', background: '#e7f6ec' }}><Check size={11} /> Entregado</span>
+        : <span className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide" style={{ color: GREEN, background: GREEN_BG }}><span className="hsp-livedot" style={{ ['--tone' as string]: GREEN, width: '.5rem', height: '.5rem' }}><i /></span> En curso</span>}
+    </div>
+    <p className="hsp-muted mt-1 text-xs leading-5">{nota}</p>
+
+    {/* Barra + etapa */}
+    <div className="mt-3">
+      <div className="hsp-progress"><div className="hsp-progress__bar" style={{ width: `${Math.max(6, progreso)}%`, background: GREEN }} /></div>
+      <p className="hsp-faint mt-1.5 text-[11px]">Etapa {etapaNum} de {STEPS.length} · {progreso}% del proceso</p>
+    </div>
+
+    {/* Entrega estimada */}
+    <div className="mt-3 flex items-end justify-between gap-3 rounded-xl px-3.5 py-3" style={{ background: SOFT_BG, border: '1px solid var(--hair)' }}>
+      <div className="min-w-0">
+        <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: ACCENT }}>{isDelivered ? 'Entregado el' : 'Entrega estimada'}</p>
+        <strong className="hsp-display mt-0.5 block text-lg font-semibold leading-none">{fechaClave ? formatDate(fechaClave) : 'Por confirmar'}</strong>
+        <span className="hsp-muted mt-1 block text-[11px]">{isDelivered ? '¡Gracias por tu compra!' : dias != null ? (dias > 1 ? `Faltan aproximadamente ${dias} días` : dias === 1 ? 'Llega mañana' : dias === 0 ? 'Llega hoy' : 'En camino, muy pronto') : 'La fecha es estimada y puede variar.'}</span>
+      </div>
+      {dias != null && dias >= 0 && !isDelivered && <span className="grid size-12 shrink-0 place-items-center rounded-xl text-center text-white" style={{ background: ACCENT }}><strong className="text-lg font-bold leading-none" style={{ color: '#fff' }}>{dias === 0 ? '¡Hoy!' : dias}</strong>{dias > 0 && <span className="text-[8px] font-bold uppercase tracking-wide opacity-90">{dias === 1 ? 'día' : 'días'}</span>}</span>}
+    </div>
+    <p className="hsp-faint mt-2 text-[10px] leading-4">Las fechas son estimadas y pueden variar por la logística internacional.</p>
+
+    {/* Compartir */}
+    <button type="button" onClick={compartir} className="hsp-btn hsp-btn--line mt-3 h-11 w-full text-sm">{copiado ? <><Check size={16} /> Enlace copiado</> : <><Share2 size={16} /> Compartir seguimiento</>}</button>
+  </section>
 }
 
-function EtaHero({ estimacion, mostrarCuenta = true }: { estimacion: Estimacion; mostrarCuenta?: boolean }) {
-  // Antes del despacho solo mostramos la fecha estimada, sin cuenta regresiva de días.
-  const dias = mostrarCuenta && !estimacion.delivered && estimacion.date ? diasRestantes(estimacion.date) : null
-  const cuenta = dias == null ? null : dias > 1 ? { big: String(dias), small: 'días' } : dias === 1 ? { big: '1', small: 'día' } : dias === 0 ? { big: 'Hoy', small: '¡llega!' } : { big: 'Ya', small: 'muy pronto' }
-  const subtitulo = dias == null ? null : dias > 1 ? `Faltan ${dias} días` : dias === 1 ? 'Llega mañana' : dias === 0 ? 'Llega hoy' : 'En camino, muy pronto'
-  return <div className={`eta-hero mt-4 flex items-center justify-between gap-4 rounded-2xl border p-4 sm:p-5 ${estimacion.delivered ? 'border-[#62eaa0]/30 bg-[#62eaa0]/[0.08]' : 'border-accent/30 bg-accent/[0.08]'}`}>
-    <div className="min-w-0">
-      <p className={`flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[.15em] ${estimacion.delivered ? 'text-[#7af0ae]' : 'text-accent'}`}><CalendarDays size={14} /> {estimacion.label}</p>
-      <strong className="mt-1.5 block text-2xl font-black leading-none tracking-tight text-white sm:text-4xl">{estimacion.value}</strong>
-      {subtitulo && <span className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-muted"><Clock3 size={13} className="text-accent" /> {subtitulo}</span>}
-    </div>
-    {estimacion.delivered
-      ? <span className="eta-badge grid size-16 shrink-0 place-items-center rounded-2xl border border-[#62eaa0]/30 bg-[#62eaa0]/12 text-[#7af0ae] sm:size-20"><PartyPopper size={30} /></span>
-      : cuenta && <span className="eta-badge grid size-16 shrink-0 place-items-center rounded-2xl border border-accent/30 bg-accent/12 text-center sm:size-20"><strong className="text-2xl font-black leading-none text-accent sm:text-3xl">{cuenta.big}</strong><span className="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-accent/80 sm:text-[10px]">{cuenta.small}</span></span>}
-  </div>
-}
-
-function ProgressCard({ steps, currentIndex, progress, isDelivered, estimacion, mostrarCuenta }: { steps: typeof STEPS; currentIndex: number; progress: number; isDelivered: boolean; estimacion: Estimacion; mostrarCuenta: boolean }) {
-  return <section className={`public-card mt-6 sm:mt-8 ${isDelivered ? 'border-[#62eaa0]/25' : ''}`}>
-    <div className="flex items-center justify-between gap-3">
-      <div><p className="text-xs font-semibold">Progreso del pedido</p><p className="mt-1 text-[11px] text-muted">{Math.round(progress)}% completado</p></div>
-      <span className={`relative grid size-10 shrink-0 place-items-center rounded-xl ${isDelivered ? 'bg-[#62eaa0]/12 text-[#7af0ae]' : 'bg-accent/10 text-accent'}`}>{isDelivered ? <PartyPopper size={19} /> : <PackageCheck size={19} />}{isDelivered && <Confetti />}</span>
-    </div>
-    {isDelivered && <div className="delivered-banner mt-4 flex items-center gap-3 rounded-xl border border-[#62eaa0]/25 bg-[#62eaa0]/[0.07] p-3.5"><span className="step-dot step-done step-delivered size-9"><Check size={18} /></span><div><strong className="block text-sm text-[#7af0ae]">¡Tu pedido fue entregado!</strong><span className="text-[11px] text-muted">Gracias por comprar con Hausline.</span></div></div>}
-    <EtaHero estimacion={estimacion} mostrarCuenta={mostrarCuenta} />
-    <div className="mt-5">
-      <div className="progress-track"><div className={`progress-fill ${isDelivered ? 'is-complete' : ''}`} style={{ width: `${progress}%` }} /></div>
-    </div>
-    {/* Móvil: stepper vertical (más legible en pantalla pequeña) */}
-    <ol className="mt-6 space-y-0 sm:hidden">
-      {steps.map((step, index) => {
-        const state = index < currentIndex ? 'done' : index === currentIndex ? 'current' : 'todo'
-        const deliveredStep = isDelivered && index === steps.length - 1
-        return <li key={step.code} className="flex gap-3">
-          <div className="flex flex-col items-center"><span className={`step-dot size-8 ${state === 'todo' ? 'step-todo' : 'step-done'} ${state === 'current' && !isDelivered ? 'step-current' : ''} ${deliveredStep ? 'step-delivered' : ''}`}>{state === 'todo' ? <span className="text-[11px] font-semibold">{index + 1}</span> : <Check size={15} />}</span>{index < steps.length - 1 && <span className={`my-1 w-px flex-1 ${index < currentIndex ? 'bg-accent/60' : 'bg-line'}`} style={{ minHeight: '1.1rem' }} />}</div>
-          <span className={`pb-4 pt-1 text-sm ${index <= currentIndex ? 'font-medium text-white' : 'text-muted'}`}>{step.label}{state === 'current' && !isDelivered && <span className="ml-2 align-middle text-[10px] font-semibold uppercase tracking-wide text-accent">En curso</span>}</span>
+// Lista de las 8 etapas (tarjeta propia; va DEBAJO de las fotos de control de calidad).
+function StagesCard({ currentIndex, isDelivered }: { currentIndex: number; isDelivered: boolean }) {
+  return <section className="hsp-card p-4">
+    <p className="hsp-eyebrow mb-1">Estado del pedido</p>
+    <ol>
+      {STEPS.map((label, i) => {
+        const done = i < currentIndex || (isDelivered && i === currentIndex), current = i === currentIndex && !isDelivered
+        return <li key={label} className="flex items-center gap-3 py-1.5">
+          <span className="grid size-6 shrink-0 place-items-center rounded-full text-[10px] font-bold" style={done ? { background: BLUE, color: '#fff' } : current ? { background: BLUE_BG, color: BLUE, border: `1.5px solid ${BLUE}` } : { background: 'var(--chip)', color: 'var(--faint)' }}>{done ? <Check size={12} /> : String(i + 1).padStart(2, '0')}</span>
+          <span className={`text-[13px] ${i <= currentIndex ? 'font-semibold text-black' : 'hsp-faint'}`}>{label}</span>
+          {current && <span className="ml-auto text-[9px] font-bold uppercase tracking-wide" style={{ color: BLUE }}>En curso</span>}
         </li>
       })}
     </ol>
-    {/* Escritorio: stepper horizontal */}
-    <div className="mt-7 hidden gap-1 sm:flex">
-      {steps.map((step, index) => {
-        const state = index < currentIndex ? 'done' : index === currentIndex ? 'current' : 'todo'
-        const deliveredStep = isDelivered && index === steps.length - 1
-        return <div key={step.code} className="flex min-w-0 flex-1 flex-col items-center text-center">
-          <div className="flex w-full items-center"><span className={`h-px flex-1 ${index === 0 ? 'opacity-0' : index <= currentIndex ? 'bg-accent/60' : 'bg-line'}`} /><span className={`step-dot size-7 shrink-0 ${state === 'todo' ? 'step-todo' : 'step-done'} ${state === 'current' && !isDelivered ? 'step-current' : ''} ${deliveredStep ? 'step-delivered' : ''}`}>{state === 'todo' ? <span className="text-[10px] font-semibold">{index + 1}</span> : <Check size={13} />}</span><span className={`h-px flex-1 ${index === steps.length - 1 ? 'opacity-0' : index < currentIndex ? 'bg-accent/60' : 'bg-line'}`} /></div>
-          <span className={`mt-2 text-[10px] font-medium leading-3 ${index <= currentIndex ? 'text-white' : 'text-muted'}`}>{step.label}</span>
-        </div>
-      })}
-    </div>
   </section>
 }
 
-function Confetti() {
-  const colors = ['#b7ff00', '#62eaa0', '#76b4ff', '#ffd467', '#b98cff']
-  return <span aria-hidden className="pointer-events-none absolute inset-0 overflow-visible">{Array.from({ length: 10 }).map((_, index) => <span key={index} className="confetti-piece" style={{ left: `${8 + index * 9}%`, background: colors[index % colors.length], animationDelay: `${(index % 5) * 0.09}s` }} />)}</span>
-}
-
-// Etiqueta y color de la etapa de cada producto, tal como la ve el cliente.
-const ITEM_LABEL: Record<string, string> = { pendiente: 'Por llegar', recibido: 'Recibido', enviado: 'Enviado', entregado: 'Entregado' }
-const ITEM_TONE: Record<string, string> = { pendiente: '#8c948f', recibido: '#c4b5fd', enviado: '#7dd3fc', entregado: '#34d399' }
-function Products({ order }: { order: PublicOrder }) {
-  // Foto del producto: se usa la del catálogo (product.imagen, resuelta a URL absoluta
-  // con resolverImagenCatalogo) y, como respaldo, las fotos del producto subidas al pedido.
-  const fotos = (order.imagenes ?? []).filter((image) => image.tipo === 'producto' && image.url).map((image) => image.url as string)
-  // Fotos de control de calidad POR PRODUCTO (cada producto muestra las suyas debajo).
-  const qcPorItem = new Map<string, string[]>()
-  for (const img of order.imagenes ?? []) {
-    if (img.tipo === 'control_calidad' && img.url && img.pedido_item_id) {
-      const arr = qcPorItem.get(img.pedido_item_id) ?? []
-      arr.push(img.url as string)
-      qcPorItem.set(img.pedido_item_id, arr)
-    }
-  }
+/* ----------------------------- 3 · Detalle del pedido -------------------------- */
+function DetailCard({ order }: { order: PublicOrder }) {
   const productos = order.productos ?? []
-  // El avance por producto solo se muestra si hay varios productos y ya hay progreso real
-  // (alguno dejó de estar "por llegar"), para no confundir en pedidos de un solo producto.
-  const conEtapa = productos.length > 1 && productos.some((p) => (p.estado_item ?? 'pendiente') !== 'pendiente')
-  const listos = productos.filter((p) => (p.estado_item ?? 'pendiente') !== 'pendiente').length
-  const enviados = productos.filter((p) => p.estado_item === 'enviado' || p.estado_item === 'entregado').length
-  const pct = productos.length ? Math.round((listos / productos.length) * 100) : 0
-  return <section className="public-card">
-    <h2 className="flex items-center gap-2 text-sm font-semibold"><Package size={17} className="text-accent" /> Tu pedido{productos.length > 1 ? ` · ${productos.length} productos` : ''}</h2>
-    {conEtapa && <div className="mt-3 rounded-xl border border-line bg-black/10 p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs"><span className="font-semibold">Avance de tus productos</span><span className="text-muted">{listos} de {productos.length} listos{enviados > 0 ? ` · ${enviados} enviados` : ''}</span></div>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: '#b7ff00' }} /></div>
-    </div>}
-    <div className="mt-4 divide-y divide-line">{productos.map((product, index) => {
-      const foto = resolverImagenCatalogo(product.imagen) || fotos[index] || fotos[0]
-      const qc = product.id ? (qcPorItem.get(product.id) ?? []) : []
-      const etapa = product.estado_item ?? 'pendiente'
-      return <div className="py-4" key={`${product.producto}-${index}`}>
-        <div className="flex items-center gap-3">
-          <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/[0.04] text-muted">{foto ? <img src={foto} alt="" className="size-full object-cover" /> : <Package size={19} />}</span>
-          <div className="min-w-0 flex-1">
-            <strong className="block truncate text-sm">{product.producto}</strong>
-            <span className="mt-1 block text-xs text-muted">{[product.marca, product.talla, product.color].filter(Boolean).join(' · ') || 'Producto confirmado'}</span>
-            {product.codigo && <span className="mt-0.5 block font-mono text-[11px] text-accent">Cód. {product.codigo}</span>}
-            {conEtapa && <span className="mt-1 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ color: ITEM_TONE[etapa], background: `${ITEM_TONE[etapa]}1f` }}>{ITEM_LABEL[etapa]}</span>}
-          </div>
-          <span className="text-xs font-semibold">×{product.cantidad}</span>
-        </div>
-        {qc.length > 0 && <div className="mt-3 pl-15">
-          <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-muted">Control de calidad de este producto</span>
-          <div className="flex flex-wrap gap-2">{qc.map((u, i) => <button key={i} type="button" onClick={() => window.open(u, '_blank', 'noopener,noreferrer')} className="size-16 overflow-hidden rounded-lg border border-line bg-white/[0.025]" title="Foto de control de calidad"><img src={u} alt="Control de calidad" className="size-full object-cover" /></button>)}</div>
-        </div>}
+  const principal = productos[0]
+  return <section className="hsp-card p-4">
+    <h2 className="text-sm font-semibold">Detalle del pedido</h2>
+    <div className="mt-3 space-y-2.5 text-[13px]">
+      {principal && <Row label="Producto" value={principal.producto} />}
+      {principal && <Row label="Talla / cantidad" value={[principal.talla && `Talla ${principal.talla}`, `×${principal.cantidad}`].filter(Boolean).join(' · ')} />}
+      <Row label="Pedido" value={order.codigo} mono />
+      <Row label="Fecha de compra" value={formatDate(order.fecha_pedido)} />
+      <Row label="Método de pago" value="Transferencia" />
+    </div>
+  </section>
+}
+function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return <div className="hsp-row gap-3"><span className="hsp-muted shrink-0">{label}</span><strong className={`text-right ${mono ? 'hsp-mono' : ''}`}>{value}</strong></div>
+}
+
+/* --------------------------------- 4 · Ayuda ---------------------------------- */
+function HelpCard({ codigo }: { codigo: string }) {
+  const whatsapp = import.meta.env.VITE_WHATSAPP_NUMBER
+  return <section className="hsp-card p-4" style={{ background: SOFT_BG, borderColor: 'var(--hair)' }}>
+    <div className="flex items-start gap-3">
+      <span className="grid size-9 shrink-0 place-items-center rounded-xl text-white" style={{ background: ACCENT }}><MessageCircle size={17} /></span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold">¿Necesitás ayuda con tu pedido?</p>
+        <p className="hsp-muted mt-0.5 text-xs leading-5">Nuestro equipo está listo para ayudarte.</p>
       </div>
-    })}</div>
+    </div>
+    {whatsapp && <a href={whatsappUrl(whatsapp, `Hola, necesito ayuda con mi pedido ${codigo}.`)} target="_blank" rel="noopener noreferrer" className="hsp-btn mt-3 h-11 w-full text-sm" style={{ background: ACCENT, borderColor: ACCENT }}><MessageCircle size={16} /> WhatsApp HAUSLINE <ArrowRight size={15} /></a>}
   </section>
 }
-// Todas las fotos del pedido que ve el cliente, en UNA sola tarjeta compacta (grid), cada
-// una con su etiqueta de etapa. Antes iban en tarjetas separadas apiladas (muy vertical en
-// desktop). El orden sigue el avance real: control de calidad → producto recibido → paquete.
+
+/* --------------------------------- 5 · Fotos ---------------------------------- */
+const FOTO_LABEL: Record<string, string> = { control_calidad: 'Control de calidad', recibido_hausline: 'Tu producto', producto: 'Producto', empaque: 'Empaquetado', recibido_local: 'Recibido' }
 function OrderPhotos({ order }: { order: PublicOrder }) {
-  const grupos: { tipo: PublicImage['tipo']; label: string }[] = [
-    { tipo: 'control_calidad', label: 'Control de calidad' },
-    { tipo: 'recibido_hausline', label: 'Tu producto' },
-    { tipo: 'empaque', label: 'Empaquetado' },
-    { tipo: 'recibido_local', label: 'Recibido' },
-  ]
-  // Las fotos de control de calidad que YA están asignadas a un producto se muestran debajo
-  // de cada producto (en Products), no acá, para no amontonarlas ni duplicarlas.
-  const fotos = grupos.flatMap((grupo) => (order.imagenes ?? [])
-    .filter((image) => image.tipo === grupo.tipo && image.url && !(grupo.tipo === 'control_calidad' && image.pedido_item_id))
-    .map((image) => ({ url: image.url as string, storage_path: image.storage_path, label: grupo.label })))
-  if (!fotos.length) return null
-  return <section className="public-card">
-    <h2 className="flex items-center gap-2 text-sm font-semibold"><Images size={17} className="text-accent" /> Fotos de tu pedido</h2>
-    <p className="mt-2 text-xs leading-5 text-muted">Fotos reales de tu producto en cada etapa. Tocá una para verla en grande.</p>
-    <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-      {fotos.map((foto, index) => <button type="button" key={`${foto.storage_path}-${index}`} className="group relative aspect-square overflow-hidden rounded-xl border border-line bg-white/[0.025]" onClick={() => window.open(foto.url, '_blank', 'noopener,noreferrer')}>
-        <img src={foto.url} alt={foto.label} className="size-full object-cover transition duration-300 group-hover:scale-[1.03]" />
-        <span className="absolute left-1.5 top-1.5 rounded-full border border-white/10 bg-app/85 px-2 py-0.5 text-[10px] font-semibold text-white">{foto.label}</span>
-      </button>)}
-    </div>
-  </section>
-}
-// Limpia el historial: descarta retrocesos, etapas repetidas y cualquier etapa
-// posterior a la actual (errores de avance corregidos). Devuelve el avance real.
-function historialLimpio(historial: PublicOrder['historial'], capIndex: number) {
-  const forward: PublicOrder['historial'] = []
-  let ultimo = -1
-  for (const entry of historial) { // el historial viene del más antiguo al más reciente
-    const idx = indiceEtapa(entry.estado)
-    if (idx === -1) { forward.push(entry); continue } // estados especiales (incidencia, etc.)
-    if (idx > capIndex || idx <= ultimo) continue
-    ultimo = idx
-    forward.push(entry)
-  }
-  return forward
-}
-function Timeline({ order, capIndex }: { order: PublicOrder; capIndex: number }) { const entries = [...historialLimpio(order.historial, capIndex)].reverse(); return <section className="public-card"><h2 className="flex items-center gap-2 text-sm font-semibold"><Clock3 size={17} className="text-accent" /> Historial</h2><div className="relative mt-5 space-y-5 before:absolute before:bottom-3 before:left-[13px] before:top-3 before:w-px before:bg-line">{entries.map((entry, index) => <div className="relative flex gap-3" key={`${entry.fecha}-${index}`}><span className={`relative z-10 mt-0.5 size-7 shrink-0 rounded-full border-4 border-panel ${index === 0 ? 'bg-accent shadow-accent' : 'bg-[#48504b]'}`} /><div><strong className="block text-xs">{entry.estado}</strong>{entry.nota && <p className="mt-1 text-xs leading-5 text-muted">{entry.nota}</p>}<p className="mt-1 text-[10px] text-muted">{entry.ubicacion ? `${entry.ubicacion} · ` : ''}{formatDateTime(entry.fecha)}</p></div></div>)}</div></section> }
-function Journeys({ order }: { order: PublicOrder }) { if (!order.trayectos.length) return null; return <section className="public-card"><h2 className="flex items-center gap-2 text-sm font-semibold"><Truck size={17} className="text-accent" /> Trayectos visibles</h2><div className="mt-4 grid gap-3 sm:grid-cols-2">{order.trayectos.map((route, index) => <article className="rounded-xl border border-line bg-black/10 p-4" key={`${route.tracking}-${index}`}><span className="text-[10px] font-semibold uppercase tracking-wider text-accent">Trayecto {index + 1}</span><strong className="mt-2 block text-sm">{route.tipo}</strong><p className="mt-1 text-xs text-muted">{[route.origen, route.destino].filter(Boolean).join(' → ')}</p>{route.ultima_ubicacion && <p className="mt-3 flex items-center gap-1.5 text-xs text-muted"><MapPin size={13} /> {route.ultima_ubicacion}</p>}<p className="mt-2 text-[11px] text-muted">{route.ultimo_evento}</p></article>)}</div></section> }
-
-// Política de bodega: 2 días para confirmar o cancelar sin costo; después, USD 5 por
-// cada día. La lógica vive en utils/bodega (compartida con el panel y el cobro final).
-function StoragePolicy({ disponibleDesde }: { disponibleDesde: string }) {
-  const info = calcularCargoBodega(disponibleDesde)
-  if (!info) return null
-  if (info.activo) return <div className="mt-4 rounded-xl border border-red-400/30 bg-red-400/[0.06] p-3.5">
-    <strong className="flex items-center gap-1.5 text-xs text-red-200"><AlertCircle size={14} /> Cargo por bodega activo</strong>
-    <p className="mt-1.5 text-[11px] leading-5 text-red-100/80">Pasaron {info.dias} días desde que tu pedido quedó disponible. Como superó los {DIAS_GRACIA_BODEGA} días de gracia, se cobran USD {CARGO_BODEGA_DIARIO} por cada día extra que sigue en bodega.</p>
-    <p className="mt-2 text-[11px] text-muted">Acumulado: <strong className="text-red-200">USD {info.cargo.toFixed(2)}</strong> ({info.diasCobrados} {info.diasCobrados === 1 ? 'día' : 'días'} × USD {CARGO_BODEGA_DIARIO})</p>
-  </div>
-  return <div className="mt-4 rounded-xl border border-amber-300/25 bg-amber-300/[0.06] p-3.5">
-    <strong className="flex items-center gap-1.5 text-xs text-amber-200"><CalendarDays size={14} /> Tienes {DIAS_GRACIA_BODEGA} días para confirmar</strong>
-    <p className="mt-1.5 text-[11px] leading-5 text-amber-100/80">Puedes confirmar o cancelar sin costo hasta el <strong>{formatDate(info.limite)}</strong>. Después se cobran USD {CARGO_BODEGA_DIARIO} por cada día que el pedido siga en bodega.</p>
-  </div>
-}
-function DeliveryCard({ codigo, whatsapp, disponibleDesde }: { codigo: string; whatsapp?: string; disponibleDesde: string }) {
-  const mensaje = `Hola, mi pedido ${codigo} ya está disponible para entrega. Quiero coordinar el envío y el pago. Mi dirección es: `
-  return <section className="public-card border-accent/25 bg-accent/[0.04]">
-    <h2 className="flex items-center gap-2 text-sm font-semibold text-accent"><Truck size={17} /> Coordina tu entrega</h2>
-    <p className="mt-2 text-xs leading-5 text-muted">Tu pedido está listo. Elegí cómo querés recibirlo:</p>
-    <div className="mt-4 space-y-2.5">
-      {DELIVERY_OPCIONES.map((opcion) => <div key={opcion.nombre} className="flex items-start justify-between gap-3 rounded-xl border border-line bg-black/10 p-3"><div><strong className="block text-xs">{opcion.nombre}</strong><span className="text-[11px] text-muted">{opcion.detalle}</span></div><strong className="shrink-0 text-xs text-accent">{opcion.costo}</strong></div>)}
-    </div>
-    <StoragePolicy disponibleDesde={disponibleDesde} />
-    <p className="mt-3 text-[11px] leading-5 text-muted">Escribinos por WhatsApp con tu dirección: te confirmamos tu saldo pendiente y te enviamos los números de cuenta para el pago.</p>
-    {whatsapp && <a href={whatsappUrl(whatsapp, mensaje)} target="_blank" rel="noopener noreferrer" className="primary-button mt-4 w-full"><MessageCircle size={17} /> Coordinar por WhatsApp</a>}
+  // Control de calidad primero (es lo que más quiere ver el cliente), luego el resto.
+  const orden = ['control_calidad', 'recibido_hausline', 'producto', 'empaque', 'recibido_local']
+  const fotos = orden.flatMap((tipo) => (order.imagenes ?? []).filter((i) => i.url && i.tipo === tipo).map((i) => ({ url: i.url as string, label: FOTO_LABEL[tipo] })))
+  const [visor, setVisor] = useState<number | null>(null)
+  // Sin fotos, la sección NO aparece (recién sale cuando se suben las fotos del pedido).
+  if (fotos.length === 0) return null
+  return <section className="hsp-card p-4">
+    <h2 className="flex items-center gap-2 text-sm font-semibold"><Images size={16} /> Fotos de tu pedido</h2>
+    <p className="hsp-muted mt-1 text-xs">Fotos reales de tu producto en control de calidad y cada etapa. Tocá una para verla en grande.</p>
+    {fotos.length === 1
+      ? // Una sola foto: se ve completa (sin recorte) y ocupa todo el ancho.
+        <button type="button" onClick={() => setVisor(0)} className="relative mt-3 block w-full overflow-hidden rounded-xl border" style={{ borderColor: 'var(--hair)', background: 'var(--chip)' }}>
+          <img src={fotos[0].url} alt={fotos[0].label} className="mx-auto block max-h-[70vh] w-full object-contain" />
+          <span className="absolute left-2 top-2 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-black backdrop-blur">{fotos[0].label}</span>
+        </button>
+      : // Varias fotos: galería de miniaturas; al tocar se abre el visor.
+        <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+          {fotos.map((f, i) => <button key={i} type="button" onClick={() => setVisor(i)} className="relative aspect-square overflow-hidden rounded-lg border" style={{ borderColor: 'var(--hair)' }}>
+            <img src={f.url} alt={f.label} className="size-full object-cover" />
+          </button>)}
+        </div>}
+    {visor !== null && <Lightbox fotos={fotos} index={visor} onIndex={setVisor} onClose={() => setVisor(null)} />}
   </section>
 }
 
+// Visor de fotos a pantalla completa: flechas para cambiar, ✕ para cerrar, teclado y swipe.
+function Lightbox({ fotos, index, onIndex, onClose }: { fotos: { url: string; label: string }[]; index: number; onIndex: (i: number) => void; onClose: () => void }) {
+  const n = fotos.length
+  const ir = useCallback((d: number) => onIndex((index + d + n) % n), [index, n, onIndex])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); else if (e.key === 'ArrowLeft') ir(-1); else if (e.key === 'ArrowRight') ir(1) }
+    window.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow; document.body.style.overflow = 'hidden'
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev }
+  }, [ir, onClose])
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: 'rgba(10,10,12,.95)' }} onClick={onClose} role="dialog" aria-modal="true">
+      <button type="button" onClick={onClose} aria-label="Cerrar" className="absolute right-3 top-3 grid size-11 place-items-center rounded-full bg-white/10 text-white transition hover:bg-white/20"><X size={22} /></button>
+      {n > 1 && <button type="button" onClick={(e) => { e.stopPropagation(); ir(-1) }} aria-label="Anterior" className="absolute left-2 grid size-11 place-items-center rounded-full bg-white/10 text-white transition hover:bg-white/20 sm:left-4"><ChevronLeft size={24} /></button>}
+      <figure className="flex max-h-full max-w-full flex-col items-center gap-3" onClick={(e) => e.stopPropagation()}>
+        <img src={fotos[index].url} alt={fotos[index].label} className="max-h-[82vh] max-w-full rounded-xl object-contain" />
+        <figcaption className="flex items-center gap-2 text-xs font-medium text-white/80">
+          <span className="rounded-full bg-white/15 px-2.5 py-0.5">{fotos[index].label}</span>
+          {n > 1 && <span>{index + 1} / {n}</span>}
+        </figcaption>
+      </figure>
+      {n > 1 && <button type="button" onClick={(e) => { e.stopPropagation(); ir(1) }} aria-label="Siguiente" className="absolute right-2 grid size-11 place-items-center rounded-full bg-white/10 text-white transition hover:bg-white/20 sm:right-4"><ChevronRight size={24} /></button>}
+    </div>,
+    document.body,
+  )
+}
+
+/* -------------------------------- Pie de confianza ----------------------------- */
+function TrustFooter() {
+  const items = ['100% Confiable', 'Compras seguras', 'Envíos a todo el país']
+  return <footer className="mt-8 flex flex-col items-center gap-3 border-t pt-6 text-center" style={{ borderColor: 'var(--hair)' }}>
+    <Wordmark />
+    <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5">
+      {items.map((t) => <span key={t} className="inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: 'var(--ink-soft)' }}><Check size={13} style={{ color: ACCENT }} /> {t}</span>)}
+    </div>
+  </footer>
+}
+
+/* --------------------------------- Buscador ----------------------------------- */
 type SearchProps = { input: string; setInput: (value: string) => void; submit: (event: FormEvent) => void }
-function TrackingSearch({ input, setInput, submit, compact }: SearchProps & { compact?: boolean }) { return <form onSubmit={submit} className={`flex w-full gap-2 rounded-2xl border border-line bg-panel p-2 shadow-2xl ${compact ? '' : 'mt-9 flex-col sm:flex-row'}`}><label className="flex min-w-0 flex-1 items-center gap-3 px-3"><Search size={18} className="shrink-0 text-muted" /><input value={input} onChange={(event) => setInput(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0,8))} className="h-11 min-w-0 flex-1 bg-transparent text-sm font-semibold uppercase tracking-widest outline-none placeholder:font-normal placeholder:tracking-normal placeholder:text-muted" placeholder="Ejemplo: HS483682" aria-label="Código del pedido" /></label><button disabled={input.length < 8} className="primary-button min-h-11 shrink-0 px-4" aria-label="Rastrear pedido"><span className={compact ? 'hidden' : ''}>Rastrear</span><ArrowRight size={17} /></button></form> }
-function NotFound() { return <div className="mx-auto mt-5 w-full rounded-xl border border-red-400/15 bg-red-400/[0.05] p-4 text-left text-sm leading-6 text-red-100"><strong className="block">No encontramos un pedido con ese código.</strong><span className="text-xs text-red-100/70">Verifica que esté escrito correctamente o contáctanos por WhatsApp.</span></div> }
-function TrackingSkeleton() { return <section className="relative mx-auto min-h-[calc(100vh-170px)] w-full max-w-6xl animate-pulse px-5 py-12 sm:px-8"><div className="h-7 w-48 rounded bg-white/[0.06]" /><div className="mt-4 h-12 w-80 max-w-full rounded bg-white/[0.06]" /><div className="mt-8 h-56 rounded-2xl border border-line bg-panel" /><div className="mt-5 grid gap-5 lg:grid-cols-2"><div className="h-72 rounded-2xl border border-line bg-panel" /><div className="h-72 rounded-2xl border border-line bg-panel" /></div></section> }
-function DateRow({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) { return <div className="flex items-center justify-between gap-3"><span className="text-xs text-muted">{label}</span><strong className={`text-xs ${highlight ? 'text-accent' : ''}`}>{value}</strong></div> }
+function TrackingSearch({ input, setInput, submit }: SearchProps) {
+  return <form onSubmit={submit} className="hsp-search">
+    <Search size={18} className="hsp-faint shrink-0" />
+    <input value={input} onChange={(event) => setInput(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8))} placeholder="Ej: HS483682" aria-label="Código del pedido" inputMode="text" autoCapitalize="characters" />
+    <button disabled={input.replace(/[^A-Z0-9]/g, '').length < 8} className="hsp-btn shrink-0 rounded-xl px-4" aria-label="Rastrear pedido"><ArrowRight size={18} /></button>
+  </form>
+}
+function NotFound() {
+  return <div className="mx-auto mt-5 max-w-md rounded-xl px-4 py-3.5 text-left text-sm" style={{ background: '#fdecec', border: '1px solid #f3c4c4', color: '#b91c1c' }}>
+    <strong className="block">No encontramos un pedido con ese código.</strong>
+    <span className="text-xs" style={{ color: '#c05656' }}>Verificá que esté bien escrito o contactanos por WhatsApp.</span>
+  </div>
+}
+
+/* ------------------------- Animación "Buscando tu pedido" ---------------------- */
+// Caja de zapatos con color + un tenis con color, para que se reconozca claramente.
+function SearchingLoader() {
+  return <section className="grid min-h-[calc(100vh-240px)] place-items-center px-5">
+    <div className="hsp-loader">
+      <svg className="hsp-shoebox" viewBox="0 0 200 176" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Buscando tu pedido">
+        <defs>
+          <linearGradient id="gg-gold" x1="0" y1="-11" x2="0" y2="11" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#f0d585" /><stop offset="1" stopColor="#bd8722" />
+          </linearGradient>
+        </defs>
+        <ellipse className="hsp-shadow" cx="100" cy="158" rx="52" ry="8" fill="#b9b3a4" />
+        {/* Caja de zapatos con la estrella dorada Golden Goose (la tapa se levanta) */}
+        <g className="hsp-box2">
+          {/* cuerpo */}
+          <rect x="50" y="64" width="100" height="66" rx="9" fill="#f5eeda" stroke="#3a352b" strokeWidth="3" />
+          {/* estrella dorada grande al frente (firma Golden Goose) */}
+          <g transform="translate(100 94) scale(2.6)"><path d="M0,-10 L2.94,-4.05 L9.51,-3.09 L4.76,1.55 L5.88,8.09 L0,5 L-5.88,8.09 L-4.76,1.55 L-9.51,-3.09 L-2.94,-4.05 Z" fill="url(#gg-gold)" stroke="#8a6a1e" strokeWidth="0.9" strokeLinejoin="round" /></g>
+          {/* nombre en la caja */}
+          <rect x="82" y="118" width="36" height="4" rx="2" fill="#cbbd97" />
+        </g>
+        {/* tapa (se levanta) */}
+        <g className="hsp-lid2">
+          <rect x="44" y="44" width="112" height="24" rx="8" fill="#eae3d1" stroke="#3a352b" strokeWidth="3" />
+          <rect x="62" y="54" width="76" height="4" rx="2" fill="#c99a3a" />
+        </g>
+        {/* destellos dorados */}
+        <g fill="#dcae44">
+          <path className="hsp-spark hsp-spark-1" d="M60 40 C60.6 44 61 44.4 65 45 C61 45.6 60.6 46 60 50 C59.4 46 59 45.6 55 45 C59 44.4 59.4 44 60 40 Z" />
+          <path className="hsp-spark hsp-spark-2" d="M146 52 C146.5 55 146.8 55.3 150 56 C146.8 56.7 146.5 57 146 60 C145.5 57 145.2 56.7 142 56 C145.2 55.3 145.5 55 146 52 Z" />
+          <path className="hsp-spark hsp-spark-3" d="M150 30 C150.4 32.4 150.6 32.6 153 33 C150.6 33.4 150.4 33.6 150 36 C149.6 33.6 149.4 33.4 147 33 C149.4 32.6 149.6 32.4 150 30 Z" />
+        </g>
+      </svg>
+      <div className="text-center">
+        <p className="text-sm font-semibold">Buscando tu pedido<span className="hsp-dots"><i /><i /><i /></span></p>
+        <p className="hsp-faint mt-1 text-xs">Un momento…</p>
+      </div>
+    </div>
+  </section>
+}
+
+/* ---------------------------------- Utilidades --------------------------------- */
+function calcularFechaClave(order: PublicOrder): string | null {
+  const base = etapaBase(order.estado_codigo)
+  const llegadaPais = [...order.historial].reverse().find((entry) => entry.estado === 'País de destino')
+  const entregaRegistrada = order.fecha_entrega ?? [...order.historial].reverse().find((entry) => entry.estado === 'Entregado')?.fecha
+  if (entregaRegistrada) return entregaRegistrada
+  if (base === 'disponible_entrega' || base === 'empaquetado' || base === 'pagado') return order.fecha_estimada
+  if (llegadaPais && base === 'llego_nicaragua') return estimateAfterArrival(llegadaPais.fecha)
+  if (order.fecha_estimada) return base === 'transito_internacional' ? postponeToMinFuture(order.fecha_estimada, 3) : postponeUntilFuture(order.fecha_estimada, 3)
+  return null
+}
+function diasRestantes(dateStr: string) {
+  const target = new Date(dateStr.includes('T') ? dateStr : `${dateStr}T12:00:00`)
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0); target.setHours(0, 0, 0, 0)
+  return Math.round((target.getTime() - hoy.getTime()) / 86_400_000)
+}
 function formatDate(value: string) { return new Intl.DateTimeFormat('es-NI', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value.includes('T') ? value : `${value}T12:00:00`)) }
-function formatDateTime(value: string) { return new Intl.DateTimeFormat('es-NI', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(value)) }

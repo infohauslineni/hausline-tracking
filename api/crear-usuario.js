@@ -4,8 +4,9 @@ import { createClient } from '@supabase/supabase-js'
 // usuarios de auth de forma segura (requiere la llave de servicio), así que lo hace este
 // endpoint. Solo un ADMIN puede llamarlo: se valida su JWT y su rol antes de crear nada.
 //
-// El trigger crear_perfil_nuevo_usuario ya inserta el perfil con rol 'operador' por defecto;
-// aquí además fijamos el nombre. La seguridad de qué ve el operador está en el RLS (migración
+// El trigger crear_perfil_nuevo_usuario crea el perfil ACTIVO solo si el usuario trae
+// app_metadata.staff = true (lo que solo esta llave de servicio puede poner); los registros
+// públicos (cuentas de cliente) nunca obtienen acceso al panel. Aquí además fijamos el nombre. La seguridad de qué ve el operador está en el RLS (migración
 // 202609040001_roles_operador.sql), no en este endpoint.
 export const config = { maxDuration: 30 }
 
@@ -46,14 +47,15 @@ export default async function handler(request, response) {
       password,
       email_confirm: true,
       user_metadata: { nombre },
+      app_metadata: { staff: true },
     })
     if (error) {
       const msg = /registered|exists/i.test(error.message || '') ? 'Ya existe una cuenta con ese correo.' : error.message
       return response.status(400).json({ ok: false, error: msg })
     }
-    // Asegura nombre y rol operador en el perfil (el trigger ya lo creó como operador).
+    // Asegura nombre, rol operador y acceso activo (upsert por si el trigger no lo creó).
     if (creado?.user?.id) {
-      await admin.from('perfiles').update({ nombre, rol: 'operador', activo: true }).eq('id', creado.user.id)
+      await admin.from('perfiles').upsert({ id: creado.user.id, correo, nombre, rol: 'operador', activo: true }, { onConflict: 'id' })
     }
     return response.status(200).json({ ok: true, id: creado?.user?.id ?? null })
   } catch (error) {

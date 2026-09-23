@@ -66,6 +66,10 @@ export type Pedido = {
   // Cuándo se enviaron al cliente las fotos de control de calidad del pedido completo (para
   // que el botón quede en "ya enviadas" aunque se recargue el panel).
   qc_general_enviado_at?: string | null
+  // Solicitud de envío hecha por el cliente desde su cuenta (panel del cliente).
+  entrega_solicitada_at?: string | null
+  entrega_direccion?: { nombre: string; direccion: string; referencia?: string | null; ciudad: string; departamento?: string | null; pais: string; codigo_postal?: string | null; lat?: number | null; lng?: number | null } | null
+  entrega_costo?: number | null
   activo: boolean
   created_at: string
   updated_at: string
@@ -93,6 +97,20 @@ export type Cupon = {
   clientes?: Pick<Cliente, 'nombre' | 'whatsapp'> | null
 }
 export type CuponValidacion = { valido: boolean; motivo?: string; id?: string; codigo?: string; tipo?: 'porcentaje' | 'monto'; valor?: number; descuento?: number; cliente_id?: string | null }
+export type Promocion = {
+  id: string
+  nombre: string
+  condicion_tipo: 'cantidad' | 'monto'
+  condicion_valor: number
+  tipo: 'porcentaje' | 'monto'
+  valor: number
+  activo: boolean
+  vence_el: string | null
+  nota: string | null
+  created_at: string
+  updated_at?: string
+}
+export type PromocionInput = Pick<Promocion, 'nombre' | 'condicion_tipo' | 'condicion_valor' | 'tipo' | 'valor' | 'vence_el' | 'nota'> & { activo?: boolean }
 export type Pago = { id: string; pedido_id: string; cliente_id: string; fecha: string; tipo: 'abono_inicial' | 'abono' | 'pago_final' | 'reembolso'; monto: number; moneda?: Moneda; monto_original?: number | null; tipo_cambio?: number | null; metodo_pago: string | null; referencia: string | null; observaciones: string | null; created_at: string; pedidos?: Pick<Pedido, 'codigo' | 'saldo'> | null; clientes?: Pick<Cliente, 'nombre'> | null }
 export type Gasto = { id: string; fecha: string; categoria: string; monto: number; moneda?: Moneda; monto_original?: number | null; tipo_cambio?: number | null; metodo_pago: string | null; pedido_id: string | null; inversion_id: string | null; proveedor_id: string | null; descripcion: string; observaciones: string | null; created_at: string; pedidos?: Pick<Pedido, 'codigo'> | null; inversiones?: Pick<Inversion, 'producto' | 'codigo'> | null; proveedores?: Pick<Proveedor, 'nombre'> | null }
 export type MovimientoCuenta = { id: string; fecha: string; tipo: 'ingreso' | 'retiro' | 'pago_proveedor' | 'gasto' | 'inversion' | 'ajuste_entrada' | 'ajuste_salida'; descripcion: string; monto: number; moneda?: Moneda; monto_original?: number | null; tipo_cambio?: number | null; metodo: string | null; pedido_id: string | null; gasto_id?: string | null; pago_id?: string | null; inversion_id?: string | null; cuenta_id?: string | null; monto_cuenta?: number | null; observaciones: string | null; created_at: string; pedidos?: Pick<Pedido, 'codigo'> | null }

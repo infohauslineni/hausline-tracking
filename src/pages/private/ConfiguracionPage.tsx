@@ -8,6 +8,7 @@ import { guardarTipoCambio, obtenerTipoCambio } from '../../services/comercial.s
 import { activarUsuario, crearOperador, eliminarUsuario, listarEquipo, type MiembroEquipo } from '../../services/equipo.service'
 import { DEFAULT_ESTIMACIONES, guardarConfiguracionEstimaciones, obtenerConfiguracionEstimaciones, recalcularEstimaciones, type ConfiguracionEstimaciones } from '../../services/estimaciones.service'
 import type { EstadoPedido } from '../../types/domain'
+import { TarifasDeliverySection } from '../../components/config/TarifasDeliverySection'
 
 const EDITABLE_STATES: EstadoPedido[] = ['pedido_confirmado', 'en_preparacion', 'transito_internacional', 'llego_nicaragua']
 
@@ -53,6 +54,7 @@ export function ConfiguracionPage() {
     </div>
 
     <EquipoSection />
+    <TarifasDeliverySection />
   </div>
 }
 

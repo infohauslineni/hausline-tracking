@@ -1,10 +1,11 @@
-import { Copy, Percent, Plus, Power, Share2, Ticket, Trash2, Users } from 'lucide-react'
+import { Copy, Download, Link2, Percent, Plus, Power, Share2, Ticket, Trash2, Users } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { Modal } from '../../components/ui/Modal'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { listarClientes } from '../../services/clientes.service'
 import { cambiarActivoCupon, eliminarCupon, generarCodigo, guardarCupon, listarCupones, type CuponInput } from '../../services/cupones.service'
+import { listarSuscriptores } from '../../services/suscriptores.service'
 import { compartirHistoriaCupon } from '../../utils/cuponHistoria'
 import type { Cliente, Cupon } from '../../types/domain'
 
@@ -24,6 +25,8 @@ export function CuponesPage() {
   useEffect(load, [])
 
   const copiar = async (codigo: string) => { try { await navigator.clipboard.writeText(codigo); toast.success(`Código ${codigo} copiado.`) } catch { toast.error('No se pudo copiar.') } }
+  // Link listo para pegar en el correo (Brevo): abre la tienda con el cupón aplicado.
+  const copiarLink = async (codigo: string) => { const url = `https://hauslineshopni.es/?cupon=${encodeURIComponent(codigo)}`; try { await navigator.clipboard.writeText(url); toast.success('Link de promoción copiado. Pégalo en tu correo de Brevo.') } catch { toast.error('No se pudo copiar el link.') } }
   const compartir = async (c: Cupon) => {
     try {
       const r = await compartirHistoriaCupon(c)
@@ -32,12 +35,35 @@ export function CuponesPage() {
     } catch { toast.error('No se pudo generar la imagen.') }
   }
   const toggle = async (c: Cupon) => { try { await cambiarActivoCupon(c.id, !c.activo); toast.success(c.activo ? 'Cupón desactivado.' : 'Cupón activado.'); load() } catch { toast.error('No se pudo cambiar el cupón.') } }
+  // Exporta a CSV la lista de suscriptores que aceptaron promociones (opt-in del checkout),
+  // lista para importar en Brevo. La columna EMAIL la reconoce Brevo automáticamente.
+  const [exportando, setExportando] = useState(false)
+  const exportarSuscriptores = async () => {
+    setExportando(true)
+    try {
+      const subs = await listarSuscriptores()
+      if (!subs.length) { toast.info('Todavía no hay suscriptores con consentimiento.'); return }
+      const esc = (v: string) => `"${String(v ?? '').replace(/"/g, '""')}"`
+      const filas = [['EMAIL', 'NOMBRE', 'FUENTE', 'FECHA_ALTA'].join(',')]
+        .concat(subs.map((s) => [esc(s.correo), esc(s.nombre ?? ''), esc(s.fuente ?? ''), esc((s.created_at ?? '').slice(0, 10))].join(',')))
+      const csv = '﻿' + filas.join('\r\n') // BOM: acentos correctos en Excel/Brevo
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+      const a = document.createElement('a')
+      a.href = url; a.download = `suscriptores-hausline-${new Date().toISOString().slice(0, 10)}.csv`
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+      toast.success(`${subs.length} suscriptores exportados. Importá el CSV en Brevo.`)
+    } catch { toast.error('No se pudo exportar la lista.') }
+    finally { setExportando(false) }
+  }
   const borrar = async (c: Cupon) => { if (!window.confirm(`¿Eliminar el cupón ${c.codigo}? Esta acción no se puede deshacer.`)) return; try { await eliminarCupon(c.id); setCupones((x) => x.filter((y) => y.id !== c.id)); toast.success('Cupón eliminado.') } catch { toast.error('No se pudo eliminar.') } }
 
   return <div>
     <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
       <div><p className="eyebrow">Marketing</p><h1 className="page-title">Cupones y descuentos</h1><p className="page-subtitle">Descuentos por cliente o códigos sueltos para redes. Se aplican en el checkout y al registrar la venta.</p></div>
-      <button className="primary-button px-5" onClick={() => { setEditing(null); setOpen(true) }}><Plus size={18} /> Nuevo cupón</button>
+      <div className="flex flex-wrap gap-2">
+        <button className="subtle-button px-4" disabled={exportando} onClick={() => void exportarSuscriptores()} title="Descargar CSV de quienes aceptaron promociones (para Brevo)"><Download size={17} /> {exportando ? 'Exportando…' : 'Exportar suscriptores'}</button>
+        <button className="primary-button px-5" onClick={() => { setEditing(null); setOpen(true) }}><Plus size={18} /> Nuevo cupón</button>
+      </div>
     </div>
 
     <div className="mt-6 rounded-xl border border-accent/15 bg-accent/[0.04] px-4 py-3 text-xs text-muted">
@@ -65,6 +91,7 @@ export function CuponesPage() {
             </div>
             {c.nota && <p className="mt-3 border-t border-line pt-2 text-xs text-muted">{c.nota}</p>}
             <div className="mt-3 flex flex-wrap justify-end gap-1.5 border-t border-line pt-3">
+              <button className="subtle-button px-3 py-1.5 text-xs" onClick={() => void copiarLink(c.codigo)} title="Copiar el link para pegar en el correo (Brevo)"><Link2 size={14} /> Link correo</button>
               <button className="subtle-button px-3 py-1.5 text-xs text-accent" onClick={() => void compartir(c)} title="Descargar/compartir imagen 9:16 para historia de Instagram"><Share2 size={14} /> Historia</button>
               <button className="subtle-button px-3 py-1.5 text-xs" onClick={() => { setEditing(c); setOpen(true) }}>Editar</button>
               <button className="subtle-button px-3 py-1.5 text-xs" onClick={() => void toggle(c)}><Power size={14} /> {c.activo ? 'Desactivar' : 'Activar'}</button>

@@ -13,6 +13,9 @@ type AuthContextValue = {
   // ve cada quien: el operador (empleado) no ve finanzas, costos ni configuración.
   rol: RolUsuario | null
   esAdmin: boolean
+  // true = personal del panel (perfil activo); false = cuenta de CLIENTE (sin perfil o inactivo);
+  // null mientras se resuelve. Las cuentas de cliente se mandan a /cuenta, no al panel.
+  personal: boolean | null
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<void>
@@ -42,6 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [rol, setRol] = useState<RolUsuario | null>(null)
+  const [personal, setPersonal] = useState<boolean | null>(null)
 
   useEffect(() => {
     if (!supabase) {
@@ -161,15 +165,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // 'operador' (lo más restrictivo): preferimos ocultar finanzas de más que filtrarlas.
   useEffect(() => {
     const uid = session?.user?.id
-    if (!supabase || !uid) { setRol(null); return }
+    if (!supabase || !uid) { setRol(null); setPersonal(null); return }
     const client = supabase
     let vivo = true
     void (async () => {
       try {
-        const { data } = await client.from('perfiles').select('rol').eq('id', uid).maybeSingle()
-        if (vivo) setRol((data?.rol as RolUsuario) ?? 'operador')
+        const { data, error } = await client.from('perfiles').select('rol, activo').eq('id', uid).maybeSingle()
+        if (!vivo) return
+        setRol((data?.rol as RolUsuario) ?? 'operador')
+        // Ante un error de red NO lo tratamos como cliente (no sacamos al personal del panel);
+        // el RLS protege los datos igual.
+        setPersonal(error ? true : Boolean(data?.activo))
       } catch {
-        if (vivo) setRol('operador')
+        if (vivo) { setRol('operador'); setPersonal(true) }
       }
     })()
     return () => { vivo = false }
@@ -180,6 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     configured: isSupabaseConfigured,
     rol,
+    personal,
     // En preview local sin Supabase no hay perfil: se trata como admin para poder revisar
     // todo el panel. Con Supabase, admin solo si el perfil lo dice.
     esAdmin: !isSupabaseConfigured || rol === 'admin',
@@ -209,7 +218,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
       if (error) throw error
     },
-  }), [loading, session, rol])
+  }), [loading, session, rol, personal])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

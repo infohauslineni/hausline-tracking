@@ -41,6 +41,7 @@ function demoPublicOrder(order: Pedido): PublicOrder {
     codigo: order.codigo, estado: estadoLabelPublico(order.estado), estado_codigo: order.estado,
     fecha_pedido: order.fecha_pedido, fecha_estimada: estimateDateForPreview(order.estado), fecha_entrega: order.estado === 'entregado' ? order.updated_at : null,
     ultima_actualizacion: order.updated_at, imagen_principal: null,
+    total: order.total, abono: order.abono, saldo: order.saldo, moneda: order.moneda ?? 'USD',
     notas_publicas: order.notas_publicas ?? (order.estado === 'incidencia' ? 'Estamos gestionando una incidencia logística.' : 'Tu pedido avanza según lo previsto.'),
     productos: (order.pedido_items ?? []).map((item) => ({ id: item.id ?? null, estado_item: item.estado_item ?? 'pendiente', producto: item.producto, codigo: item.codigo_producto ?? null, marca: item.marca ?? null, categoria: item.categoria ?? null, talla: item.talla ?? null, color: item.color ?? null, cantidad: item.cantidad, imagen: item.imagen ?? null })),
     historial: [

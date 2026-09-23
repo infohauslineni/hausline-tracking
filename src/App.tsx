@@ -1,10 +1,11 @@
 import { lazy, Suspense } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { ProtectedRoute } from './components/auth/ProtectedRoute'
 import { AdminRoute } from './components/auth/AdminRoute'
 import { PrivateLayout } from './components/layout/PrivateLayout'
 import { CookieBanner } from './components/ui/CookieBanner'
 import { LoginPage } from './pages/public/LoginPage'
+import { CuentaGuard } from './components/cuenta/CuentaShell'
 
 const ClientesPage = lazy(() => import('./pages/private/ClientesPage').then((module) => ({ default: module.ClientesPage })))
 const ClienteDetailPage = lazy(() => import('./pages/private/ClienteDetailPage').then((module) => ({ default: module.ClienteDetailPage })))
@@ -26,16 +27,42 @@ const MetasPage = lazy(() => import('./pages/private/MetasPage').then((module) =
 const ContenidoPage = lazy(() => import('./pages/private/ContenidoPage').then((module) => ({ default: module.ContenidoPage })))
 const ResenasPage = lazy(() => import('./pages/private/ResenasPage').then((module) => ({ default: module.ResenasPage })))
 const CuponesPage = lazy(() => import('./pages/private/CuponesPage').then((module) => ({ default: module.CuponesPage })))
+const PromocionesPage = lazy(() => import('./pages/private/PromocionesPage').then((module) => ({ default: module.PromocionesPage })))
 const TrackingPage = lazy(() => import('./pages/public/TrackingPage').then((module) => ({ default: module.TrackingPage })))
+const MisPedidosPage = lazy(() => import('./pages/public/MisPedidosPage').then((module) => ({ default: module.MisPedidosPage })))
+const CuentaIngresarPage = lazy(() => import('./pages/cuenta/CuentaIngresarPage').then((module) => ({ default: module.CuentaIngresarPage })))
+const CuentaInicioPage = lazy(() => import('./pages/cuenta/CuentaInicioPage').then((module) => ({ default: module.CuentaInicioPage })))
+const CuentaPedidosPage = lazy(() => import('./pages/cuenta/CuentaPedidosPage').then((module) => ({ default: module.CuentaPedidosPage })))
+const CuentaPedidoDetallePage = lazy(() => import('./pages/cuenta/CuentaPedidoDetallePage').then((module) => ({ default: module.CuentaPedidoDetallePage })))
+const CuentaFavoritosPage = lazy(() => import('./pages/cuenta/CuentaFavoritosPage').then((module) => ({ default: module.CuentaFavoritosPage })))
+const CuentaDatosPage = lazy(() => import('./pages/cuenta/CuentaDatosPage').then((module) => ({ default: module.CuentaDatosPage })))
+const CuentaDireccionesPage = lazy(() => import('./pages/cuenta/CuentaDireccionesPage').then((module) => ({ default: module.CuentaDireccionesPage })))
+const CuentaDireccionFormPage = lazy(() => import('./pages/cuenta/CuentaDireccionFormPage').then((module) => ({ default: module.CuentaDireccionFormPage })))
 const PrivacidadPage = lazy(() => import('./pages/public/PrivacidadPage').then((module) => ({ default: module.PrivacidadPage })))
 const TerminosPage = lazy(() => import('./pages/public/TerminosPage').then((module) => ({ default: module.TerminosPage })))
 
 export function App() {
   return <><Suspense fallback={<div className="grid min-h-screen place-items-center bg-app"><div className="loader" /></div>}><Routes>
     <Route path="/login" element={<LoginPage />} />
-    <Route path="/tracking" element={<TrackingPage />} />
-    <Route path="/tracking/:codigo" element={<TrackingPage />} />
-    <Route path="/privacidad" element={<PrivacidadPage />} />
+    {/* Portal público del cliente: link único /pedido/HS###### (sin login) + historial local */}
+    <Route path="/pedido" element={<TrackingPage />} />
+    <Route path="/pedido/:codigo" element={<TrackingPage />} />
+    <Route path="/mis-pedidos" element={<MisPedidosPage />} />
+    {/* Rutas anteriores (WhatsApp/correos ya enviados): siguen funcionando */}
+    <Route path="/tracking" element={<Navigate to="/pedido" replace />} />
+    <Route path="/tracking/:codigo" element={<TrackingRedirect />} />
+    {/* Panel del CLIENTE (cuenta propia): pedidos, deseos, datos, direcciones y entrega */}
+    <Route path="/cuenta/ingresar" element={<CuentaIngresarPage />} />
+    <Route element={<CuentaGuard />}>
+      <Route path="/cuenta" element={<CuentaInicioPage />} />
+      <Route path="/cuenta/pedidos" element={<CuentaPedidosPage />} />
+      <Route path="/cuenta/pedidos/:codigo" element={<CuentaPedidoDetallePage />} />
+      <Route path="/cuenta/favoritos" element={<CuentaFavoritosPage />} />
+      <Route path="/cuenta/datos" element={<CuentaDatosPage />} />
+      <Route path="/cuenta/direcciones" element={<CuentaDireccionesPage />} />
+      <Route path="/cuenta/direcciones/:id" element={<CuentaDireccionFormPage />} />
+    </Route>
+    <Route path="/privacidad"element={<PrivacidadPage />} />
     <Route path="/terminos" element={<TerminosPage />} />
     <Route element={<ProtectedRoute />}>
       <Route element={<PrivateLayout />}>
@@ -64,11 +91,18 @@ export function App() {
           <Route path="/clientes/:id" element={<ClienteDetailPage />} />
           <Route path="/resenas" element={<ResenasPage />} />
           <Route path="/cupones" element={<CuponesPage />} />
+          <Route path="/promociones" element={<PromocionesPage />} />
           <Route path="/configuracion" element={<ConfiguracionPage />} />
         </Route>
       </Route>
     </Route>
-    <Route path="/" element={<Navigate to="/tracking" replace />} />
-    <Route path="*" element={<Navigate to="/tracking" replace />} />
+    <Route path="/" element={<Navigate to="/pedido" replace />} />
+    <Route path="*" element={<Navigate to="/pedido" replace />} />
   </Routes></Suspense><CookieBanner /></>
+}
+
+// Conserva el código al migrar los links viejos /tracking/:codigo → /pedido/:codigo.
+function TrackingRedirect() {
+  const { codigo } = useParams()
+  return <Navigate to={`/pedido/${codigo ?? ''}`} replace />
 }

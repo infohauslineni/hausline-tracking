@@ -1,40 +1,27 @@
-import { ArrowLeft, ArrowRight } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { Brand } from '../ui/Brand'
+import { PortalShell } from '../public/PortalChrome'
 
 // Cascarón compartido por las páginas legales (Privacidad, Términos).
-// Reusa el mismo encabezado, glow y pie que la página de rastreo para que
-// se vea como parte del mismo sitio.
+// Usa el mismo shell CLARO del portal del cliente para que se vea como parte del sitio.
 export function LegalLayout({ title, updated, children }: { title: string; updated: string; children: ReactNode }) {
   useEffect(() => { window.scrollTo(0, 0) }, [])
-  return <main className="relative min-h-screen overflow-hidden bg-app text-white">
-    <div className="tracking-glow" />
-    <header className="relative z-10 mx-auto flex w-full max-w-3xl items-center justify-between px-5 py-6 sm:px-8">
-      <Link to="/tracking" aria-label="Inicio de rastreo"><Brand /></Link>
-      <Link to="/tracking" className="subtle-button"><span className="hidden sm:inline">Rastrear pedido</span><ArrowRight size={16} /></Link>
-    </header>
-    <section className="relative z-10 mx-auto w-full max-w-3xl px-5 py-6 sm:px-8 sm:py-10">
-      <Link to="/tracking" className="inline-flex items-center gap-2 text-xs text-muted hover:text-white"><ArrowLeft size={15} /> Volver</Link>
-      <p className="eyebrow mt-6">Información legal</p>
-      <h1 className="mt-3 text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">{title}</h1>
-      <p className="mt-2 text-xs text-muted">Última actualización: {updated}</p>
-      <div className="legal-doc mt-8 space-y-8 text-sm leading-7 text-muted">{children}</div>
+  return <PortalShell>
+    <section className="mx-auto w-full max-w-2xl px-5 pb-6 sm:px-8">
+      <Link to="/pedido" className="hsp-muted inline-flex items-center gap-1.5 text-xs font-semibold hover:text-black"><ArrowLeft size={14} /> Volver</Link>
+      <p className="hsp-eyebrow mt-6">Información legal</p>
+      <h1 className="hsp-display mt-2 text-3xl font-semibold sm:text-4xl">{title}</h1>
+      <p className="hsp-faint mt-2 text-xs">Última actualización: {updated}</p>
+      <div className="hsp-legal mt-8 space-y-8 text-sm leading-7">{children}</div>
     </section>
-    <footer className="relative z-10 mx-auto flex w-full max-w-3xl flex-col gap-3 border-t border-line px-5 py-6 text-center text-xs text-muted sm:flex-row sm:justify-between sm:px-8">
-      <span>© 2026 Hausline · King of Shoes</span>
-      <span className="flex justify-center gap-4">
-        <Link to="/privacidad" className="hover:text-white">Privacidad</Link>
-        <Link to="/terminos" className="hover:text-white">Términos y condiciones</Link>
-      </span>
-    </footer>
-  </main>
+  </PortalShell>
 }
 
 // Bloque de sección con título, para armar los documentos legales.
 export function LegalSection({ title, children }: { title: string; children: ReactNode }) {
   return <section className="space-y-3">
-    <h2 className="text-base font-semibold text-white">{title}</h2>
+    <h2 className="text-base font-semibold">{title}</h2>
     {children}
   </section>
 }

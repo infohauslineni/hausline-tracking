@@ -33,17 +33,17 @@ export function CookieBanner() {
   if (!visible) return null
   return <div className="cookie-banner" role="dialog" aria-live="polite" aria-label="Aviso de cookies">
     <div className="cookie-banner__inner">
-      <Cookie size={20} className="mt-0.5 shrink-0 text-accent" />
+      <Cookie size={20} className="mt-0.5 shrink-0" style={{ color: '#1a1a1a' }} />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-white">Usamos cookies</p>
-        <p className="mt-1 text-xs leading-5 text-muted">
+        <p className="text-sm font-semibold" style={{ color: '#1a1a1a' }}>Usamos cookies</p>
+        <p className="mt-1 text-xs leading-5" style={{ color: '#79776f' }}>
           Usamos cookies necesarias para que el sitio funcione. Con tu permiso también usaríamos cookies de rastreo para entender cómo se usa la página.{' '}
-          <Link to="/privacidad" className="text-accent underline-offset-2 hover:underline">Más información</Link>.
+          <Link to="/privacidad" className="underline underline-offset-2" style={{ color: '#1a1a1a' }}>Más información</Link>.
         </p>
       </div>
       <div className="cookie-banner__actions">
-        <button type="button" className="subtle-button" onClick={() => decidir('essential')}>Rechazar</button>
-        <button type="button" className="primary-button" onClick={() => decidir('all')}>Aceptar</button>
+        <button type="button" className="cookie-btn" onClick={() => decidir('essential')}>Rechazar</button>
+        <button type="button" className="cookie-btn cookie-btn--primary" onClick={() => decidir('all')}>Aceptar</button>
       </div>
     </div>
   </div>
