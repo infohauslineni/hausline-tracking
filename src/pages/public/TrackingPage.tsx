@@ -120,7 +120,7 @@ function ResultArea({ order, loading, notFound }: { order: PublicOrder | null; l
       {/* 5 · Detalle del pedido (montos ocultos hasta iniciar sesión) */}
       <div className="hsp-rise" style={{ animationDelay: '190ms' }}><DetailCard order={order} /></div>
 
-      {/* Detalle completo (fotos de calidad, montos, guía) solo en Mi cuenta de la tienda */}
+      {/* Invitación OPCIONAL a Mi cuenta (el seguimiento funciona completo sin iniciar sesión) */}
       <div className="hsp-rise" style={{ animationDelay: '210ms' }}><CuentaCard codigo={order.codigo} /></div>
 
       {/* 6 · Ayuda */}
@@ -133,9 +133,9 @@ function ResultArea({ order, loading, notFound }: { order: PublicOrder | null; l
 
 function CuentaCard({ codigo }: { codigo: string }) {
   return <section className="hsp-card p-4">
-    <p className="text-[14px] font-semibold">Detalle completo en Mi cuenta</p>
-    <p className="hsp-muted mt-1 text-[13px] leading-5">Fotos de control de calidad, montos, número de guía e historial completo. Ingresá (o creá tu cuenta) con el mismo correo de tu compra.</p>
-    <a href={`https://hauslineshopni.es/cuenta/pedido/?id=${codigo}`} className="hsp-btn mt-3 h-11 w-full text-sm">Ver mi pedido <ArrowRight size={15} /></a>
+    <p className="text-[14px] font-semibold">Todos tus pedidos en un solo lugar</p>
+    <p className="hsp-muted mt-1 text-[13px] leading-5">Opcional: creá tu cuenta gratis con el mismo correo de tu compra y verás todos tus pedidos juntos, desde cualquier teléfono.</p>
+    <a href={`https://hauslineshopni.es/cuenta/pedido/?id=${codigo}`} className="hsp-btn hsp-btn--line mt-3 h-11 w-full text-sm">Ir a Mi cuenta <ArrowRight size={15} /></a>
   </section>
 }
 

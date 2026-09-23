@@ -7,8 +7,7 @@
 --      o el MISMO correo verificado, o si el admin lo asocia desde el panel.
 --   2. pedido_cliente(codigo): detalle completo SOLO para el dueño (sin costos, proveedor,
 --      notas internas ni ganancias; esos viven en tablas que el cliente no puede leer).
---   3. Link público /pedido/HS###### MÍNIMO: estado, fechas e historial; sin montos, fotos
---      ni números de guía. El detalle completo requiere Mi cuenta.
+--   3. Link público /pedido/HS###### SIN login con TODO el pedido (incluye montos, 202609210001).
 --   4. historial_pedidos.nota_interna (la pública sigue siendo `nota`).
 --   5. email_eventos: registro de cada correo (enviado / error) + candado anti-duplicados.
 --   6. Aviso de bienvenida cuando el cliente verifica su correo (cuentas_cliente.verificada_at).
@@ -169,47 +168,73 @@ drop policy if exists storage_pedidos_cuenta_ver on storage.objects;
 create policy storage_pedidos_cuenta_ver on storage.objects for select to authenticated
   using (bucket_id = 'pedidos' and public.archivo_pedido_de_cuenta(name));
 
--- 3) Link público MÍNIMO ----------------------------------------------------------------
+-- 3) Link público /pedido/HS###### SIN login: muestra TODO el pedido (decisión del dueño:
+--    el cliente no está obligado a crear cuenta). Es la versión de 202609210001 (con montos),
+--    incluida aquí por si esa migración no se aplicó. Las fotos siguen igual (sin cambios).
 create or replace function public.obtener_pedido_publico(p_codigo text)
-returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+returns jsonb
+language plpgsql stable security definer
+set search_path = public, pg_temp
+as $$
 declare
   v_codigo text := upper(trim(p_codigo));
   resultado jsonb;
 begin
   if v_codigo !~ '^HS[0-9]{6}$' then return null; end if;
+
   select jsonb_build_object(
     'codigo', p.codigo,
     'estado', public.etiqueta_estado_publico(p.estado),
     'estado_codigo', p.estado,
-    'fecha_pedido', p.fecha_pedido, 'fecha_estimada', p.fecha_estimada, 'fecha_entrega', p.fecha_entrega,
-    'ultima_actualizacion', p.updated_at, 'imagen_principal', null, 'notas_publicas', p.notas_publicas,
-    -- Sin montos, sin fotos, sin tallas/colores: el detalle completo está en Mi cuenta.
+    'fecha_pedido', p.fecha_pedido,
+    'fecha_estimada', p.fecha_estimada,
+    'fecha_entrega', p.fecha_entrega,
+    'ultima_actualizacion', p.updated_at,
+    'imagen_principal', p.imagen_principal,
+    'notas_publicas', p.notas_publicas,
+    -- Montos del pedido (para el resumen de pago del portal público).
+    'total', p.total,
+    'abono', p.abono,
+    'saldo', p.saldo,
+    'moneda', p.moneda,
     'productos', coalesce((
-      select jsonb_agg(jsonb_build_object('id', i.id, 'estado_item', i.estado_item, 'producto', i.producto, 'codigo', null,
-        'marca', i.marca, 'categoria', null, 'talla', null, 'color', null, 'cantidad', i.cantidad, 'imagen', null) order by i.created_at)
-      from public.pedido_items i where i.pedido_id = p.id
+      select jsonb_agg(jsonb_build_object(
+        'id', i.id, 'estado_item', i.estado_item,
+        'producto', i.producto, 'codigo', i.codigo_producto, 'marca', i.marca, 'categoria', i.categoria,
+        'talla', i.talla, 'color', i.color, 'cantidad', i.cantidad,
+        'imagen', coalesce(i.imagen, prod.imagen)
+      ) order by i.created_at)
+      from public.pedido_items i
+      left join public.productos prod
+        on upper(trim(prod.codigo)) = upper(trim(coalesce(nullif(i.codigo_producto, ''), i.producto)))
+      where i.pedido_id = p.id
     ), '[]'::jsonb),
     'historial', coalesce((
-      select jsonb_agg(jsonb_build_object('estado', public.etiqueta_estado_publico(h.estado_nuevo), 'nota', h.nota, 'ubicacion', null, 'fecha', h.created_at) order by h.created_at)
+      select jsonb_agg(jsonb_build_object(
+        'estado', public.etiqueta_estado_publico(h.estado_nuevo),
+        'nota', h.nota, 'ubicacion', h.ubicacion, 'fecha', h.created_at
+      ) order by h.created_at)
       from public.historial_pedidos h where h.pedido_id = p.id and h.visible_cliente
     ), '[]'::jsonb),
-    -- Etapas del envío sin número de guía ni enlace del transportista.
     'trayectos', coalesce((
-      select jsonb_agg(jsonb_build_object('tipo', t.tipo_trayecto, 'origen', t.pais_origen, 'destino', t.pais_destino,
-        'transportista', null, 'tracking', null, 'url_tracking', null, 'estado', t.estado, 'ultima_ubicacion', null,
-        'ultimo_evento', null, 'fecha_estimada', t.fecha_estimada, 'eventos', '[]'::jsonb) order by t.orden)
-      from public.trayectos t where t.pedido_id = p.id and t.visible_cliente
+      select jsonb_agg(jsonb_build_object(
+        'tipo', t.tipo_trayecto, 'origen', t.pais_origen, 'destino', t.pais_destino,
+        'transportista', tr.nombre, 'tracking', t.tracking, 'url_tracking', t.url_tracking,
+        'estado', t.estado, 'ultima_ubicacion', t.ultima_ubicacion,
+        'ultimo_evento', t.ultimo_evento, 'fecha_estimada', t.fecha_estimada,
+        'eventos', coalesce((select jsonb_agg(jsonb_build_object(
+          'descripcion', e.descripcion_publica, 'ubicacion', e.ubicacion, 'fecha', e.fecha_evento
+        ) order by e.fecha_evento) from public.tracking_eventos e
+          where e.trayecto_id = t.id and e.visible_cliente and e.descripcion_publica is not null), '[]'::jsonb)
+      ) order by t.orden)
+      from public.trayectos t left join public.transportistas tr on tr.id = t.transportista_id
+      where t.pedido_id = p.id and t.visible_cliente
     ), '[]'::jsonb)
   ) into resultado
   from public.pedidos p where p.codigo = v_codigo and p.activo;
+
   return resultado;
 end;
-$$;
-
--- Las fotos ya no se entregan por código público (sí en Mi cuenta).
-create or replace function public.obtener_archivos_pedido_publicos(p_codigo text)
-returns jsonb language sql stable security definer set search_path = public, pg_temp as $$
-  select '[]'::jsonb;
 $$;
 
 -- 4) Nota interna en el historial -------------------------------------------------------
