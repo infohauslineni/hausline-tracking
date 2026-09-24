@@ -337,11 +337,32 @@ async function enviarBienvenida(body, response) {
   return response.status(200).json({ ok: true, sent: correo })
 }
 
+// Fotos del seguimiento público (/api/fotos-pedido → aquí; límite de 12 funciones en Hobby).
+// El navegador ya NO firma las fotos del bucket privado "pedidos" como anónimo (eso permitía
+// listar las fotos de TODOS los pedidos). Aquí se firman solo las del pedido cuyo código se
+// conoce, y solo las marcadas visibles para el cliente.
+async function fotosPedidoPublico(response, body) {
+  const codigo = String(body.codigo ?? '').trim().toUpperCase()
+  if (!/^HS\d{6}$/.test(codigo)) return response.status(400).json({ ok: false, error: 'Código inválido' })
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(500).json({ ok: false })
+  const client = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  const { data: archivos, error } = await client.rpc('obtener_archivos_pedido_publicos', { p_codigo: codigo })
+  if (error) return response.status(502).json({ ok: false })
+  const lista = Array.isArray(archivos) ? archivos : []
+  if (!lista.length) return response.status(200).json({ ok: true, imagenes: [] })
+  const { data: firmadas } = await client.storage.from('pedidos').createSignedUrls(lista.map((a) => a.storage_path), 3600)
+  response.setHeader('Cache-Control', 'no-store')
+  return response.status(200).json({ ok: true, imagenes: lista.map((a, i) => ({ ...a, url: firmadas?.[i]?.signedUrl ?? undefined })) })
+}
+
 export default async function handler(request, response) {
   if (request.method !== 'POST') return response.status(405).json({ ok: false, error: 'Method not allowed' })
 
   const body = typeof request.body === 'string' ? JSON.parse(request.body || '{}') : (request.body ?? {})
   const authorization = request.headers?.authorization ?? request.headers?.get?.('authorization') ?? ''
+
+  // Fotos del seguimiento público (sin sesión: basta el código del pedido).
+  if (body.fotosPublicas) return fotosPedidoPublico(response, body)
 
   // Reenvío manual desde el panel (JWT del usuario, no el secreto del webhook).
   if (body.resend) return reenviarFotosEtapa(request, response, body, authorization)

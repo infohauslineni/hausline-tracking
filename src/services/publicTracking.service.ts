@@ -61,21 +61,26 @@ export async function buscarPedidoPublico(code: string): Promise<PublicOrder | n
     return order ? ocultarEstadoInterno(demoPublicOrder(order)) : null
   }
   // Ambas consultas son independientes (solo necesitan el código): las lanzamos EN
-  // PARALELO para que el seguimiento cargue más rápido al abrir la página.
-  const [pedidoRes, archivosRes] = await Promise.all([
+  // PARALELO para que el seguimiento cargue más rápido al abrir la página. Las fotos las
+  // firma el servidor (el bucket "pedidos" ya no se lee como anónimo).
+  const [pedidoRes, imagenes] = await Promise.all([
     supabase.rpc('obtener_pedido_publico', { p_codigo: normalized }),
-    supabase.rpc('obtener_archivos_pedido_publicos', { p_codigo: normalized }),
+    fotosPublicas(normalized),
   ])
   const { data, error } = pedidoRes
   if (error) throw error
   if (!data) return null
-  const order = data as PublicOrder
-  const { data: files, error: filesError } = archivosRes
-  const normalizedOrder = ocultarEstadoInterno(order)
-  if (filesError || !Array.isArray(files) || files.length === 0) return { ...normalizedOrder, imagenes: [] }
-  const images = files as PublicImage[]
-  const { data: signed } = await supabase.storage.from('pedidos').createSignedUrls(images.map((image) => image.storage_path), 3600)
-  return { ...normalizedOrder, imagenes: images.map((image, index) => ({ ...image, url: signed?.[index]?.signedUrl ?? undefined })) }
+  return { ...ocultarEstadoInterno(data as PublicOrder), imagenes }
+}
+
+// Si el servidor no responde, el seguimiento se muestra igual, solo sin fotos.
+async function fotosPublicas(codigo: string): Promise<PublicImage[]> {
+  try {
+    const res = await fetch('/api/fotos-pedido', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fotosPublicas: true, codigo }) })
+    if (!res.ok) return []
+    const json = await res.json() as { imagenes?: PublicImage[] }
+    return Array.isArray(json.imagenes) ? json.imagenes : []
+  } catch { return [] }
 }
 
 function normalizarEstadoHistorial(label: string) {
