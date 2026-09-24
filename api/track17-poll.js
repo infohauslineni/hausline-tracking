@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { personalActivo } from './_auth.js'
 import { pollGuiasActivas } from './_track17.js'
 
 // Consulta a 17TRACK el estado actual de las guías activas y aplica lo nuevo, para
@@ -25,9 +26,8 @@ export default async function handler(request, response) {
   if (process.env.CRON_SECRET && token && token === process.env.CRON_SECRET) {
     autorizado = true
   } else if (token) {
-    // Valida el JWT del admin: si getUser devuelve un usuario, la sesión es real.
-    const { data } = await client.auth.getUser(token).catch(() => ({ data: { user: null } }))
-    autorizado = !!data?.user
+    // Valida el JWT: tiene que ser personal activo (no basta una cuenta de cliente).
+    autorizado = !!(await personalActivo(client, token))
   }
   if (!autorizado) return response.status(401).json({ ok: false })
 

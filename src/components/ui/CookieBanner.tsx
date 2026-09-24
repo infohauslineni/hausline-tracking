@@ -20,10 +20,8 @@ export function trackingAllowed() { return getCookieConsent() === 'all' }
 
 export function CookieBanner() {
   const [visible, setVisible] = useState(false)
-  // El aviso se muestra en CADA carga de la página (aunque el visitante recargue), no solo
-  // la primera vez. Igual guardamos la última elección en localStorage para poder condicionar
-  // scripts de rastreo con trackingAllowed() dentro de la sesión.
-  useEffect(() => { setVisible(true) }, [])
+  // El aviso sale UNA sola vez por navegador: si ya eligió (Aceptar o Rechazar), no vuelve.
+  useEffect(() => { if (getCookieConsent() === null) setVisible(true) }, [])
 
   const decidir = (consent: Consent) => {
     try { localStorage.setItem(STORAGE_KEY, consent) } catch { /* modo privado: no persiste */ }

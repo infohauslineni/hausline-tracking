@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { personalActivo } from './_auth.js'
 import { subirArchivoDrive } from './_drive.js'
 
 // Archiva el COMPROBANTE de pago de un pedido en su carpeta de Google Drive
@@ -25,8 +26,7 @@ export default async function handler(request, response) {
   const authorization = request.headers?.authorization ?? request.headers?.get?.('authorization') ?? ''
   const token = String(authorization).replace(/^Bearer\s+/i, '').trim()
   if (!token) return response.status(401).json({ ok: false })
-  const { data: userData } = await client.auth.getUser(token).catch(() => ({ data: { user: null } }))
-  if (!userData?.user) return response.status(401).json({ ok: false })
+  if (!(await personalActivo(client, token))) return response.status(401).json({ ok: false })
 
   const body = typeof request.body === 'string' ? JSON.parse(request.body || '{}') : (request.body ?? {})
   const codigo = String(body.codigo ?? '').trim()

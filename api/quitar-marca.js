@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { personalActivo } from './_auth.js'
 
 // Borra la marca del proveedor (p. ej. "WAN YI" escrito con marcador sobre el brazo)
 // de una foto de control de calidad, usando un modelo de inpainting en Replicate (LaMa).
@@ -39,8 +40,7 @@ export default async function handler(request, response) {
   const authorization = request.headers?.authorization ?? request.headers?.get?.('authorization') ?? ''
   const token = String(authorization).replace(/^Bearer\s+/i, '').trim()
   if (!token) return response.status(401).json({ ok: false })
-  const { data: userData } = await client.auth.getUser(token).catch(() => ({ data: { user: null } }))
-  if (!userData?.user) return response.status(401).json({ ok: false })
+  if (!(await personalActivo(client, token))) return response.status(401).json({ ok: false })
 
   // --- 2) leer entradas ----------------------------------------------------
   const body = typeof request.body === 'string' ? JSON.parse(request.body || '{}') : (request.body ?? {})
