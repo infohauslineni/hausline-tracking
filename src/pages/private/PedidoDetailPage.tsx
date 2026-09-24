@@ -233,7 +233,7 @@ export function PedidoDetailPage() {
       metodoPago: pedido.metodo_pago ?? null,
     })
   }
-  const publicUrl = `${import.meta.env.VITE_PUBLIC_APP_URL ?? window.location.origin}/tracking/${pedido.codigo}`
+  const publicUrl = `${import.meta.env.VITE_PUBLIC_APP_URL ?? window.location.origin}/pedido/${pedido.codigo}`
   const qualityMessageReady = pedido.estado === 'control_calidad' && qualityPhotosReady
   const whatsappMessage = mensajeWhatsAppEstado(pedido.estado, { nombre: pedido.clientes?.nombre, codigo: pedido.codigo, url: publicUrl, saldo: Number(pedido.saldo), fotosCalidad: qualityMessageReady, tipoCambio, departamento: pedido.clientes?.departamento, ciudad: pedido.clientes?.ciudad })
   const costoReal = costoRealPedido(pedido)

@@ -33,9 +33,17 @@ const fechaCorta = (iso: string) => new Intl.DateTimeFormat('es-NI', { day: 'num
 
 // Mensaje para EL PROVEEDOR con el código del pedido (HS####), el código de cada producto y
 // la talla. Se manda al confirmar el pago para pedirle la mercadería al proveedor.
+// Talla de calzado (número 35–50, con o sin media) → se manda como "40EUR" al proveedor.
+function tallaProveedor(talla: string | null | undefined): string {
+  const t = (talla || '').trim()
+  if (!t) return 'N/A'
+  const n = Number(t.replace(',', '.'))
+  if (/^\d{2}([.,]5)?$/.test(t) && n >= 35 && n <= 50) return `${t}EUR`
+  return t
+}
 function mensajeProveedor(codigo: string, grupo: Solicitud[]): string {
-  const bloques = grupo.map((s) => `🏷️ PRODUCT CODE: ${s.producto_codigo || s.producto || '—'}\n📏 SIZE: ${s.talla || 'N/A'}`)
-  return `📦 ORDER CODE: ${codigo}\n\n${bloques.join('\n\n')}`
+  const bloques = grupo.map((s) => `🏷️ PRODUCT CODE: ${s.producto_codigo || s.producto || '—'}\n📏 SIZE: ${tallaProveedor(s.talla)}`)
+  return `📦 ORDER CODE: ${codigo}\n${bloques.join('\n\n')}`
 }
 // WhatsApp del proveedor: número guardado (localStorage) o VITE_PROVEEDOR_WHATSAPP; si no hay,
 // abre WhatsApp para elegir el contacto con el mensaje ya escrito.
@@ -422,7 +430,7 @@ function GrupoCard({ grupo, busy, onConfirm, onDiscard, onDiscardAll }: { grupo:
 function ResultadoModal({ codigo, grupo, onClose }: { codigo: string; grupo: Solicitud[]; onClose: () => void }) {
   const c = grupo[0]
   const msgProv = mensajeProveedor(codigo, grupo)
-  const link = `${window.location.origin}/tracking/${codigo}`
+  const link = `${import.meta.env.VITE_PUBLIC_APP_URL ?? window.location.origin}/pedido/${codigo}`
   const msgCliente = `¡Hola ${c.cliente_nombre}! Confirmamos tu pago ✅. Tu pedido ya está en proceso.\n\nCódigo de pedido: ${codigo}\nSeguí tu pedido aquí: ${link}\n\n¡Gracias por comprar en HAUSLINE!`
   const [prov, setProv] = useState(() => { try { return localStorage.getItem('hausline_proveedor_wa') || '' } catch { return '' } })
   const guardar = (v: string) => { setProv(v); try { localStorage.setItem('hausline_proveedor_wa', v) } catch { /* */ } }
