@@ -1,6 +1,7 @@
 import PDFDocument from 'pdfkit'
 import sharp from 'sharp'
 import { absolutizarImagen } from './_correo.js'
+import { nombreCorto } from './_nombre-corto.js'
 
 // Genera la factura/comprobante en PDF desde el servidor (sin navegador), para
 // adjuntarla al correo. Reusa los mismos datos que la tabla del correo.
@@ -120,16 +121,15 @@ export async function facturaPdfBuffer({ codigo, nombre, fecha, factura }) {
     if (img) {
       try { doc.image(img, M, rowTop, { fit: [42, 42] }) } catch { /* imagen inválida: se omite */ }
     }
-    // El nombre puede ocupar varias líneas (pdfkit lo envuelve al ancho dado). Medimos su
-    // alto real para colocar el código y el detalle DEBAJO y no encimados sobre la 2a línea.
-    const nombreTexto = item.producto || 'Producto'
+    // Nombre resumido en UNA sola línea (nombreCorto + "…" si aún no cupiera). Código y
+    // detalle también en una línea cada uno, así nada se encima.
+    const nombreTexto = nombreCorto(item.producto) || 'Producto'
     const nombreAncho = colCant - textX - 24
     doc.fillColor(TEXTO).font('Helvetica-Bold').fontSize(11)
-    const nombreAlto = doc.heightOfString(nombreTexto, { width: nombreAncho })
-    doc.text(nombreTexto, textX, rowTop, { width: nombreAncho })
-    let sub = rowTop + Math.max(15, nombreAlto + 2)
-    if (item.codigo) { doc.fillColor(GRIS).font('Helvetica').fontSize(8.5).text(`Código: ${item.codigo}`, textX, sub, { width: nombreAncho }); sub += 12 }
-    if (item.detalle) { doc.fillColor('#8a8f89').font('Helvetica').fontSize(8.5).text(item.detalle, textX, sub, { width: nombreAncho }); sub += 12 }
+    doc.text(nombreTexto, textX, rowTop, { width: nombreAncho, height: 14, ellipsis: true, lineBreak: false })
+    let sub = rowTop + 15
+    if (item.codigo) { doc.fillColor(GRIS).font('Helvetica').fontSize(8.5).text(`Código: ${item.codigo}`, textX, sub, { width: nombreAncho, height: 11, ellipsis: true, lineBreak: false }); sub += 12 }
+    if (item.detalle) { doc.fillColor('#8a8f89').font('Helvetica').fontSize(8.5).text(item.detalle, textX, sub, { width: nombreAncho, height: 11, ellipsis: true, lineBreak: false }); sub += 12 }
 
     doc.fillColor(TEXTO).font('Helvetica').fontSize(11)
     doc.text(String(Number(item.cantidad) || 1), colCant - 20, rowTop + 2, { width: 40, align: 'center' })

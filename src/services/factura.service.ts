@@ -1,5 +1,6 @@
 import { whatsappUrl } from '../utils/whatsapp'
 import { resolverImagenCatalogo } from '../utils/catalogoImagen'
+import { nombreCorto } from '../utils/nombreCorto'
 
 // Factura / comprobante de compra que se genera al registrar un pedido, para enviarla al
 // cliente junto con su código de seguimiento. Disponible como imagen (WhatsApp) y como PDF.
@@ -150,7 +151,7 @@ async function renderFactura(data: FacturaData, visibles: FacturaLinea[], fotos:
       else { context.fillStyle = '#eef0ea'; context.fill(); context.fillStyle = '#9aa093'; context.font = '600 22px Arial'; context.textAlign = 'center'; context.fillText(`${item.cantidad}×`, 137, top + 46); context.textAlign = 'left' }
       context.restore()
     }
-    context.fillStyle = '#151815'; context.font = '600 30px Arial'; context.fillText(truncar(context, item.producto || 'Producto', anchoNombre), textX, y)
+    context.fillStyle = '#151815'; context.font = '600 30px Arial'; context.fillText(truncar(context, nombreCorto(item.producto) || 'Producto', anchoNombre), textX, y)
     if (sub) { context.fillStyle = '#8a8f89'; context.font = '500 22px Arial'; context.fillText(truncar(context, sub, anchoNombre), textX, y + 32) }
     context.fillStyle = '#343934'; context.font = '600 30px Arial'; context.textAlign = 'center'; context.fillText(`${item.cantidad}`, 860, y)
     context.textAlign = 'right'; context.fillText(`USD ${(item.cantidad * item.precio).toFixed(2)}`, 1140, y); context.textAlign = 'left'
