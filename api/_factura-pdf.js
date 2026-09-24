@@ -47,12 +47,38 @@ async function traerImagen(url) {
   }
 }
 
+// Foto actual del catálogo (tabla productos) para un código. Se usa cuando la foto guardada
+// en el pedido ya no carga (ruta vieja, archivo movido) o el ítem no traía foto.
+async function fotoCatalogo(codigoProducto) {
+  const base = process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const c = String(codigoProducto ?? '').trim().toUpperCase()
+  if (!base || !key || !c) return null
+  try {
+    const res = await fetch(`${base.replace(/\/$/, '')}/rest/v1/productos?select=imagen&codigo=eq.${encodeURIComponent(c)}&limit=1`, { headers: { apikey: key, authorization: `Bearer ${key}` } })
+    if (!res.ok) return null
+    const [p] = await res.json()
+    return p?.imagen || null
+  } catch { return null }
+}
+
+// Foto de un ítem: la guardada en el pedido y, si falla, la del catálogo por código.
+async function fotoItem(it) {
+  const propia = await traerImagen(absolutizarImagen(it.imagen))
+  if (propia) return propia
+  const alterna = await fotoCatalogo(it.codigo)
+  return alterna && alterna !== it.imagen ? traerImagen(absolutizarImagen(alterna)) : null
+}
+
 export async function facturaPdfBuffer({ codigo, nombre, fecha, factura }) {
   const esPago = factura?.variante === 'pago'
   const items = Array.isArray(factura?.items) ? factura.items : []
 
   // Pre-descarga las fotos (pdfkit dibuja de forma síncrona).
-  const imagenes = await Promise.all(items.map((it) => traerImagen(absolutizarImagen(it.imagen))))
+  const imagenes = await Promise.all(items.map(fotoItem))
+  // Si al menos un producto tiene foto, TODAS las filas reservan la columna de la foto
+  // (con un recuadro gris si falta) para que los nombres queden alineados.
+  const hayFotos = imagenes.some(Boolean)
 
   const doc = new PDFDocument({ size: 'A4', margin: 0 })
   const chunks = []
@@ -117,10 +143,12 @@ export async function facturaPdfBuffer({ codigo, nombre, fecha, factura }) {
     if (y > 730) y = nuevaPagina()
     const rowTop = y
     const img = imagenes[i]
-    const textX = img ? M + 52 : M
+    const textX = hayFotos ? M + 52 : M
+    let dibujada = false
     if (img) {
-      try { doc.image(img, M, rowTop, { fit: [42, 42] }) } catch { /* imagen inválida: se omite */ }
+      try { doc.image(img, M, rowTop, { fit: [42, 42], align: 'center', valign: 'center' }); dibujada = true } catch { /* imagen inválida: recuadro */ }
     }
+    if (hayFotos && !dibujada) doc.roundedRect(M, rowTop, 42, 42, 6).fillColor('#eef0ea').fill()
     // Nombre resumido en UNA sola línea (nombreCorto + "…" si aún no cupiera). Código y
     // detalle también en una línea cada uno, así nada se encima.
     const nombreTexto = nombreCorto(item.producto) || 'Producto'

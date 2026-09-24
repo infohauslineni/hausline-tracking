@@ -1,6 +1,7 @@
 import { whatsappUrl } from '../utils/whatsapp'
 import { resolverImagenCatalogo } from '../utils/catalogoImagen'
 import { nombreCorto } from '../utils/nombreCorto'
+import { supabase } from '../lib/supabase'
 
 // Factura / comprobante de compra que se genera al registrar un pedido, para enviarla al
 // cliente junto con su código de seguimiento. Disponible como imagen (WhatsApp) y como PDF.
@@ -45,6 +46,25 @@ function cargarImagen(url: string) {
   })
 }
 
+// Foto actual del catálogo (tabla productos) por código, para cuando la foto guardada en el
+// pedido ya no carga (ruta vieja, archivo movido) o el ítem no traía foto. Espejo de
+// fotoCatalogo en api/_factura-pdf.js.
+async function fotoCatalogo(codigo: string | null | undefined) {
+  const c = String(codigo ?? '').trim().toUpperCase()
+  if (!c || !supabase) return null
+  const { data } = await supabase.from('productos').select('imagen').eq('codigo', c).limit(1).maybeSingle()
+  return (data?.imagen as string | null | undefined) || null
+}
+
+// Foto de un ítem: la guardada en el pedido y, si no carga, la del catálogo por código.
+async function fotoItem(item: FacturaLinea) {
+  const propia = resolverImagenCatalogo(item.imagen)
+  const img = propia ? await cargarImagen(propia) : null
+  if (img) return img
+  const alterna = resolverImagenCatalogo(await fotoCatalogo(item.codigo).catch(() => null))
+  return alterna && alterna !== propia ? cargarImagen(alterna) : null
+}
+
 // Dibuja la imagen recortada tipo "object-fit: cover" dentro del recuadro.
 function dibujarCover(context: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number) {
   const ir = img.width / img.height, r = w / h
@@ -70,7 +90,7 @@ async function facturaPaginas(data: FacturaData, impresion = false): Promise<Pag
   for (let p = 0; p < grupos.length; p++) {
     const items = grupos[p]
     const info: PaginaInfo = { pagina: p + 1, paginas: grupos.length, ultima: p === grupos.length - 1 }
-    const fotos = await Promise.all(items.map((item) => { const url = resolverImagenCatalogo(item.imagen); return url ? cargarImagen(url) : Promise.resolve(null) }))
+    const fotos = await Promise.all(items.map(fotoItem))
     try {
       paginas.push(await renderFactura(data, items, fotos, info, impresion))
     } catch (error) {
