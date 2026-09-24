@@ -14,7 +14,8 @@ const TEXTO = '#151815'
 const LINEA = '#e4e7df'
 
 function usd(valor) {
-  return `USD ${(Number(valor) || 0).toFixed(2)}`
+  const n = Number(valor) || 0
+  return n < 0 ? `-USD ${Math.abs(n).toFixed(2)}` : `USD ${n.toFixed(2)}`
 }
 
 // pdfkit SOLO dibuja JPEG y PNG. El catálogo web trae también webp, avif, heic, etc.,

@@ -36,6 +36,8 @@ export type Solicitud = {
   created_at: string
   updated_at: string
   imagen?: string | null
+  cupon_codigo?: string | null
+  descuento?: number | null
 }
 
 function requireSupabase() { if (!supabase) throw new Error('Supabase no está configurado.'); return supabase }

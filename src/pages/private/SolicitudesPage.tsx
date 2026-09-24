@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowRight, Check, Clock3, Copy, Inbox, Mail, MapPin, MessageCircle, PackagePlus, Paperclip, Trash2, Upload, X, Zap } from 'lucide-react'
+import { AlertCircle, ArrowRight, Check, Clock3, Copy, Inbox, Mail, MapPin, MessageCircle, PackagePlus, Paperclip, Ticket, Trash2, Upload, X, Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Modal } from '../../components/ui/Modal'
@@ -314,6 +314,14 @@ function ComprobanteLightbox({ url, esPdf, onClose }: { url: string; esPdf: bool
   </div>
 }
 
+// Chip con el cupón/promo que usó el cliente en el checkout (los totales ya vienen netos).
+function CuponChip({ grupo }: { grupo: Solicitud[] }) {
+  const desc = grupo.reduce((sum, s) => sum + (Number(s.descuento) || 0), 0)
+  if (desc <= 0.009) return null
+  const codigos = [...new Set(grupo.map((s) => s.cupon_codigo).filter(Boolean))]
+  return <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent"><Ticket size={10} /> {codigos.length ? `Cupón ${codigos.join(', ')}` : 'Promo'} · −{usd(desc)}</span>
+}
+
 function SolicitudCard({ s, busy, onConfirm, onDiscard }: { s: Solicitud; busy: boolean; onConfirm: () => void; onDiscard: () => void }) {
   const { esAdmin } = useAuth()
   const t = tiempoRestante(s.vence_at)
@@ -332,7 +340,7 @@ function SolicitudCard({ s, busy, onConfirm, onDiscard }: { s: Solicitud; busy: 
       <div className="flex items-start gap-3">
         <span className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/[0.04] text-muted">{resolverImagenCatalogo(s.imagen) ? <img src={resolverImagenCatalogo(s.imagen)} alt="" className="size-full object-cover" /> : <PackagePlus size={20} />}</span>
         <div>
-          <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm font-bold">{s.codigo}</span><span className="rounded-full bg-[#8ec5ff]/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#8ec5ff]">Web</span>{rapido && <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300"><Zap size={10} /> Rápido</span>}{s.pago_reportado_at && <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-300">💰 Reportó pago</span>}</div>
+          <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm font-bold">{s.codigo}</span><span className="rounded-full bg-[#8ec5ff]/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#8ec5ff]">Web</span>{rapido && <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300"><Zap size={10} /> Rápido</span>}{s.pago_reportado_at && <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-300">💰 Reportó pago</span>}<CuponChip grupo={[s]} /></div>
           <p className="mt-1 text-sm font-semibold">{s.cliente_nombre}</p>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted"><span className="inline-flex items-center gap-1"><MessageCircle size={11} /> {s.cliente_whatsapp}</span>{s.cliente_correo && <span className="inline-flex items-center gap-1"><Mail size={11} /> {s.cliente_correo}</span>}{s.cliente_ciudad && <span className="inline-flex items-center gap-1"><MapPin size={11} /> {s.cliente_ciudad}</span>}</p>
           <p className="mt-1 inline-flex items-center gap-1 text-[10px] text-muted"><Clock3 size={10} /> Recibido {fechaCorta(s.created_at)}</p>
@@ -390,7 +398,7 @@ function GrupoCard({ grupo, busy, onConfirm, onDiscard, onDiscardAll }: { grupo:
       <div className="flex items-start gap-3">
         <span className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/[0.04] text-muted">{resolverImagenCatalogo(c.imagen) ? <img src={resolverImagenCatalogo(c.imagen)} alt="" className="size-full object-cover" /> : <PackagePlus size={20} />}</span>
         <div>
-          <div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent">{grupo.length} productos</span><span className="rounded-full bg-[#8ec5ff]/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#8ec5ff]">Web</span>{rapido && <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300"><Zap size={10} /> Rápido</span>}{grupo.some((s) => s.pago_reportado_at) && <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-300">💰 Reportó pago</span>}</div>
+          <div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent">{grupo.length} productos</span><span className="rounded-full bg-[#8ec5ff]/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#8ec5ff]">Web</span>{rapido && <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300"><Zap size={10} /> Rápido</span>}{grupo.some((s) => s.pago_reportado_at) && <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-300">💰 Reportó pago</span>}<CuponChip grupo={grupo} /></div>
           <p className="mt-1 text-sm font-semibold">{c.cliente_nombre}</p>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted"><span className="inline-flex items-center gap-1"><MessageCircle size={11} /> {c.cliente_whatsapp}</span>{c.cliente_correo && <span className="inline-flex items-center gap-1"><Mail size={11} /> {c.cliente_correo}</span>}{c.cliente_ciudad && <span className="inline-flex items-center gap-1"><MapPin size={11} /> {c.cliente_ciudad}</span>}</p>
         </div>

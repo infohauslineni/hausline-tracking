@@ -85,7 +85,8 @@ function montoUSD(valor) {
 // Versión corta ("$165.00") para las columnas de las líneas de la factura, donde el
 // ancho importa en el teléfono. En los totales se sigue usando "USD …" (tienen espacio).
 function montoUSDcorto(valor) {
-  return `$${(Number(valor) || 0).toFixed(2)}`
+  const n = Number(valor) || 0
+  return n < 0 ? `−$${Math.abs(n).toFixed(2)}` : `$${n.toFixed(2)}`
 }
 
 // Tabla de factura dentro del correo (estilo recibo). Se muestra solo cuando llegan
@@ -105,7 +106,9 @@ export function bloqueFactura(factura) {
     // Miniatura de la foto del producto (si el pedido la guardó). Tamaño fijo para
     // que se vea igual en todos los clientes de correo.
     const fotoUrl = absolutizarImagen(item.imagen)
-    const foto = fotoUrl
+    const foto = item.esDescuento
+      ? `<div style="width:46px;height:46px;border-radius:8px;border:1px solid #d9f99d;background-color:#f7fee7;text-align:center;line-height:46px;font-size:20px;">🎟️</div>`
+      : fotoUrl
       ? `<img src="${esc(fotoUrl)}" width="46" height="46" alt="" style="display:block;width:46px;height:46px;border-radius:8px;object-fit:cover;border:1px solid #eef0f2;background-color:#f6f7f9;">`
       : `<div style="width:46px;height:46px;border-radius:8px;border:1px solid #eef0f2;background-color:#f6f7f9;"></div>`
     return `<tr>
@@ -523,6 +526,7 @@ export function plantillaEncargoAdmin({ s, panelUrl }) {
           </tr></table>
 
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #eef0f2;margin-top:8px;padding-top:8px;">
+            ${fila(s.cupon_codigo ? 'Cupón' : 'Descuento', (Number(s.descuento) || 0) > 0 ? `<span style="color:#3f6212;">🎟️ ${s.cupon_codigo ? `${esc(s.cupon_codigo)} · ` : 'Promoción · '}−${montoUSD(s.descuento)}</span>` : '')}
             ${fila('Total', `${montoUSD(s.total)}${totalNio ? ` &nbsp;·&nbsp; <span style="color:#6b7280;font-weight:600;">${totalNio}</span>` : ''}`)}
             ${fila('Pago', `${pago}${(Number(s.abono) || 0) > 0 ? ` — abona ${montoUSD(s.abono)}` : ''}`)}
             ${fila('Envío', envio)}
@@ -581,6 +585,12 @@ export function plantillaEncargoAdminGrupo({ solicitudes, panelUrl }) {
   const totalUsd = solicitudes.reduce((sum, s) => sum + (Number(s.total) || 0), 0)
   const abonoUsd = solicitudes.reduce((sum, s) => sum + (Number(s.abono) || 0), 0)
   const rapido = solicitudes.some((s) => s.envio === 'rapido')
+  // Cupón/promo aplicado: los totales ya vienen NETOS; mostramos el código y cuánto rebajó.
+  const descUsd = solicitudes.reduce((sum, s) => sum + (Number(s.descuento) || 0), 0)
+  const cupones = [...new Set(solicitudes.map((s) => s.cupon_codigo).filter(Boolean))]
+  const cuponFila = descUsd > 0.009
+    ? `<tr><td style="padding:10px 0 0;font-size:13px;color:#3f6212;font-weight:700;">🎟️ ${cupones.length ? `Cupón ${cupones.map(esc).join(', ')}` : 'Promoción'}</td><td style="padding:10px 0 0;text-align:right;font-size:13px;color:#3f6212;font-weight:700;">−${montoUSD(descUsd)}</td></tr>`
+    : ''
 
   const filaProd = (s) => {
     const detalle = [s.marca && esc(s.marca), s.talla && `Talla ${esc(s.talla)}`, s.color && esc(s.color)].filter(Boolean).join(' · ')
@@ -619,6 +629,7 @@ export function plantillaEncargoAdminGrupo({ solicitudes, panelUrl }) {
             ${solicitudes.map(filaProd).join('')}
           </table>
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:2px solid #0b0f19;margin-top:4px;">
+            ${cuponFila}
             <tr><td style="padding:10px 0 0;font-size:14px;color:#0b0f19;font-weight:700;">Total del pedido</td><td style="padding:10px 0 0;text-align:right;font-size:16px;color:#0b0f19;font-weight:800;">${montoUSD(totalUsd)}</td></tr>
             ${abonoUsd > 0 ? `<tr><td style="padding:2px 0;font-size:12px;color:#6b7280;">Abono para confirmar</td><td style="padding:2px 0;text-align:right;font-size:13px;color:#6b7280;font-weight:700;">${montoUSD(abonoUsd)}</td></tr>` : ''}
           </table>

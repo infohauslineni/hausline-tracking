@@ -135,7 +135,7 @@ async function obtenerFactura(codigo, esNuevo) {
 
   const url = `${base.replace(/\/$/, '')}/rest/v1/pedidos`
     + `?codigo=eq.${encodeURIComponent(codigo)}`
-    + `&select=abono,fecha_pedido,pedido_items(producto,codigo_producto,imagen,talla,color,cantidad,precio_unitario,subtotal)`
+    + `&select=abono,fecha_pedido,descuento,cupon_codigo,pedido_items(producto,codigo_producto,imagen,talla,color,cantidad,precio_unitario,subtotal)`
     + `&limit=1`
 
   const intentos = esNuevo ? 6 : 1
@@ -169,7 +169,18 @@ async function obtenerFactura(codigo, esNuevo) {
   // Completa la foto de los ítems que no la traen, buscándola en el catálogo por código/nombre.
   await rellenarFotosCatalogo(items)
 
-  const total = items.reduce((sum, it) => sum + it.subtotal, 0)
+  // Cupón/descuento del pedido: va como línea negativa para que la factura muestre qué
+  // cupón usó y el total cuadre con el total real (neto) del pedido.
+  const descuento = Math.round((Number(pedido.descuento) || 0) * 100) / 100
+  if (descuento > 0) {
+    items.push({
+      producto: pedido.cupon_codigo ? `Cupón ${pedido.cupon_codigo}` : 'Descuento',
+      codigo: '', imagen: '', detalle: '', cantidad: 1,
+      precioUnitario: -descuento, subtotal: -descuento, esDescuento: true,
+    })
+  }
+
+  const total = Math.max(0, items.reduce((sum, it) => sum + it.subtotal, 0))
   // Al entregar (comprobante) se da por pagado el total; al crear se usa el abono real.
   const abono = esNuevo ? (Number(pedido.abono) || 0) : total
   return {
