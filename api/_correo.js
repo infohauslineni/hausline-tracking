@@ -28,14 +28,14 @@ export const ESTADO_LABEL = {
 }
 
 export const ESTADO_NOTA = {
-  pedido_confirmado: 'Gracias por tu compra. Confirmamos tu pedido y ya comenzamos a prepararlo. Te avisaremos en cada etapa.',
+  pedido_confirmado: 'Gracias por tu compra. Confirmamos tu pedido y ya comenzamos a prepararlo. Te avisaremos en cada etapa. El tiempo de entrega incluye unos días de preparación (aprox. 4-5 en envío estándar y 3-4 en rápido; algunos productos tardan más) y el resto es tránsito, que empieza a contar cuando tu pedido sale en camino. Las fechas son aproximadas, no exactas: muchas veces las paqueterías retrasan los envíos.',
   en_preparacion: 'Estamos preparando y revisando tu pedido antes de enviarlo.',
-  control_calidad: 'Tu pedido está pasando por control de calidad antes de despacharlo.',
-  etiqueta_creada: 'Tu pedido va en tránsito rumbo a Nicaragua.',
-  despachado: 'Tu pedido va en tránsito rumbo a Nicaragua.',
-  transito_internacional: 'Tu pedido va en tránsito rumbo a Nicaragua.',
-  recibido_estados_unidos: 'Tu pedido va en tránsito rumbo a Nicaragua.',
-  transito_nicaragua: 'Tu pedido va en tránsito rumbo a Nicaragua.',
+  control_calidad: 'Tu pedido está pasando por control de calidad antes de despacharlo. Revisá bien las fotos: tenés 24 horas para avisarnos si el producto no coincide con lo que pediste o no cumple tus expectativas. Pasado ese plazo, el pedido sigue su camino.',
+  etiqueta_creada: 'Tu pedido va en tránsito rumbo a Nicaragua. Desde ahora empieza a contar el tiempo de tránsito; la fecha de entrega es aproximada y a veces las paqueterías retrasan los envíos.',
+  despachado: 'Tu pedido va en tránsito rumbo a Nicaragua. Desde ahora empieza a contar el tiempo de tránsito; la fecha de entrega es aproximada y a veces las paqueterías retrasan los envíos.',
+  transito_internacional: 'Tu pedido va en tránsito rumbo a Nicaragua. Desde ahora empieza a contar el tiempo de tránsito; la fecha de entrega es aproximada y a veces las paqueterías retrasan los envíos.',
+  recibido_estados_unidos: 'Tu pedido va en tránsito rumbo a Nicaragua. Desde ahora empieza a contar el tiempo de tránsito; la fecha de entrega es aproximada y a veces las paqueterías retrasan los envíos.',
+  transito_nicaragua: 'Tu pedido va en tránsito rumbo a Nicaragua. Desde ahora empieza a contar el tiempo de tránsito; la fecha de entrega es aproximada y a veces las paqueterías retrasan los envíos.',
   llego_nicaragua: 'Tu pedido llegó a Nicaragua. Pronto estará disponible para entrega.',
   disponible_entrega: 'Tu pedido ya está disponible para entrega. Escríbenos para coordinar el envío o retiro.',
   pagado: '¡Recibimos tu pago! Tu pedido ya quedó apartado y está a la espera de ser entregado. Muy pronto coordinamos la entrega contigo. ¡Muchas gracias por tu compra!',
@@ -479,7 +479,7 @@ export function plantillaEncargoAdmin({ s, panelUrl }) {
     s.color && `Color: ${esc(s.color)}`,
     s.producto_codigo && `Código: ${esc(s.producto_codigo)}`,
   ].filter(Boolean).join(' · ')
-  const envio = s.envio === 'rapido' ? 'Envío rápido (14-17 días)' : 'Envío estándar (20-25 días)'
+  const envio = s.envio === 'rapido' ? 'Envío rápido (15-20 días)' : 'Envío estándar (20-25 días)'
   const pago = s.pago_tipo === '50' ? 'Abono 50%' : 'Pago total'
   const totalNio = montoNIO(s.total_nio)
 
@@ -967,5 +967,100 @@ export async function enviarCorreoBienvenida({ correo, nombre }) {
     to: correo,
     subject: 'Bienvenido a HAUSLINE',
     html,
+  })
+}
+
+// ─────────────── Solicitudes de cancelación / reembolso (Mi cuenta de la tienda) ───────────────
+function transporteSmtp() {
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST ?? 'smtp.gmail.com', port: Number(process.env.SMTP_PORT ?? 465), secure: true,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  })
+}
+
+// Al ADMIN: un cliente pidió cancelar su pedido. Hay que revisarla en el panel (Reembolsos).
+export async function enviarCorreoReembolsoAdmin({ to, s }) {
+  const appUrl = (process.env.APP_URL ?? process.env.VITE_PUBLIC_APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
+  const fila = (k, v) => v ? `<tr><td style="padding:6px 0;font-size:13px;color:#6b7280;width:150px;vertical-align:top">${k}</td><td style="padding:6px 0;font-size:14px;color:#0b0f19;font-weight:600">${v}</td></tr>` : ''
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;background:#ececed;font-family:Arial,Helvetica,sans-serif">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ececed"><tr><td align="center" style="padding:28px 14px">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#fff;border-radius:14px;overflow:hidden">
+      <tr><td style="background:#050505;padding:22px 24px;color:#fff;font-size:18px;font-weight:700;letter-spacing:3px;text-align:center">HAUSLINE</td></tr>
+      <tr><td style="padding:26px 24px">
+        <p style="margin:0 0 6px;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#b45309;font-weight:700">Solicitud de cancelación · revisar</p>
+        <h1 style="margin:0 0 14px;font-size:20px;color:#0b0f19">${esc(s.nombre_cliente || 'Un cliente')} pidió cancelar el pedido ${esc(s.codigo)}</h1>
+        <p style="margin:0 0 16px;font-size:14px;color:#374151;line-height:1.5">No se canceló nada todavía: el reembolso solo se hace si confirmás que el motivo es real.</p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          ${fila('Etapa del pedido', esc(s.estado_pedido))}
+          ${fila('Motivo', esc(s.motivo_label))}
+          ${fila('Explicación', esc(s.detalle))}
+          ${fila('Pagado', montoUSD(s.monto_pagado))}
+          ${fila('Cuenta', `${esc(s.banco)} · ${esc(s.numero_cuenta)}`)}
+          ${fila('Titular', esc(s.titular))}
+          ${fila('WhatsApp', esc(s.whatsapp_cliente))}
+        </table>
+        <a href="${appUrl}/reembolsos" style="display:block;margin-top:22px;background:#050505;color:#fff;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:2px;text-transform:uppercase;text-align:center;padding:15px;border-radius:6px">Revisar solicitud</a>
+      </td></tr>
+    </table>
+  </td></tr></table>
+</body></html>`
+  await transporteSmtp().sendMail({
+    from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
+    to,
+    subject: `⚠️ Solicitud de cancelación · ${s.codigo} · ${s.nombre_cliente || 'cliente'} — revisar`,
+    html,
+  })
+}
+
+// Al CLIENTE: su solicitud NO se aprobó. Puede seguir con el pedido o cancelarlo sin reembolso.
+export async function enviarCorreoReembolsoRechazado({ correo, nombre, codigo, estado, respuesta, montoPagado }) {
+  const url = `https://hauslineshopni.es/cuenta/pedido/?id=${encodeURIComponent(codigo)}`
+  let nota = `Revisamos tu solicitud de cancelación del pedido <strong>${esc(codigo)}</strong> y <strong>no pudimos aprobar el reembolso</strong>.`
+  if (respuesta) nota += ` ${esc(respuesta)}`
+  nota += ` Ahora podés elegir: <strong>seguir con tu pedido</strong> (sigue su curso normal) o <strong>cancelarlo sin reembolso</strong>${Number(montoPagado) > 0 ? `, perdiendo lo pagado (${montoUSD(montoPagado)})` : ''}. Elegí desde Mi cuenta.`
+  await transporteSmtp().sendMail({
+    from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
+    to: correo,
+    subject: `Pedido ${codigo}: tu solicitud de cancelación no fue aprobada`,
+    html: plantillaCorreo({
+      nombre, codigo, estado, estadoLabel: ESTADO_LABEL[estado] || 'Tu pedido', nota,
+      urlSeguimiento: url, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Elegir qué hacer', ctaUrl: url, pedirResena: false,
+    }),
+  })
+}
+
+// Al CLIENTE: recibimos tu solicitud de cancelación; queda EN REVISIÓN (nada se canceló aún).
+export async function enviarCorreoReembolsoRecibido({ correo, nombre, codigo, estado, s }) {
+  const url = `https://hauslineshopni.es/cuenta/pedido/?id=${encodeURIComponent(codigo)}`
+  const nota = `Recibimos tu <strong>solicitud de cancelación y reembolso</strong> del pedido <strong>${esc(codigo)}</strong>. Está <strong>en revisión</strong>: la vamos a revisar y te avisamos por correo si se aprueba o no.`
+    + `<br><br><strong>Motivo:</strong> ${esc(s.motivo_label)}<br><strong>Reembolso a:</strong> ${esc(s.banco)} · ****${esc(String(s.numero_cuenta || '').slice(-4))} (${esc(s.titular)})`
+    + `<br><br>El reembolso solo se aprueba si el motivo es real y se puede verificar. Mientras tanto, tu pedido sigue su curso normal.`
+  await transporteSmtp().sendMail({
+    from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
+    to: correo,
+    subject: `Pedido ${codigo}: recibimos tu solicitud de reembolso (en revisión)`,
+    html: plantillaCorreo({
+      nombre, codigo, estado, estadoLabel: 'Solicitud en revisión', nota,
+      urlSeguimiento: url, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Ver mi solicitud', ctaUrl: url, pedirResena: false,
+    }),
+  })
+}
+
+// Al CLIENTE: su solicitud se APROBÓ → pedido cancelado y reembolso a la cuenta que indicó.
+export async function enviarCorreoReembolsoAprobado({ correo, nombre, codigo, monto, banco, numeroCuenta, titular, respuesta }) {
+  const url = `https://hauslineshopni.es/cuenta/pedido/?id=${encodeURIComponent(codigo)}`
+  let nota = `Revisamos tu solicitud y la <strong>aprobamos</strong>: tu pedido <strong>${esc(codigo)}</strong> quedó cancelado.`
+  if (Number(monto) > 0) nota += ` Te reembolsamos <strong>${montoUSD(monto)}</strong> a tu cuenta ${esc(banco)} · ****${esc(String(numeroCuenta || '').slice(-4))} a nombre de ${esc(titular)}. El reembolso se procesa en un plazo de 1 a 3 días hábiles.`
+  if (respuesta) nota += ` ${esc(respuesta)}`
+  nota += ' Gracias por tu comprensión.'
+  await transporteSmtp().sendMail({
+    from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
+    to: correo,
+    subject: `Pedido ${codigo}: tu solicitud de reembolso fue aprobada`,
+    html: plantillaCorreo({
+      nombre, codigo, estado: 'cancelado', estadoLabel: 'Reembolso aprobado', nota,
+      urlSeguimiento: url, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Ver mi pedido', ctaUrl: url, pedirResena: false,
+    }),
   })
 }

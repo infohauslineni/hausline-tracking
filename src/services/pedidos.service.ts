@@ -35,7 +35,7 @@ function requireSupabase() {
   return supabase
 }
 
-// Envío rápido (14–17 días): recargo único de US$ 15 por pedido. Se cobra como una
+// Envío rápido (15–20 días): recargo único de US$ 15 por pedido. Se cobra como una
 // línea real del pedido para que el total, el saldo, la factura, las ventas y la
 // contabilidad cuadren solos (el total del pedido = suma de los subtotales de sus
 // líneas). Precio de compra 0 → es margen puro (ingreso por el servicio de envío).
@@ -63,7 +63,7 @@ function conLineaEnvioRapido(items: PedidoItem[], envioRapido?: boolean): Pedido
   const base = items.filter((item) => !esLineaEnvioRapido(item))
   if (!envioRapido) return base
   return [...base, {
-    producto: 'Envío rápido (14–17 días)',
+    producto: 'Envío rápido (15–20 días)',
     categoria: 'Servicio',
     cantidad: 1,
     precio_unitario: ENVIO_RAPIDO_RECARGO,
@@ -390,7 +390,7 @@ export async function obtenerDisponibleDesde(pedidoId: string): Promise<string |
 }
 
 // Etiqueta de la línea de envío/delivery en el pedido (única, para poder actualizarla
-// sin duplicar). No colisiona con "Envío rápido (14–17 días)" que es otra cosa.
+// sin duplicar). No colisiona con "Envío rápido (15–20 días)" que es otra cosa.
 const ENVIO_LOCAL_LABEL = 'Envío / delivery'
 
 // Agrega (o actualiza) el costo de envío/delivery del pedido como una línea real, para

@@ -1,4 +1,4 @@
-import { ArrowUpRight, BarChart3, Bell, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, MoreHorizontal, PackagePlus, PackageSearch, Plus, ReceiptText, Settings, ShoppingBag, Star, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
+import { ArrowUpRight, BarChart3, Bell, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, MoreHorizontal, PackagePlus, PackageSearch, Plus, ReceiptText, RotateCcw, Settings, ShoppingBag, Star, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -21,9 +21,16 @@ async function calcularEstado(): Promise<{ badges: Badges; alertas: Alerta[] }> 
     const { listarSolicitudes } = await import('../../services/solicitudes.service')
     solicitudes = (await listarSolicitudes()).filter((s) => s.estado === 'pendiente').length
   } catch { /* la tabla solicitudes puede no estar creada todavía */ }
+  // Solicitudes de cancelación/reembolso por revisar (solo admin; sin la migración, 0).
+  let reembolsos = 0
+  try {
+    const { contarReembolsosPorAtender } = await import('../../services/reembolsos.service')
+    reembolsos = await contarReembolsosPorAtender()
+  } catch { /* sin permiso (operador) o sin migración 202609250002 */ }
   const badges: Badges = {
     '/pedidos': pedidos.filter((p) => p.estado === 'disponible_entrega').length,
     '/solicitudes': solicitudes,
+    '/reembolsos': reembolsos,
     '/pagos': pedidos.filter((p) => (p.estado === 'disponible_entrega' || p.estado === 'entregado') && Number(p.saldo) > 0.01).length,
     '/logistica': pedidos.filter((p) => p.estado === 'incidencia').length,
   }
@@ -50,6 +57,7 @@ const clientesProductos: NavItem[] = [
 // Por eso "Gastos" ya no es una entrada aparte (se registran desde Mi cuenta).
 const finanzas: NavItem[] = [
   { to: '/pagos', label: 'Pagos', icon: CreditCard },
+  { to: '/reembolsos', label: 'Reembolsos', icon: RotateCcw, nuevo: true },
   { to: '/cuenta', label: 'Mi cuenta', icon: Wallet },
   { to: '/reportes', label: 'Reportes', icon: BarChart3, nuevo: true },
 ]
@@ -96,6 +104,8 @@ export function PrivateLayout() {
     .map((group) => ({ ...group, items: esAdmin ? group.items : group.items.filter((item) => RUTAS_OPERADOR.has(item.to)) }))
     .filter((group) => group.items.length > 0)
   useEffect(() => { warmDashboard() }, [])
+  // Cuentas "Visible a clientes" para los mensajes de WhatsApp (si no, quedan las de respaldo).
+  useEffect(() => { if (isSupabaseConfigured) void import('../../services/cuentas.service').then((m) => m.cargarCuentasPagoClientes()).catch(() => undefined) }, [])
   // Prepara el sonido de encargo SOLO en el panel admin (no en el sitio público de seguimiento).
   useEffect(() => { primeEncargoAudio() }, [])
   // Refresca los contadores y las alertas al cambiar de página (datos del caché de pedidos).
@@ -124,6 +134,20 @@ export function PrivateLayout() {
     }).subscribe()
     return () => { if (timer) clearTimeout(timer); void client.removeChannel(channel) }
   }, [])
+
+  // Aviso en vivo cuando un cliente pide cancelar su pedido desde Mi cuenta (solo lo recibe
+  // el admin: la tabla solo es visible para admin por RLS).
+  useEffect(() => {
+    const client = supabase
+    if (!isSupabaseConfigured || !client || !esAdmin) return
+    const channel = client.channel('reembolsos-alerta').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'solicitudes_reembolso' }, (payload) => {
+      const codigo = (payload.new as { codigo?: string })?.codigo ?? ''
+      playEncargoChime()
+      toast.warning(`⚠️ Solicitud de cancelación${codigo ? ` del pedido ${codigo}` : ''} — revisala en "Reembolsos".`)
+      void calcularEstado().then((next) => { setBadges(next.badges); setAlertas(next.alertas) }).catch(() => undefined)
+    }).subscribe()
+    return () => { void client.removeChannel(channel) }
+  }, [esAdmin])
 
   const handleSignOut = async () => {
     try { await signOut() } catch { toast.error('No se pudo cerrar la sesión.') }

@@ -27,9 +27,10 @@ export function TerminosPage() {
     <LegalSection title="3. Tiempos de entrega">
       <ul className="list-disc space-y-1 pl-5">
         <li><strong className="text-white">Envío estándar:</strong> 20 a 25 días, sin costo adicional.</li>
-        <li><strong className="text-white">Envío rápido:</strong> 14 a 17 días, con un costo adicional de $15 por producto.</li>
+        <li><strong className="text-white">Envío rápido:</strong> 15 a 20 días, con un costo adicional de $15 por producto.</li>
         <li><strong className="text-white">Entrega inmediata:</strong> los productos disponibles en stock se entregan sin espera.</li>
-        <li>Los tiempos son estimados y pueden variar por la logística internacional, aduanas o fechas festivas.</li>
+        <li>Los días incluyen la preparación del pedido (aprox. 4 a 5 días en estándar y 3 a 4 en rápido; algunos productos tardan más). El resto es tiempo de tránsito, que empieza a contar cuando el pedido sale en camino.</li>
+        <li>Las fechas de entrega son aproximadas, no exactas: pueden variar por la logística internacional, aduanas o fechas festivas, y muchas veces las paqueterías retrasan los envíos.</li>
       </ul>
       <p>
         Podés seguir tu pedido en todo momento en nuestra <a className="text-accent" href="/tracking">página de rastreo</a> con el código HS que te entregamos al confirmar la compra.

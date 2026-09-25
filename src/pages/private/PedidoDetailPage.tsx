@@ -40,7 +40,7 @@ function facturaItemsDePedido(pedido: Pedido): FacturaData['items'] {
   const descuento = Math.round(Number(pedido.descuento || 0) * 100) / 100
   const diferencia = Math.round((Number(pedido.total || 0) + descuento - suma) * 100) / 100
   const yaTieneEnvio = items.some((item) => /env[íi]o r[áa]pido/i.test(item.producto))
-  if (diferencia > 0.01 && !yaTieneEnvio) items.push({ producto: 'Envío rápido (14–17 días)', detalle: undefined, cantidad: 1, precio: diferencia, codigo: undefined, imagen: null })
+  if (diferencia > 0.01 && !yaTieneEnvio) items.push({ producto: 'Envío rápido (15–20 días)', detalle: undefined, cantidad: 1, precio: diferencia, codigo: undefined, imagen: null })
   if (descuento > 0) items.push({ producto: pedido.cupon_codigo ? `Cupón ${pedido.cupon_codigo}` : 'Descuento', detalle: undefined, cantidad: 1, precio: -descuento, codigo: undefined, imagen: null })
   return items
 }

@@ -25,6 +25,7 @@ const InventarioPage = lazy(() => import('./pages/private/InventarioPage').then(
 const MetasPage = lazy(() => import('./pages/private/MetasPage').then((module) => ({ default: module.MetasPage })))
 const ContenidoPage = lazy(() => import('./pages/private/ContenidoPage').then((module) => ({ default: module.ContenidoPage })))
 const ResenasPage = lazy(() => import('./pages/private/ResenasPage').then((module) => ({ default: module.ResenasPage })))
+const ReembolsosPage = lazy(() => import('./pages/private/ReembolsosPage').then((module) => ({ default: module.ReembolsosPage })))
 const CuponesPage = lazy(() => import('./pages/private/CuponesPage').then((module) => ({ default: module.CuponesPage })))
 const PromocionesPage = lazy(() => import('./pages/private/PromocionesPage').then((module) => ({ default: module.PromocionesPage })))
 const TrackingPage = lazy(() => import('./pages/public/TrackingPage').then((module) => ({ default: module.TrackingPage })))
@@ -71,6 +72,7 @@ export function App() {
           <Route path="/clientes/:id" element={<ClienteDetailPage />} />
           <Route path="/resenas" element={<ResenasPage />} />
           <Route path="/cupones" element={<CuponesPage />} />
+          <Route path="/reembolsos" element={<ReembolsosPage />} />
           <Route path="/promociones" element={<PromocionesPage />} />
           <Route path="/configuracion" element={<ConfiguracionPage />} />
         </Route>

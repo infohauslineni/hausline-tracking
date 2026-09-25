@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase'
 import type { CuentaBancaria } from '../types/domain'
 import { cachedQuery, invalidateCache } from '../utils/queryCache'
+import { fijarCuentasPago } from '../constants/pagos'
 
 function client() { if (!supabase) throw new Error('Supabase no está configurado.'); return supabase }
 
@@ -95,4 +96,24 @@ export async function transferirEntreCuentas(origenId: string, destinoId: string
   if (error) throw error
   invalidateCache('cuentas')
   invalidateCache('recibido-mes')
+}
+
+// Enciende/apaga "Visible a clientes": las cuentas encendidas son las que salen en el
+// checkout de la tienda, en la pantalla de pago del encargo y en los mensajes de WhatsApp.
+export async function mostrarCuentaAClientes(id: string, mostrar: boolean) {
+  const { error } = await client().from('cuentas_bancarias').update({ mostrar_clientes: mostrar }).eq('id', id)
+  if (error) throw error
+  invalidateCache('cuentas')
+  await cargarCuentasPagoClientes()
+}
+
+// Trae las cuentas "Visible a clientes" (misma función pública que usa la tienda) y las deja
+// listas para los mensajes de WhatsApp del panel. Si falla o no hay ninguna, queda el respaldo.
+export async function cargarCuentasPagoClientes() {
+  try {
+    const { data, error } = await client().rpc('cuentas_pago_publicas')
+    const res = data as { configurado?: boolean; cuentas?: Array<{ banco: string; moneda: string; numero: string; titular: string }> } | null
+    if (error || !res?.configurado || !Array.isArray(res.cuentas)) { fijarCuentasPago(null); return }
+    fijarCuentasPago(res.cuentas.map((c) => ({ banco: `${c.banco} (${c.moneda === 'Dólares' ? 'USD' : 'Córdobas'})`, numero: c.numero, titular: c.titular })))
+  } catch { fijarCuentasPago(null) }
 }

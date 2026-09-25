@@ -1,8 +1,8 @@
-import { ArrowLeftRight, Pencil, Plus, Trash2, Wallet } from 'lucide-react'
+import { ArrowLeftRight, Eye, EyeOff, Pencil, Plus, Trash2, Wallet } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { Modal } from '../ui/Modal'
-import { eliminarCuenta, guardarCuenta, listarCuentas, recibidoPorCuentaMes, transferirEntreCuentas, type CuentaInput } from '../../services/cuentas.service'
+import { cargarCuentasPagoClientes, eliminarCuenta, guardarCuenta, listarCuentas, mostrarCuentaAClientes, recibidoPorCuentaMes, transferirEntreCuentas, type CuentaInput } from '../../services/cuentas.service'
 import { obtenerTipoCambio } from '../../services/comercial.service'
 import type { CuentaBancaria, Moneda } from '../../types/domain'
 import { MONEDA_SIMBOLO } from '../../utils/money'
@@ -42,6 +42,21 @@ export function CuentasBancarias({ refreshKey = 0 }: { refreshKey?: number }) {
   useEffect(() => { void load() }, [refreshKey])
   useEffect(() => { void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined) }, [])
 
+  // "Visible a clientes": cambia en UN toque las cuentas que ven los clientes en toda la
+  // tienda (checkout, pago del encargo) y en los mensajes de WhatsApp del panel.
+  const [cambiando, setCambiando] = useState<string | null>(null)
+  const alternarVisible = async (cuenta: CuentaBancaria) => {
+    const mostrar = !cuenta.mostrar_clientes
+    if (mostrar && !(cuenta.numero ?? '').trim()) { toast.error('Poné el número de cuenta (Editar) antes de mostrarla a los clientes.'); return }
+    setCambiando(cuenta.id)
+    try {
+      await mostrarCuentaAClientes(cuenta.id, mostrar)
+      setCuentas((lista) => lista.map((c) => c.id === cuenta.id ? { ...c, mostrar_clientes: mostrar } : c))
+      toast.success(mostrar ? `${cuenta.nombre} ahora se muestra a los clientes.` : `${cuenta.nombre} ya no se muestra a los clientes.`)
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'No se pudo cambiar.') } finally { setCambiando(null) }
+  }
+  const visibles = cuentas.filter((c) => c.mostrar_clientes)
+
   const total = { USD: 0, NIO: 0 }
   for (const cuenta of cuentas) total[cuenta.moneda] += Number(cuenta.saldo || 0)
 
@@ -53,6 +68,12 @@ export function CuentasBancarias({ refreshKey = 0 }: { refreshKey?: number }) {
         <button className="subtle-button px-3 py-1.5 text-xs" onClick={() => setCreating(true)}><Plus size={14} /> Agregar cuenta</button>
       </div>
     </div>
+
+    {cuentas.length > 0 && <p className="mt-2 text-[11px] leading-4 text-muted">
+      <Eye size={12} className="mr-1 inline" />Cuentas que ven los clientes (checkout, pago del encargo y WhatsApp): {visibles.length
+        ? <strong className="text-white">{visibles.map((c) => c.nombre).join(', ')}</strong>
+        : <span>ninguna marcada — se usa la lista fija de respaldo.</span>} Tocá <b>Visible a clientes</b> en una tarjeta para cambiarlas.
+    </p>}
 
     <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {cuentas.map((cuenta) => (
@@ -80,7 +101,12 @@ export function CuentasBancarias({ refreshKey = 0 }: { refreshKey?: number }) {
               {cerca && <span className="mt-1 block text-[10px] font-semibold text-amber-200">⚠ Cerca del tope mensual de recepción</span>}
             </div>
           })()}
-          {cuenta.numero && <span className="mt-1 block font-mono text-[11px] text-white/70">{cuenta.numero}</span>}
+          {cuenta.numero && <span className="mt-1 block font-mono text-[11px] text-white/70">{cuenta.numero}{cuenta.titular ? ` · ${cuenta.titular}` : ''}</span>}
+          <button type="button" disabled={cambiando === cuenta.id} onClick={() => void alternarVisible(cuenta)}
+            className={`mt-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-60 ${cuenta.mostrar_clientes ? 'bg-white text-black' : 'bg-black/25 text-white/85 hover:bg-black/35'}`}
+            aria-pressed={!!cuenta.mostrar_clientes} title="Mostrar u ocultar esta cuenta en la tienda y en los mensajes al cliente">
+            {cuenta.mostrar_clientes ? <Eye size={13} /> : <EyeOff size={13} />}{cuenta.mostrar_clientes ? 'Visible a clientes' : 'Oculta a clientes'}
+          </button>
         </article>
       ))}
       {!loading && !cuentas.length && (
@@ -97,7 +123,7 @@ export function CuentasBancarias({ refreshKey = 0 }: { refreshKey?: number }) {
       </div>
     )}
 
-    <CuentaModal open={creating || !!editing} cuenta={editing} onClose={() => { setCreating(false); setEditing(null) }} onSaved={() => { setCreating(false); setEditing(null); void load() }} />
+    <CuentaModal open={creating || !!editing} cuenta={editing} onClose={() => { setCreating(false); setEditing(null) }} onSaved={() => { setCreating(false); setEditing(null); void load(); void cargarCuentasPagoClientes() }} />
     <TransferModal open={transferOpen} cuentas={cuentas} tipoCambio={tipoCambio} onClose={() => setTransferOpen(false)} onSaved={() => { setTransferOpen(false); void load() }} />
   </section>
 }

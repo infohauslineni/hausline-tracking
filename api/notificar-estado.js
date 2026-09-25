@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { ESTADO_LABEL, enviarCorreoPedido, enviarCorreoCancelacion, enviarCorreoBienvenida } from './_correo.js'
+import { ESTADO_LABEL, enviarCorreoPedido, enviarCorreoCancelacion, enviarCorreoBienvenida, enviarCorreoReembolsoAdmin, enviarCorreoReembolsoRechazado, enviarCorreoReembolsoRecibido, enviarCorreoReembolsoAprobado } from './_correo.js'
 import { facturaPdfBuffer } from './_factura-pdf.js'
 import { subirFacturaDrive, subirArchivoDrive } from './_drive.js'
 import { cerrarEmail, reservarEmail } from './_email-eventos.js'
@@ -318,6 +318,85 @@ async function enviarCancelacion(request, response, body, authorization) {
   return response.status(200).json({ ok: true, sent: correo })
 }
 
+// Solicitudes de cancelación / reembolso (Mi cuenta de la tienda → panel).
+//   • 'nuevo'     → lo llama el CLIENTE (su JWT) justo después de crearla: correo al ADMIN
+//                   ("revisar") y al CLIENTE ("en revisión"). Solo para una solicitud SUYA y una
+//                   sola vez (candado aviso_admin_at).
+//   • 'aprobada'  → lo llama el ADMIN desde el panel: correo al cliente con el reembolso.
+//   • 'rechazada' → lo llama el ADMIN desde el panel: correo al cliente para que elija
+//                   seguir con el pedido o cancelarlo sin reembolso.
+async function avisoReembolso(response, body, authorization) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(500).json({ ok: false, error: 'Missing server configuration' })
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) return response.status(500).json({ ok: false, error: 'Missing SMTP configuration' })
+  const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  const token = String(authorization).replace(/^Bearer\s+/i, '').trim()
+  if (!token) return response.status(401).json({ ok: false })
+  const { data: userData } = await admin.auth.getUser(token).catch(() => ({ data: { user: null } }))
+  const usuario = userData?.user
+  if (!usuario) return response.status(401).json({ ok: false })
+  const id = String(body.id ?? '').trim()
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return response.status(400).json({ ok: false, error: 'Datos inválidos.' })
+
+  if (body.reembolso === 'nuevo') {
+    // Candado atómico: solo la primera llamada "reclama" la fila y manda el correo.
+    const { data: filas, error } = await admin.from('solicitudes_reembolso')
+      .update({ aviso_admin_at: new Date().toISOString() })
+      .eq('id', id).eq('user_id', usuario.id).is('aviso_admin_at', null).select('*, pedidos(estado)')
+    if (error) return response.status(502).json({ ok: false })
+    const s = filas?.[0]
+    if (!s) return response.status(200).json({ ok: true, skipped: 'ya avisado' })
+    const destino = (process.env.AVISO_ADMIN || process.env.SMTP_USER || '').trim()
+    try { await enviarCorreoReembolsoAdmin({ to: destino, s }) } catch (e) {
+      console.error('reembolso: aviso admin falló', e?.message)
+      await admin.from('solicitudes_reembolso').update({ aviso_admin_at: null }).eq('id', id)
+      return response.status(502).json({ ok: false })
+    }
+    // Confirmación al cliente (best-effort: el admin ya quedó avisado).
+    const correoCli = String(s.correo_cliente ?? '').trim()
+    if (correoCli) {
+      const ped = Array.isArray(s.pedidos) ? s.pedidos[0] : s.pedidos
+      try { await enviarCorreoReembolsoRecibido({ correo: correoCli, nombre: s.nombre_cliente, codigo: s.codigo, estado: ped?.estado ?? 'en_preparacion', s }) }
+      catch (e) { console.error('reembolso: correo al cliente falló', e?.message) }
+    }
+    return response.status(200).json({ ok: true })
+  }
+
+  if (body.reembolso === 'aprobada' || body.reembolso === 'rechazada') {
+    const { data: perfil } = await admin.from('perfiles').select('rol, activo').eq('id', usuario.id).maybeSingle()
+    if (!perfil || !perfil.activo || perfil.rol !== 'admin') return response.status(403).json({ ok: false, error: 'No autorizado.' })
+  }
+
+  if (body.reembolso === 'aprobada') {
+    const { data: s } = await admin.from('solicitudes_reembolso').select('*').eq('id', id).maybeSingle()
+    if (!s || s.estado !== 'aprobada') return response.status(200).json({ ok: false, error: 'La solicitud no está aprobada.' })
+    const correo = String(s.correo_cliente ?? '').trim()
+    if (!correo) return response.status(200).json({ ok: false, error: 'El cliente no tiene correo.' })
+    try {
+      await enviarCorreoReembolsoAprobado({ correo, nombre: s.nombre_cliente, codigo: s.codigo, monto: s.monto_reembolso, banco: s.banco, numeroCuenta: s.numero_cuenta, titular: s.titular, respuesta: s.respuesta })
+    } catch (e) {
+      console.error('reembolso: correo aprobación falló', e?.message)
+      return response.status(502).json({ ok: false, error: 'No se pudo enviar el correo.' })
+    }
+    return response.status(200).json({ ok: true, sent: correo })
+  }
+
+  if (body.reembolso === 'rechazada') {
+    const { data: s } = await admin.from('solicitudes_reembolso').select('*, pedidos(estado)').eq('id', id).maybeSingle()
+    if (!s || s.estado !== 'rechazada') return response.status(200).json({ ok: false, error: 'La solicitud no está rechazada.' })
+    const correo = String(s.correo_cliente ?? '').trim()
+    if (!correo) return response.status(200).json({ ok: false, error: 'El cliente no tiene correo.' })
+    const pedido = Array.isArray(s.pedidos) ? s.pedidos[0] : s.pedidos
+    try {
+      await enviarCorreoReembolsoRechazado({ correo, nombre: s.nombre_cliente, codigo: s.codigo, estado: pedido?.estado ?? 'en_preparacion', respuesta: s.respuesta, montoPagado: s.monto_pagado })
+    } catch (e) {
+      console.error('reembolso: correo rechazo falló', e?.message)
+      return response.status(502).json({ ok: false, error: 'No se pudo enviar el correo.' })
+    }
+    return response.status(200).json({ ok: true, sent: correo })
+  }
+  return response.status(400).json({ ok: false })
+}
+
 // Correo de bienvenida cuando el cliente verifica su correo. Uno solo por cuenta (candado).
 async function enviarBienvenida(body, response) {
   const record = body.record ?? {}
@@ -355,7 +434,17 @@ async function fotosPedidoPublico(response, body) {
   return response.status(200).json({ ok: true, imagenes: lista.map((a, i) => ({ ...a, url: firmadas?.[i]?.signedUrl ?? undefined })) })
 }
 
+const ORIGEN_TIENDA = 'https://hauslineshopni.es'
+
 export default async function handler(request, response) {
+  // CORS solo para la tienda (Mi cuenta avisa aquí de una solicitud de cancelación).
+  if ((request.headers?.origin ?? '') === ORIGEN_TIENDA) {
+    response.setHeader('Access-Control-Allow-Origin', ORIGEN_TIENDA)
+    response.setHeader('Vary', 'Origin')
+    response.setHeader('Access-Control-Allow-Headers', 'authorization, content-type')
+    response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  }
+  if (request.method === 'OPTIONS') return response.status(204).end()
   if (request.method !== 'POST') return response.status(405).json({ ok: false, error: 'Method not allowed' })
 
   const body = typeof request.body === 'string' ? JSON.parse(request.body || '{}') : (request.body ?? {})
@@ -368,6 +457,8 @@ export default async function handler(request, response) {
   if (body.resend) return reenviarFotosEtapa(request, response, body, authorization)
   // Correo de cancelación desde el panel (también con JWT del usuario).
   if (body.cancelacion) return enviarCancelacion(request, response, body, authorization)
+  // Solicitud de cancelación / reembolso (cliente → aviso al admin; admin → rechazo al cliente).
+  if (body.reembolso) return avisoReembolso(response, body, authorization)
 
   // Solo Supabase (con el secreto compartido) puede disparar el aviso automático.
   if (!process.env.NOTIFY_SECRET || authorization !== `Bearer ${process.env.NOTIFY_SECRET}`) {

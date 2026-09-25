@@ -167,7 +167,7 @@ export function NuevoPedidoPage() {
       const cliente = clientes.find((client) => client.id === values.cliente_id)
       const facturaItems = normalizedItems.map((item) => ({ producto: item.producto, detalle: [item.marca, item.talla, item.color].filter(Boolean).join(' · ') || undefined, cantidad: 1, precio: Number(item.precio_unitario || 0), codigo: item.codigo_producto || undefined, imagen: item.imagen ?? null }))
       // El envío rápido va como una línea más de la factura (mismo criterio que el pedido).
-      if (values.envio_rapido) facturaItems.push({ producto: 'Envío rápido (14–17 días)', detalle: undefined, cantidad: 1, precio: ENVIO_RAPIDO_RECARGO, codigo: undefined, imagen: null })
+      if (values.envio_rapido) facturaItems.push({ producto: 'Envío rápido (15–20 días)', detalle: undefined, cantidad: 1, precio: ENVIO_RAPIDO_RECARGO, codigo: undefined, imagen: null })
       const ventaBruta = facturaItems.reduce((sum, item) => sum + item.cantidad * item.precio, 0)
       if (descuento > 0) facturaItems.push({ producto: `Descuento${cuponAplicado?.codigo ? ` (${cuponAplicado.codigo})` : ''}`, detalle: undefined, cantidad: 1, precio: -descuento, codigo: undefined, imagen: null })
       const ventaTotal = Math.max(0, ventaBruta - descuento)

@@ -212,7 +212,7 @@ function TrackerCard({ order, currentIndex, isCancelled, isDelivered }: { order:
       </div>
       {dias != null && dias >= 0 && !isDelivered && <span className="grid size-12 shrink-0 place-items-center rounded-xl text-center text-white" style={{ background: ACCENT }}><strong className="text-lg font-bold leading-none" style={{ color: '#fff' }}>{dias === 0 ? '¡Hoy!' : dias}</strong>{dias > 0 && <span className="text-[8px] font-bold uppercase tracking-wide opacity-90">{dias === 1 ? 'día' : 'días'}</span>}</span>}
     </div>
-    <p className="hsp-faint mt-2 text-[10px] leading-4">Las fechas son estimadas y pueden variar por la logística internacional.</p>
+    <p className="hsp-faint mt-2 text-[10px] leading-4">El tiempo de entrega incluye unos días de preparación (aprox. 4-5 en envío estándar y 3-4 en rápido; algunos productos tardan más) y el resto es tránsito, que empieza a contar cuando tu pedido sale en camino. Las fechas son aproximadas, no exactas: muchas veces las paqueterías retrasan los envíos.</p>
 
     {/* Compartir */}
     <button type="button" onClick={compartir} className="hsp-btn hsp-btn--line mt-3 h-11 w-full text-sm">{copiado ? <><Check size={16} /> Enlace copiado</> : <><Share2 size={16} /> Compartir seguimiento</>}</button>
