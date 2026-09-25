@@ -240,9 +240,11 @@ export async function reasignarCuentaMovimiento(movimiento: Pick<MovimientoCuent
   invalidateCache('movimientos'); invalidateCache('recibido-mes'); invalidateComercial()
 }
 
-export async function listarInversiones(onFresh?: (value: Inversion[]) => void) { return cachedQuery('inversiones', async () => { const { data, error } = await client().from('inversiones').select('*, productos(nombre,codigo), gastos(id,monto,categoria)').order('fecha', { ascending: false }); if (error) throw error; return data as unknown as Inversion[] }, 45_000, onFresh) }
+// Select común de compras libres: incluye gastos asociados y el pedido en que se convirtió (si se apartó).
+const INV_SELECT = '*, productos(nombre,codigo), gastos(id,monto,categoria), pedidos!inversiones_pedido_id_fkey(codigo)'
+export async function listarInversiones(onFresh?: (value: Inversion[]) => void) { return cachedQuery('inversiones', async () => { const { data, error } = await client().from('inversiones').select(INV_SELECT).order('fecha', { ascending: false }); if (error) throw error; return data as unknown as Inversion[] }, 45_000, onFresh) }
 export async function registrarInversion(input: Omit<Inversion, 'id' | 'created_at' | 'productos'>, metodo: string, descontarDeCuenta = true, destino?: DestinoCuenta) {
-  const { data, error } = await client().from('inversiones').insert(input).select('*, productos(nombre,codigo)').single()
+  const { data, error } = await client().from('inversiones').insert(input).select(INV_SELECT).single()
   if (error) throw error
   if (descontarDeCuenta) {
     const monto = Number(input.costo_unitario) * Number(input.cantidad) + Number(input.gastos_adicionales)
@@ -256,12 +258,26 @@ export async function registrarInversion(input: Omit<Inversion, 'id' | 'created_
   invalidateComercial()
   return data as unknown as Inversion
 }
-export async function cambiarEstadoInversion(id: string, estado: Inversion['estado']) { const { data, error } = await client().from('inversiones').update({ estado }).eq('id', id).select('*, productos(nombre,codigo)').single(); if (error) throw error; invalidateComercial(); return data as unknown as Inversion }
+// Pago al proveedor de una compra que quedó "por pagar": sale de la cuenta elegida ahora
+// (mismo movimiento tipo inversion que al registrarla pagada, así borrarla lo revierte).
+export async function pagarInversion(item: Inversion, opts: { fecha: string; metodo: string }, destino?: DestinoCuenta) {
+  const monto = Number(item.costo_unitario) * Number(item.cantidad) + Number(item.gastos_adicionales)
+  const cuentaId = destino?.cuentaId || null
+  const deltaCuenta = cuentaId ? -Math.abs(Number(destino?.montoCuenta ?? monto)) : null
+  const { error: movementError } = await client().from('movimientos_cuenta').insert({ fecha: `${opts.fecha}T12:00:00`, tipo: 'inversion', descripcion: `Inversión en ${item.producto}`, monto, metodo: opts.metodo || null, inversion_id: item.id, cuenta_id: cuentaId, monto_cuenta: deltaCuenta, observaciones: 'Pago al proveedor registrado después de la compra' })
+  if (movementError) throw movementError
+  if (deltaCuenta) await ajustarSaldoCuenta(cuentaId!, deltaCuenta)
+  const { data, error } = await client().from('inversiones').update({ pagado: true, pagado_at: new Date().toISOString() }).eq('id', item.id).select(INV_SELECT).single()
+  if (error) throw error
+  invalidateComercial()
+  return data as unknown as Inversion
+}
+export async function cambiarEstadoInversion(id: string, estado: Inversion['estado']) { const { data, error } = await client().from('inversiones').update({ estado }).eq('id', id).select(INV_SELECT).single(); if (error) throw error; invalidateComercial(); return data as unknown as Inversion }
 
 // Venta directa de stock inmediato: registra el ingreso y marca el producto como vendido,
 // SIN crear un pedido de importación ni pasar por el flujo de tracking.
 export async function venderStockInmediato(item: Inversion, opts: { fecha: string; precio_venta: number; monto_recibido: number; metodo: string; cliente: string; observaciones: string }, destino?: DestinoCuenta) {
-  const { data, error } = await client().from('inversiones').update({ precio_venta_estimado: opts.precio_venta, estado: 'vendido' }).eq('id', item.id).select('*, productos(nombre,codigo)').single()
+  const { data, error } = await client().from('inversiones').update({ precio_venta_estimado: opts.precio_venta, estado: 'vendido' }).eq('id', item.id).select(INV_SELECT).single()
   if (error) throw error
   if (opts.monto_recibido > 0) {
     const detalle = opts.cliente.trim() ? ` · ${opts.cliente.trim()}` : ''
@@ -300,7 +316,7 @@ export async function eliminarInversion(id: string) {
   invalidateComercial()
 }
 export async function actualizarInversion(id: string, input: Partial<Omit<Inversion, 'id'|'created_at'|'productos'>>) {
-  const { data, error } = await client().from('inversiones').update(input).eq('id', id).select('*, productos(nombre,codigo)').single()
+  const { data, error } = await client().from('inversiones').update(input).eq('id', id).select(INV_SELECT).single()
   if (error) throw error
   if (input.costo_unitario !== undefined || input.cantidad !== undefined || input.gastos_adicionales !== undefined || input.producto !== undefined) {
     const updated = data as unknown as Inversion

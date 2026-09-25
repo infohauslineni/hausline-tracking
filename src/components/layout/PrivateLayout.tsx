@@ -44,7 +44,7 @@ const clientesProductos: NavItem[] = [
   { to: '/clientes', label: 'Clientes', icon: Users },
   { to: '/resenas', label: 'Reseñas', icon: Star },
   { to: '/productos', label: 'Productos', icon: PackageSearch },
-  { to: '/stock', label: 'Stock e inversiones', icon: HandCoins },
+  { to: '/stock', label: 'Compras libres', icon: HandCoins },
 ]
 // "Mi cuenta" es el hub de dinero: gastos, ingresos, salidas, estado de cuenta y saldo.
 // Por eso "Gastos" ya no es una entrada aparte (se registran desde Mi cuenta).

@@ -576,7 +576,7 @@ export async function crearPedido(input: NuevoPedidoInput, caja?: CajaPedido, op
   // Si viene de un producto de stock, la inversión sale del inventario (queda vendida).
   // No es crítico para el pedido: si fallara, el pedido igual quedó creado.
   if (opts?.desdeInversion) {
-    const { error: invError } = await client.from('inversiones').update({ estado: 'vendido' }).eq('id', opts.desdeInversion)
+    const { error: invError } = await client.from('inversiones').update({ estado: 'vendido', pedido_id: created.id }).eq('id', opts.desdeInversion)
     if (invError) console.error('No se pudo marcar la inversión como vendida:', invError)
   }
 

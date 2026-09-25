@@ -33,6 +33,11 @@ type PrefillStock = {
   precio_unitario: number
   precio_compra: number
   imagen: string | null
+  // Estado inicial sugerido: si la compra aún viene en camino, el pedido arranca en tránsito;
+  // si ya está en Nicaragua, arranca disponible para entrega. Se puede cambiar en el formulario.
+  estadoPedido?: EstadoPedido
+  // Abono sugerido (50% del precio) para apartar.
+  abono?: number
 }
 
 const itemSchema = z.object({ producto: z.string(), producto_id: z.string(), proveedor_id: z.string(), codigo_producto: z.string().trim().min(1, 'Indica el código del producto.'), marca: z.string(), categoria: z.string(), talla: z.string(), color: z.string(), cantidad: z.number().int().min(1), precio_unitario: z.number().min(0, 'Precio inválido.'), precio_compra: z.number().min(0), envio_internacional: z.number().min(0), costo_delivery: z.number().min(0), otros_gastos: z.number().min(0), notas: z.string() })
@@ -109,7 +114,8 @@ export function NuevoPedidoPage() {
   // NO se vuelve a descontar de caja (ver `desdeInversion` al guardar).
   useEffect(() => {
     if (!prefill) return
-    setValue('estado', 'pedido_confirmado')
+    setValue('estado', prefill.estadoPedido ?? 'pedido_confirmado')
+    if (prefill.abono) setValue('abono', prefill.abono)
     setValue('items.0.producto', prefill.producto, { shouldValidate: true })
     setValue('items.0.codigo_producto', prefill.codigo_producto, { shouldValidate: true })
     setValue('items.0.marca', prefill.marca)
@@ -181,7 +187,7 @@ export function NuevoPedidoPage() {
   return <div className="mx-auto max-w-5xl">
     <Link to="/pedidos" className="mb-5 inline-flex items-center gap-2 text-xs text-muted transition hover:text-white"><ArrowLeft size={16} /> Volver a pedidos</Link>
     {!isSupabaseConfigured && <div className="preview-banner"><strong>Vista previa local:</strong> el formulario valida y calcula, pero no persiste hasta conectar Supabase.</div>}
-    {prefill && <div className="mb-4 rounded-xl border border-accent/30 bg-accent/[.06] p-3 text-[12px] leading-5 text-accent"><strong>Apartado de stock:</strong> estás convirtiendo <strong>{prefill.producto}</strong> en un pedido. Elegí el cliente y el abono (ej. el 50%). El costo ya se pagó al traerlo, así que no se descuenta otra vez; al guardar, el producto sale del inventario.</div>}
+    {prefill && <div className="mb-4 rounded-xl border border-accent/30 bg-accent/[.06] p-3 text-[12px] leading-5 text-accent"><strong>Apartado de compra libre:</strong> estás convirtiendo <strong>{prefill.producto}</strong> en un pedido normal (con su código, control de calidad y estados). Elegí el cliente; el abono ya viene con el 50%. El costo no se descuenta otra vez (su pago al proveedor se lleva en Compras libres); al guardar, la compra queda ligada a este pedido.</div>}
     <div><p className="eyebrow">Nuevo registro</p><h1 className="page-title">Registrar venta y pedido</h1><p className="page-subtitle">Guarda la venta una sola vez; el código público HS se genera automáticamente.</p></div>
     <form onSubmit={handleSubmit(submit)} className="mt-7 space-y-5">
       <section className="form-section"><SectionTitle number="01" title="Cliente y estado" /><div className="form-grid mt-5"><label className="form-field sm:col-span-2"><span>Cliente</span><div className="flex gap-2"><select className="min-w-0 flex-1" {...register('cliente_id')}><option value="">Selecciona un cliente</option>{clientes.map((client) => <option key={client.id} value={client.id}>{client.nombre} · {client.whatsapp}</option>)}</select><button type="button" className="subtle-button shrink-0 px-3" onClick={() => setQuickOpen((value) => !value)}><UserPlus size={17} /><span className="hidden sm:inline">Nuevo</span></button></div>{errors.cliente_id && <small>{errors.cliente_id.message}</small>}</label>
