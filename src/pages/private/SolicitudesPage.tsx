@@ -10,6 +10,7 @@ import { confirmarSolicitud, confirmarSolicitudesGrupo, descartarSolicitud, desc
 import { useAuth } from '../../contexts/AuthContext'
 import { whatsappUrl } from '../../utils/whatsapp'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
+import { urlSeguimientoCliente } from '../../utils/seguimientoUrl'
 
 // Cuánto falta para que la solicitud se venza (color según urgencia). ≤3 h = crítico.
 function tiempoRestante(venceAt: string): { texto: string; tono: 'ok' | 'warn' | 'crit'; vencida: boolean; horas: number } {
@@ -438,7 +439,7 @@ function GrupoCard({ grupo, busy, onConfirm, onDiscard, onDiscardAll }: { grupo:
 function ResultadoModal({ codigo, grupo, onClose }: { codigo: string; grupo: Solicitud[]; onClose: () => void }) {
   const c = grupo[0]
   const msgProv = mensajeProveedor(codigo, grupo)
-  const link = `${import.meta.env.VITE_PUBLIC_APP_URL ?? window.location.origin}/pedido/${codigo}`
+  const link = urlSeguimientoCliente(codigo)
   const msgCliente = `¡Hola ${c.cliente_nombre}! Confirmamos tu pago ✅. Tu pedido ya está en proceso.\n\nCódigo de pedido: ${codigo}\nSeguí tu pedido aquí: ${link}\n\n¡Gracias por comprar en HAUSLINE!`
   const [prov, setProv] = useState(() => { try { return localStorage.getItem('hausline_proveedor_wa') || '' } catch { return '' } })
   const guardar = (v: string) => { setProv(v); try { localStorage.setItem('hausline_proveedor_wa', v) } catch { /* */ } }

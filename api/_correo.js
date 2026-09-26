@@ -45,11 +45,12 @@ export const ESTADO_NOTA = {
   incidencia: 'Tenemos una novedad con tu pedido y ya la estamos gestionando. Te contactaremos pronto.',
 }
 
-// Botón de los correos: el seguimiento del pedido SIN necesidad de iniciar sesión (link único
-// /pedido/HS######). Desde ahí el cliente puede entrar a Mi cuenta si quiere más detalle.
+// Botón de los correos: el seguimiento del pedido SIN necesidad de iniciar sesión. Vive en la
+// TIENDA (hauslineshopni.es/pedido/?c=HS######): la app del tracking es solo el panel privado.
+// Desde ahí el cliente puede entrar a Mi cuenta si quiere más detalle.
 export function urlPedidoCuenta(codigo) {
-  const app = (process.env.APP_URL ?? process.env.VITE_PUBLIC_APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
-  return `${app}/pedido/${encodeURIComponent(codigo)}`
+  const tienda = (process.env.TIENDA_URL ?? 'https://hauslineshopni.es').replace(/\/$/, '')
+  return `${tienda}/pedido/?c=${encodeURIComponent(codigo)}`
 }
 
 // Las fotos del catálogo se guardan como RUTA RELATIVA (p.ej. "imgP/.../1.jpg"), no

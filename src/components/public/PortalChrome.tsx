@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import type { EstadoPedido } from '../../types/domain'
 import { etapaBase } from '../../constants/orders'
+import { urlSeguimientoCliente } from '../../utils/seguimientoUrl'
 
 // Wordmark limpio del portal (sin el logo verde/neón del panel administrativo).
 export function Wordmark({ compact = false }: { compact?: boolean }) {
@@ -32,10 +33,10 @@ export function PortalShell({ children, nav }: { children: ReactNode; nav?: Reac
   return (
     <main className="hs-portal min-h-screen">
       <header className="mx-auto flex w-full max-w-5xl items-center justify-between px-5 py-5 sm:px-8">
-        <Link to="/pedido" aria-label="Inicio del seguimiento"><Wordmark /></Link>
+        <a href="https://hauslineshopni.es/" aria-label="Ir a la tienda"><Wordmark /></a>
         <div className="flex items-center gap-1.5">
           {nav}
-          <Link to="/mis-pedidos" className="hsp-btn--ghost inline-flex items-center rounded-lg">Mis pedidos</Link>
+          <a href={urlSeguimientoCliente()} className="hsp-btn--ghost inline-flex items-center rounded-lg">Mis pedidos</a>
           <a href="https://hauslineshopni.es/cuenta/" className="hsp-btn--ghost inline-flex items-center rounded-lg" style={{ color: 'var(--ink)' }}>Mi cuenta</a>
         </div>
       </header>

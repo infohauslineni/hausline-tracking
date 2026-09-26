@@ -1,10 +1,11 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { ProtectedRoute } from './components/auth/ProtectedRoute'
 import { AdminRoute } from './components/auth/AdminRoute'
 import { PrivateLayout } from './components/layout/PrivateLayout'
 import { CookieBanner } from './components/ui/CookieBanner'
 import { LoginPage } from './pages/public/LoginPage'
+import { urlSeguimientoCliente } from './utils/seguimientoUrl'
 
 const ClientesPage = lazy(() => import('./pages/private/ClientesPage').then((module) => ({ default: module.ClientesPage })))
 const ClienteDetailPage = lazy(() => import('./pages/private/ClienteDetailPage').then((module) => ({ default: module.ClienteDetailPage })))
@@ -29,21 +30,19 @@ const ReembolsosPage = lazy(() => import('./pages/private/ReembolsosPage').then(
 const CuponesPage = lazy(() => import('./pages/private/CuponesPage').then((module) => ({ default: module.CuponesPage })))
 const SaludClientesPage = lazy(() => import('./pages/private/SaludClientesPage').then((module) => ({ default: module.SaludClientesPage })))
 const PromocionesPage = lazy(() => import('./pages/private/PromocionesPage').then((module) => ({ default: module.PromocionesPage })))
-const TrackingPage = lazy(() => import('./pages/public/TrackingPage').then((module) => ({ default: module.TrackingPage })))
-const MisPedidosPage = lazy(() => import('./pages/public/MisPedidosPage').then((module) => ({ default: module.MisPedidosPage })))
 const PrivacidadPage = lazy(() => import('./pages/public/PrivacidadPage').then((module) => ({ default: module.PrivacidadPage })))
 const TerminosPage = lazy(() => import('./pages/public/TerminosPage').then((module) => ({ default: module.TerminosPage })))
 
 export function App() {
   return <><Suspense fallback={<div className="grid min-h-screen place-items-center bg-app"><div className="loader" /></div>}><Routes>
     <Route path="/login" element={<LoginPage />} />
-    {/* Portal público del cliente: link único /pedido/HS###### (sin login) + historial local */}
-    <Route path="/pedido" element={<TrackingPage />} />
-    <Route path="/pedido/:codigo" element={<TrackingPage />} />
-    <Route path="/mis-pedidos" element={<MisPedidosPage />} />
-    {/* Rutas anteriores (WhatsApp/correos ya enviados): siguen funcionando */}
-    <Route path="/tracking" element={<Navigate to="/pedido" replace />} />
-    <Route path="/tracking/:codigo" element={<TrackingRedirect />} />
+    {/* El seguimiento del cliente se mudó a la tienda. Los links viejos (correos y WhatsApp
+        ya enviados) siguen funcionando: redirigen a hauslineshopni.es/pedido/?c=CODIGO. */}
+    <Route path="/pedido" element={<SeguimientoEnTienda />} />
+    <Route path="/pedido/:codigo" element={<SeguimientoEnTienda />} />
+    <Route path="/mis-pedidos" element={<SeguimientoEnTienda />} />
+    <Route path="/tracking" element={<SeguimientoEnTienda />} />
+    <Route path="/tracking/:codigo" element={<SeguimientoEnTienda />} />
     <Route path="/privacidad" element={<PrivacidadPage />} />
     <Route path="/terminos" element={<TerminosPage />} />
     <Route element={<ProtectedRoute />}>
@@ -80,13 +79,15 @@ export function App() {
         </Route>
       </Route>
     </Route>
-    <Route path="/" element={<Navigate to="/pedido" replace />} />
-    <Route path="*" element={<Navigate to="/pedido" replace />} />
+    {/* Esta app es SOLO el panel privado: cualquier otra dirección va al login. */}
+    <Route path="/" element={<Navigate to="/login" replace />} />
+    <Route path="*" element={<Navigate to="/login" replace />} />
   </Routes></Suspense><CookieBanner /></>
 }
 
-// Conserva el código al migrar los links viejos /tracking/:codigo → /pedido/:codigo.
-function TrackingRedirect() {
+// Links viejos del seguimiento → la página de la tienda, conservando el código del pedido.
+function SeguimientoEnTienda() {
   const { codigo } = useParams()
-  return <Navigate to={`/pedido/${codigo ?? ''}`} replace />
+  useEffect(() => { window.location.replace(urlSeguimientoCliente(codigo)) }, [codigo])
+  return <div className="grid min-h-screen place-items-center bg-app"><div className="loader" /></div>
 }

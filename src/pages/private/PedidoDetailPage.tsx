@@ -27,6 +27,7 @@ import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { whatsappUrl } from '../../utils/whatsapp'
 import { CARGO_BODEGA_DIARIO, DIAS_GRACIA_BODEGA, calcularCargoBodega, type CargoBodega } from '../../utils/bodega'
 import { Status } from './PedidosPage'
+import { urlSeguimientoCliente } from '../../utils/seguimientoUrl'
 
 // Arma las líneas de la factura desde los ítems del pedido. Si el TOTAL del pedido es
 // mayor que la suma de los ítems (típico en encargos web con envío rápido: el recargo va
@@ -237,7 +238,7 @@ export function PedidoDetailPage() {
       metodoPago: pedido.metodo_pago ?? null,
     })
   }
-  const publicUrl = `${import.meta.env.VITE_PUBLIC_APP_URL ?? window.location.origin}/pedido/${pedido.codigo}`
+  const publicUrl = urlSeguimientoCliente(pedido.codigo)
   const qualityMessageReady = pedido.estado === 'control_calidad' && qualityPhotosReady
   const whatsappMessage = mensajeWhatsAppEstado(pedido.estado, { nombre: pedido.clientes?.nombre, codigo: pedido.codigo, url: publicUrl, saldo: Number(pedido.saldo), fotosCalidad: qualityMessageReady, tipoCambio, departamento: pedido.clientes?.departamento, ciudad: pedido.clientes?.ciudad })
   const costoReal = costoRealPedido(pedido)

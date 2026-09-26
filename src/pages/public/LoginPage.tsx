@@ -2,12 +2,13 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { ArrowRight, Eye, EyeOff, LockKeyhole, Mail } from 'lucide-react'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { Brand } from '../../components/ui/Brand'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { urlSeguimientoCliente } from '../../utils/seguimientoUrl'
 
 const schema = z.object({ email: z.email('Escribe un correo válido.'), password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres.') })
 type FormValues = z.infer<typeof schema>
@@ -69,7 +70,7 @@ export function LoginPage() {
         <button type="button" disabled={sendingReset} onClick={handleReset} className="text-sm font-medium text-accent transition hover:text-white">¿Olvidaste tu contraseña?</button>
         <button className="primary-button w-full" type="submit" disabled={isSubmitting || !configured}>{isSubmitting ? 'Ingresando…' : 'Iniciar sesión'}<ArrowRight size={18} /></button>
       </form>
-      <div className="mt-8 border-t border-line pt-6 text-center text-sm text-muted">¿Buscas tu pedido? <Link className="font-semibold text-white hover:text-accent" to="/tracking">Ir al rastreo público</Link></div>
+      <div className="mt-8 border-t border-line pt-6 text-center text-sm text-muted">¿Buscas tu pedido? <a className="font-semibold text-white hover:text-accent" href={urlSeguimientoCliente()}>Ir al rastreo público</a></div>
     </div></section>
   </div>
 }
