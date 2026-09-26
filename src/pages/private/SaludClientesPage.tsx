@@ -253,9 +253,9 @@ export function SaludClientesPage() {
         {(sinConfirmar.length > 0 || sinPedidos.length > 0) && (
           <section className="mt-6 grid gap-3 lg:grid-cols-2">
             {sinConfirmar.length > 0 && <ListaAyuda titulo="Se registraron y no confirmaron el correo" nota="Puede que el correo les haya caído en spam o no les llegó."
-              cuentas={sinConfirmar} onListo={(c) => void contactado(c.user_id, 'sin_confirmar')} mensaje={(c) => `Hola${primerNombre(c.nombre) ? ` ${primerNombre(c.nombre)}` : ''}, te saluda HAUSLINE. Vimos que creaste tu cuenta en nuestra tienda. ¿Te llegó el correo para confirmarla? Revisá también la carpeta de spam; si no aparece, te ayudamos por aquí.`} />}
-            {sinPedidos.length > 0 && <ListaAyuda titulo="Cuentas sin pedidos vinculados" nota="Si ya te compraron, puede que hayan usado otro correo. Vinculalo desde la ficha del cliente (Cuenta web)."
-              cuentas={sinPedidos} onListo={(c) => void contactado(c.user_id, 'sin_pedidos')} mensaje={(c) => `Hola${primerNombre(c.nombre) ? ` ${primerNombre(c.nombre)}` : ''}, te saluda HAUSLINE. Vimos que creaste tu cuenta. Si ya tenés un pedido con nosotros y no te aparece, decinos tu código de pedido y lo vinculamos a tu cuenta.`} />}
+              cuentas={sinConfirmar} onListo={(c) => void contactado(c.user_id, 'sin_confirmar')} mensaje={(c) => `Hola${primerNombre(c.nombre) ? ` ${primerNombre(c.nombre)}` : ''}, te saludamos del equipo de HAUSLINE 👋 Vimos que creaste tu cuenta en nuestra tienda, pero todavía falta confirmar tu correo. ¿Te llegó el mensaje? Revisá también la carpeta de spam; si no aparece, te ayudamos por aquí.`} />}
+            {sinPedidos.length > 0 && <ListaAyuda titulo="Cuentas que todavía no compran" nota="Invitalos a su primera compra. Si ya te compraron con otro correo, vinculá el pedido desde la ficha del cliente (Cuenta web)."
+              cuentas={sinPedidos} onListo={(c) => void contactado(c.user_id, 'sin_pedidos')} mensaje={(c) => `Hola${primerNombre(c.nombre) ? ` ${primerNombre(c.nombre)}` : ''}, te saludamos del equipo de HAUSLINE 👋 ¡Gracias por crear tu cuenta en nuestra tienda! Cuando quieras hacer tu primer pedido, estamos para ayudarte: mirá lo nuevo en hauslineshopni.es o escribinos por aquí si buscás algún modelo o talla en especial.`} />}
           </section>
         )}
 
