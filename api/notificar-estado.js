@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { ESTADO_LABEL, enviarCorreoPedido, enviarCorreoCancelacion, enviarCorreoBienvenida, enviarCorreoReembolsoAdmin, enviarCorreoReembolsoRechazado, enviarCorreoReembolsoRecibido, enviarCorreoReembolsoAprobado } from './_correo.js'
+import { ESTADO_LABEL, enviarCorreoPedido, enviarCorreoCancelacion, enviarCorreoBienvenida, enviarCorreoReembolsoAdmin, enviarCorreoReembolsoRechazado, enviarCorreoReembolsoRecibido, enviarCorreoReembolsoAprobado, enviarCorreoReembolsoDecisionAdmin } from './_correo.js'
 import { facturaPdfBuffer } from './_factura-pdf.js'
 import { subirFacturaDrive, subirArchivoDrive } from './_drive.js'
 import { cerrarEmail, reservarEmail } from './_email-eventos.js'
@@ -322,6 +322,8 @@ async function enviarCancelacion(request, response, body, authorization) {
 //   • 'nuevo'     → lo llama el CLIENTE (su JWT) justo después de crearla: correo al ADMIN
 //                   ("revisar") y al CLIENTE ("en revisión"). Solo para una solicitud SUYA y una
 //                   sola vez (candado aviso_admin_at).
+//   • 'decision'  → lo llama el CLIENTE cuando, tras el rechazo, elige cancelar SIN reembolso:
+//                   correo al admin para que cancele el pedido (una vez, candado aviso_decision_at).
 //   • 'aprobada'  → lo llama el ADMIN desde el panel: correo al cliente con el reembolso.
 //   • 'rechazada' → lo llama el ADMIN desde el panel: correo al cliente para que elija
 //                   seguir con el pedido o cancelarlo sin reembolso.
@@ -357,6 +359,22 @@ async function avisoReembolso(response, body, authorization) {
       const ped = Array.isArray(s.pedidos) ? s.pedidos[0] : s.pedidos
       try { await enviarCorreoReembolsoRecibido({ correo: correoCli, nombre: s.nombre_cliente, codigo: s.codigo, estado: ped?.estado ?? 'en_preparacion', s }) }
       catch (e) { console.error('reembolso: correo al cliente falló', e?.message) }
+    }
+    return response.status(200).json({ ok: true })
+  }
+
+  if (body.reembolso === 'decision') {
+    const { data: filas, error } = await admin.from('solicitudes_reembolso')
+      .update({ aviso_decision_at: new Date().toISOString() })
+      .eq('id', id).eq('user_id', usuario.id).eq('estado', 'cancelada_sin_reembolso').is('aviso_decision_at', null).select('*')
+    if (error) return response.status(502).json({ ok: false })
+    const s = filas?.[0]
+    if (!s) return response.status(200).json({ ok: true, skipped: 'no aplica o ya avisado' })
+    const destino = (process.env.AVISO_ADMIN || process.env.SMTP_USER || '').trim()
+    try { await enviarCorreoReembolsoDecisionAdmin({ to: destino, s }) } catch (e) {
+      console.error('reembolso: aviso de decisión falló', e?.message)
+      await admin.from('solicitudes_reembolso').update({ aviso_decision_at: null }).eq('id', id)
+      return response.status(502).json({ ok: false })
     }
     return response.status(200).json({ ok: true })
   }

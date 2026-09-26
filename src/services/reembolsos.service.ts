@@ -29,6 +29,7 @@ export type SolicitudReembolso = {
   monto_reembolso: number | null
   resuelto_at: string | null
   decision_cliente_at: string | null
+  plazo_decision_at?: string | null
   created_at: string
   pedidos?: { id: string; estado: string; cliente_id: string; abono: number; total: number } | null
 }

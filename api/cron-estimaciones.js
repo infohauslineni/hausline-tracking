@@ -222,6 +222,17 @@ export default async function handler(request, response) {
     console.error('cron: avanzar control de calidad falló (¿migración 202608280001 sin aplicar?)', avanzarCalidadError?.message)
   }
 
+  // Solicitudes de reembolso rechazadas sin respuesta del cliente en 48 h → "siguió con su
+  // pedido". Aislado: si la migración 202609250004 no está, no tumba el resto del cron.
+  let reembolsosVencidos = 0
+  try {
+    const { data: n, error: e } = await client.rpc('vencer_reembolsos_rechazados')
+    if (e) throw new Error(e.message)
+    reembolsosVencidos = Number(n ?? 0)
+  } catch (vencerError) {
+    console.error('cron: vencer reembolsos rechazados falló', vencerError?.message)
+  }
+
   // Registro automático de guías nuevas en 17TRACK. Va aislado en try/catch para que
   // un fallo de 17track nunca tumbe el recálculo de estimaciones (el trabajo principal).
   let registrados = 0
@@ -288,6 +299,7 @@ export default async function handler(request, response) {
     updated,
     avanzados: Number(avanzados ?? 0),
     avanzados_calidad: Number(avanzadosCalidad ?? 0),
+    reembolsos_vencidos: reembolsosVencidos,
     registrados,
     consultadas: track17.consultadas,
     avanzados_track17: track17.avanzados,

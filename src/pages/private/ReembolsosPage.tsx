@@ -98,6 +98,8 @@ export function ReembolsosPage() {
                       <p className="mt-2 whitespace-pre-wrap text-sm text-white/85">{s.detalle}</p>
                       <p className="mt-3 text-[11px] text-muted">Etapa al pedirla: <b className="text-white/80">{ETAPA_REEMBOLSO_LABEL[s.etapa] ?? s.etapa}</b> ({estadoLabel(s.estado_pedido as EstadoPedido)}){pedidoEstado && pedidoEstado !== s.estado_pedido ? <> · ahora: <b className="text-white/80">{estadoLabel(pedidoEstado as EstadoPedido)}</b></> : null}</p>
                       {s.respuesta && <p className="mt-2 text-[12px] text-muted">Respuesta al cliente: “{s.respuesta}”</p>}
+                      {s.estado === 'rechazada' && s.plazo_decision_at && <p className="mt-2 text-[12px] text-amber-200/90">El cliente tiene hasta el {fecha(s.plazo_decision_at)} para elegir. Si no elige, queda como que siguió con su pedido.</p>}
+                      {s.estado === 'retirada' && s.plazo_decision_at && s.decision_cliente_at && s.decision_cliente_at >= s.plazo_decision_at && <p className="mt-2 text-[12px] text-muted">Venció el plazo de 48 h sin respuesta: el pedido siguió su curso.</p>}
                     </div>
                     <div className="rounded-xl border border-line bg-white/[0.02] p-3 text-sm">
                       <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Datos para el reembolso</p>

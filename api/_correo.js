@@ -1018,7 +1018,7 @@ export async function enviarCorreoReembolsoRechazado({ correo, nombre, codigo, e
   const url = `https://hauslineshopni.es/cuenta/pedido/?id=${encodeURIComponent(codigo)}`
   let nota = `Revisamos tu solicitud de cancelación del pedido <strong>${esc(codigo)}</strong> y <strong>no pudimos aprobar el reembolso</strong>.`
   if (respuesta) nota += ` ${esc(respuesta)}`
-  nota += ` Ahora podés elegir: <strong>seguir con tu pedido</strong> (sigue su curso normal) o <strong>cancelarlo sin reembolso</strong>${Number(montoPagado) > 0 ? `, perdiendo lo pagado (${montoUSD(montoPagado)})` : ''}. Elegí desde Mi cuenta.`
+  nota += ` Ahora podés elegir: <strong>seguir con tu pedido</strong> (sigue su curso normal) o <strong>cancelarlo sin reembolso</strong>${Number(montoPagado) > 0 ? `, perdiendo lo pagado (${montoUSD(montoPagado)})` : ''}. Elegí desde Mi cuenta <strong>en las próximas 48 horas</strong>; si no elegís, tu pedido sigue su curso.`
   await transporteSmtp().sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to: correo,
@@ -1062,5 +1062,31 @@ export async function enviarCorreoReembolsoAprobado({ correo, nombre, codigo, mo
       nombre, codigo, estado: 'cancelado', estadoLabel: 'Reembolso aprobado', nota,
       urlSeguimiento: url, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Ver mi pedido', ctaUrl: url, pedirResena: false,
     }),
+  })
+}
+
+// Al ADMIN: tras el rechazo, el cliente eligió CANCELAR SIN REEMBOLSO. Falta que cancele el pedido.
+export async function enviarCorreoReembolsoDecisionAdmin({ to, s }) {
+  const appUrl = (process.env.APP_URL ?? process.env.VITE_PUBLIC_APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;background:#ececed;font-family:Arial,Helvetica,sans-serif">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ececed"><tr><td align="center" style="padding:28px 14px">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#fff;border-radius:14px;overflow:hidden">
+      <tr><td style="background:#050505;padding:22px 24px;color:#fff;font-size:18px;font-weight:700;letter-spacing:3px;text-align:center">HAUSLINE</td></tr>
+      <tr><td style="padding:26px 24px">
+        <p style="margin:0 0 6px;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#b91c1c;font-weight:700">Cancelar pedido · sin reembolso</p>
+        <h1 style="margin:0 0 14px;font-size:20px;color:#0b0f19">${esc(s.nombre_cliente || 'El cliente')} eligió cancelar el pedido ${esc(s.codigo)} sin reembolso</h1>
+        <p style="margin:0 0 8px;font-size:14px;color:#374151;line-height:1.5">Rechazaste su solicitud y el cliente decidió cancelar igual, perdiendo lo pagado (${montoUSD(s.monto_pagado)}). Entrá a Reembolsos y tocá <strong>Cancelar pedido sin reembolso</strong> para cerrar el pedido.</p>
+        <p style="margin:0;font-size:13px;color:#6b7280">Motivo que había dado: ${esc(s.motivo_label)}</p>
+        <a href="${appUrl}/reembolsos" style="display:block;margin-top:22px;background:#050505;color:#fff;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:2px;text-transform:uppercase;text-align:center;padding:15px;border-radius:6px">Ir a Reembolsos</a>
+      </td></tr>
+    </table>
+  </td></tr></table>
+</body></html>`
+  await transporteSmtp().sendMail({
+    from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
+    to,
+    subject: `🛑 Cancelar sin reembolso · ${s.codigo} · ${s.nombre_cliente || 'cliente'} — el cliente decidió`,
+    html,
   })
 }

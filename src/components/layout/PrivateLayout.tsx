@@ -140,10 +140,20 @@ export function PrivateLayout() {
   useEffect(() => {
     const client = supabase
     if (!isSupabaseConfigured || !client || !esAdmin) return
+    const avisadas = new Set<string>()
     const channel = client.channel('reembolsos-alerta').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'solicitudes_reembolso' }, (payload) => {
       const codigo = (payload.new as { codigo?: string })?.codigo ?? ''
       playEncargoChime()
       toast.warning(`⚠️ Solicitud de cancelación${codigo ? ` del pedido ${codigo}` : ''} — revisala en "Reembolsos".`)
+      void calcularEstado().then((next) => { setBadges(next.badges); setAlertas(next.alertas) }).catch(() => undefined)
+    }).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'solicitudes_reembolso' }, (payload) => {
+      // Tras el rechazo, el cliente eligió cancelar SIN reembolso: falta que el admin cancele el pedido.
+      // (Realtime no trae el estado anterior: se avisa una sola vez por solicitud.)
+      const nuevo = payload.new as { id?: string; codigo?: string; estado?: string }
+      if (nuevo?.estado !== 'cancelada_sin_reembolso' || !nuevo.id || avisadas.has(nuevo.id)) return
+      avisadas.add(nuevo.id)
+      playEncargoChime()
+      toast.warning(`🛑 El cliente del pedido ${nuevo.codigo ?? ''} eligió cancelar sin reembolso — cancelalo en "Reembolsos".`, { duration: 12000 })
       void calcularEstado().then((next) => { setBadges(next.badges); setAlertas(next.alertas) }).catch(() => undefined)
     }).subscribe()
     return () => { void client.removeChannel(channel) }
