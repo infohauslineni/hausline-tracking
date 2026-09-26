@@ -12,6 +12,7 @@ import { estadoPago } from '../../utils/pedidoCosto'
 import { whatsappUrl } from '../../utils/whatsapp'
 import { ClienteModal } from './ClientesPage'
 import { CuentaWebCard } from '../../components/clientes/CuentaWebCard'
+import { DireccionesClienteCard } from '../../components/clientes/DireccionesClienteCard'
 import { estadoLabel, estadoTone } from '../../constants/orders'
 import { formatDate, PagoModal } from './PagosPage'
 
@@ -78,6 +79,7 @@ export function ClienteDetailPage() {
     </header>
 
     {isSupabaseConfigured && <CuentaWebCard clienteId={cliente.id} correoCliente={cliente.correo} />}
+    {isSupabaseConfigured && <DireccionesClienteCard clienteId={cliente.id} />}
 
     <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       <Stat label="Pedidos" value={String(stats.total)} />

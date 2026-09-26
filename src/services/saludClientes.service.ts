@@ -26,7 +26,11 @@ export type EventoCliente = {
   visita: string | null
   dispositivo: string | null
   user_id: string | null
+  revisado_at?: string | null
 }
+
+export type MotivoAyuda = 'sin_confirmar' | 'sin_pedidos'
+export type CuentaRevisada = { user_id: string; motivo: MotivoAyuda; revisado_at: string }
 
 export async function listarCuentasClientes(): Promise<CuentaCliente[]> {
   if (!supabase) return []
@@ -47,7 +51,28 @@ export async function listarEventosClientes(dias: number): Promise<EventoCliente
 export async function contarErroresClientes24h(): Promise<number> {
   if (!supabase) return 0
   const desde = new Date(Date.now() - 86_400_000).toISOString()
-  const { count, error } = await supabase.from('eventos_cliente').select('id', { count: 'exact', head: true }).eq('tipo', 'error').gte('created_at', desde)
+  const { count, error } = await supabase.from('eventos_cliente').select('id', { count: 'exact', head: true }).eq('tipo', 'error').is('revisado_at', null).gte('created_at', desde)
   if (error) throw error
   return count ?? 0
+}
+
+// "Marcar como revisado": sale de la lista, del contador y del correo diario, pero queda guardado
+// (migración 202609260003). Con revisado=false vuelve a aparecer.
+export async function marcarEventosRevisados(ids: number[], revisado = true): Promise<void> {
+  if (!supabase || !ids.length) return
+  const { error } = await supabase.rpc('marcar_eventos_revisados', { p_ids: ids, p_revisado: revisado })
+  if (error) throw error
+}
+
+// "Ya lo contacté" en las listas de cuentas que necesitan ayuda.
+export async function listarCuentasRevisadas(): Promise<CuentaRevisada[]> {
+  if (!supabase) return []
+  const { data, error } = await supabase.from('salud_cuentas_revisadas').select('user_id, motivo, revisado_at')
+  if (error) throw error
+  return (data ?? []) as CuentaRevisada[]
+}
+export async function marcarCuentaRevisada(userId: string, motivo: MotivoAyuda): Promise<void> {
+  if (!supabase) return
+  const { error } = await supabase.from('salud_cuentas_revisadas').upsert({ user_id: userId, motivo }, { onConflict: 'user_id,motivo', ignoreDuplicates: true })
+  if (error) throw error
 }

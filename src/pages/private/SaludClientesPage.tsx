@@ -1,8 +1,8 @@
-import { AlertTriangle, CheckCircle2, ChevronDown, HeartPulse, MessageCircle, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, Eye, HeartPulse, MessageCircle, RefreshCw, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
-import { listarCuentasClientes, listarEventosClientes, type CuentaCliente, type EventoCliente } from '../../services/saludClientes.service'
+import { listarCuentasClientes, listarCuentasRevisadas, listarEventosClientes, marcarCuentaRevisada, marcarEventosRevisados, type CuentaCliente, type CuentaRevisada, type EventoCliente, type MotivoAyuda } from '../../services/saludClientes.service'
 import { whatsappUrl } from '../../utils/whatsapp'
 
 type Rango = 1 | 7 | 30
@@ -65,14 +65,17 @@ export function SaludClientesPage() {
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [abierto, setAbierto] = useState<string | null>(null)
   const [verTodas, setVerTodas] = useState(false)
+  const [verRevisados, setVerRevisados] = useState(false)
+  const [revisadas, setRevisadas] = useState<CuentaRevisada[]>([])
   // Momento de la última carga: base de "últimas 24 h / 7 días" (fijo entre renders).
   const [ahora, setAhora] = useState(() => Date.now())
 
   const cargar = useCallback(async () => {
     if (!isSupabaseConfigured) return // loading ya arranca en false sin Supabase
-    const [c, e] = await Promise.allSettled([listarCuentasClientes(), listarEventosClientes(30)])
+    const [c, e, r] = await Promise.allSettled([listarCuentasClientes(), listarEventosClientes(30), listarCuentasRevisadas()])
     if (c.status === 'fulfilled') setCuentas(c.value)
     if (e.status === 'fulfilled') setEventos(e.value)
+    if (r.status === 'fulfilled') setRevisadas(r.value)
     setAhora(Date.now())
     if (c.status === 'rejected' || e.status === 'rejected') toast.error('No se pudo cargar todo. ¿Aplicaste la migración 202609260001_salud_clientes?')
     setLoading(false)
@@ -81,7 +84,9 @@ export function SaludClientesPage() {
 
   const correoDe = useMemo(() => new Map(cuentas.map((c) => [c.user_id, c.correo])), [cuentas])
   const enRango = useMemo(() => { const desde = ahora - rango * 86_400_000; return eventos.filter((e) => new Date(e.created_at).getTime() >= desde) }, [eventos, rango, ahora])
-  const errores = useMemo(() => enRango.filter((e) => e.tipo === 'error'), [enRango])
+  // Los revisados salen de la lista (pero siguen guardados); "Ver revisados" los muestra.
+  const errores = useMemo(() => enRango.filter((e) => e.tipo === 'error' && (verRevisados || !e.revisado_at)), [enRango, verRevisados])
+  const revisadosEnRango = enRango.filter((e) => e.tipo === 'error' && e.revisado_at).length
   const grupos = useMemo<GrupoError[]>(() => {
     const m = new Map<string, GrupoError>()
     for (const e of errores) {
@@ -101,14 +106,31 @@ export function SaludClientesPage() {
   // Visitas que intentaron entrar y nunca lo lograron: clientes que se quedaron afuera.
   const entraron = new Set(de('login_ok').map((e) => e.visita))
   const sinPoderEntrar = new Set(loginFallidos.filter((e) => !entraron.has(e.visita)).map((e) => e.visita)).size
-  const codigosPerdidos = contar(enRango.filter((e) => (e.nombre === 'seguimiento_no_encontrado' || e.nombre === 'pedido_no_encontrado') && e.mensaje).map((e) => e.mensaje as string)).slice(0, 12)
+  const eventosCodigo = enRango.filter((e) => (e.nombre === 'seguimiento_no_encontrado' || e.nombre === 'pedido_no_encontrado') && e.mensaje && !e.revisado_at)
+  const codigosPerdidos = contar(eventosCodigo.map((e) => e.mensaje as string)).slice(0, 12)
+
+  // Marca (o desmarca) eventos como revisados: se ve al instante y se guarda en la base.
+  const revisar = async (ids: number[], revisado = true) => {
+    const antes = eventos
+    const marca = revisado ? new Date().toISOString() : null
+    setEventos((lista) => lista.map((e) => ids.includes(e.id) ? { ...e, revisado_at: marca } : e))
+    try { await marcarEventosRevisados(ids, revisado); toast.success(revisado ? 'Marcado como revisado. Sigue guardado: lo ves con "Ver revisados".' : 'Vuelve a aparecer en la lista.') }
+    catch { setEventos(antes); toast.error('No se pudo guardar. ¿Aplicaste la migración 202609260003_salud_revisados?') }
+  }
+  const esRevisada = (userId: string, motivo: MotivoAyuda) => revisadas.some((r) => r.user_id === userId && r.motivo === motivo)
+  const contactado = async (userId: string, motivo: MotivoAyuda) => {
+    setRevisadas((lista) => [...lista, { user_id: userId, motivo, revisado_at: new Date().toISOString() }])
+    try { await marcarCuentaRevisada(userId, motivo); toast.success('Listo, sale de la lista.') }
+    catch { setRevisadas((lista) => lista.filter((r) => !(r.user_id === userId && r.motivo === motivo))); toast.error('No se pudo guardar. ¿Aplicaste la migración 202609260003_salud_revisados?') }
+  }
 
   const confirmadas = cuentas.filter((c) => c.confirmada_at).length
   const activas7 = cuentas.filter((c) => c.ultimo_ingreso_at && ahora - new Date(c.ultimo_ingreso_at).getTime() < 7 * 86_400_000).length
   const conPedidos = cuentas.filter((c) => c.pedidos > 0).length
-  const sinConfirmar = cuentas.filter((c) => !c.confirmada_at && ahora - new Date(c.creada_at).getTime() > 3_600_000)
-  const sinPedidos = cuentas.filter((c) => c.confirmada_at && c.pedidos === 0)
-  const visitasConError = visitasDe(errores)
+  const sinConfirmar = cuentas.filter((c) => !c.confirmada_at && ahora - new Date(c.creada_at).getTime() > 3_600_000 && !esRevisada(c.user_id, 'sin_confirmar'))
+  const sinPedidos = cuentas.filter((c) => c.confirmada_at && c.pedidos === 0 && !esRevisada(c.user_id, 'sin_pedidos'))
+  const pendientes = errores.filter((e) => !e.revisado_at)
+  const visitasConError = visitasDe(pendientes)
   const tablaCuentas = verTodas ? cuentas : cuentas.slice(0, 15)
 
   return (
@@ -129,15 +151,15 @@ export function SaludClientesPage() {
 
       {loading ? <div className="mt-5 h-64 animate-pulse rounded-2xl border border-line bg-panel" /> : <>
         {/* Estado general */}
-        {errores.length === 0 ? (
+        {pendientes.length === 0 ? (
           <div className="mt-5 flex items-start gap-3 rounded-2xl border border-emerald-400/25 bg-emerald-400/[0.06] p-4">
             <CheckCircle2 size={22} className="mt-0.5 shrink-0 text-emerald-300" />
-            <div><p className="font-semibold text-emerald-200">Todo en orden</p><p className="mt-0.5 text-sm text-muted">Ningún cliente vio un error en {rango === 1 ? 'las últimas 24 h' : `los últimos ${rango} días`}.</p></div>
+            <div><p className="font-semibold text-emerald-200">Todo en orden</p><p className="mt-0.5 text-sm text-muted">{revisadosEnRango ? 'No hay errores sin revisar' : 'Ningún cliente vio un error'} en {rango === 1 ? 'las últimas 24 h' : `los últimos ${rango} días`}.</p></div>
           </div>
         ) : (
           <div className="mt-5 flex items-start gap-3 rounded-2xl border border-red-400/30 bg-red-400/[0.06] p-4">
             <AlertTriangle size={22} className="mt-0.5 shrink-0 text-red-300" />
-            <div><p className="font-semibold text-red-200">{visitasConError === 1 ? '1 cliente tuvo' : `${visitasConError} clientes tuvieron`} problemas</p><p className="mt-0.5 text-sm text-muted">{errores.length} {errores.length === 1 ? 'error' : 'errores'} en {grupos.length} {grupos.length === 1 ? 'tipo' : 'tipos'} distintos. Abajo ves cuál, dónde y en qué teléfono.</p></div>
+            <div><p className="font-semibold text-red-200">{visitasConError === 1 ? '1 cliente tuvo' : `${visitasConError} clientes tuvieron`} problemas</p><p className="mt-0.5 text-sm text-muted">{pendientes.length} {pendientes.length === 1 ? 'error' : 'errores'} sin revisar. Abajo ves cuál, dónde y en qué teléfono; marcalos como revisados cuando los atiendas.</p></div>
           </div>
         )}
 
@@ -172,13 +194,20 @@ export function SaludClientesPage() {
 
         {/* Errores */}
         <section className="mt-6">
-          <h2 className="text-sm font-bold">Errores que vieron los clientes</h2>
-          {grupos.length === 0 ? <p className="mt-2 text-sm text-muted">Ninguno en este período.</p> : (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-bold">Errores que vieron los clientes</h2>
+            <div className="flex flex-wrap gap-2">
+              {pendientes.length > 1 && <button className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-[11px] font-semibold text-muted hover:text-white" onClick={() => void revisar(pendientes.map((e) => e.id))}><Check size={13} /> Marcar todos como revisados</button>}
+              {revisadosEnRango > 0 && <button className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold ${verRevisados ? 'border-accent/50 text-accent' : 'border-line text-muted hover:text-white'}`} onClick={() => setVerRevisados((v) => !v)}><Eye size={13} /> {verRevisados ? 'Ocultar revisados' : `Ver revisados (${revisadosEnRango})`}</button>}
+            </div>
+          </div>
+          {grupos.length === 0 ? <p className="mt-2 text-sm text-muted">{revisadosEnRango ? 'Todos los errores de este período ya están revisados.' : 'Ninguno en este período.'}</p> : (
             <div className="mt-3 space-y-2">
               {grupos.map((g) => {
                 const open = abierto === g.clave
+                const sinRevisar = g.eventos.filter((e) => !e.revisado_at)
                 return (
-                  <article key={g.clave} className="rounded-2xl border border-line bg-panel">
+                  <article key={g.clave} className={`rounded-2xl border border-line bg-panel ${sinRevisar.length ? '' : 'opacity-60'}`}>
                     <button className="flex w-full items-start gap-3 p-4 text-left" onClick={() => setAbierto(open ? null : g.clave)}>
                       <span className="mt-0.5 grid min-w-9 place-items-center rounded-lg bg-red-400/12 px-2 py-1 text-sm font-bold text-red-300">{g.eventos.length}</span>
                       <span className="min-w-0 flex-1">
@@ -188,6 +217,11 @@ export function SaludClientesPage() {
                       </span>
                       <ChevronDown size={16} className={`mt-1 shrink-0 text-muted transition ${open ? 'rotate-180' : ''}`} />
                     </button>
+                    <div className="flex flex-wrap gap-2 px-4 pb-3">
+                      {sinRevisar.length
+                        ? <button className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white/[0.02] px-3 py-1.5 text-xs font-semibold text-muted transition hover:border-emerald-400/40 hover:text-emerald-300" onClick={() => void revisar(sinRevisar.map((e) => e.id))}><Check size={14} /> Marcar como revisado</button>
+                        : <button className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-muted hover:text-white" onClick={() => void revisar(g.eventos.map((e) => e.id), false)}>Volver a mostrar</button>}
+                    </div>
                     {open && (
                       <ul className="border-t border-line px-4 py-2 text-[12px]">
                         {g.eventos.slice(0, 30).map((e) => (
@@ -211,7 +245,7 @@ export function SaludClientesPage() {
           <section className="mt-6 rounded-2xl border border-line bg-panel p-4">
             <h2 className="text-sm font-bold">Códigos que buscaron y no aparecieron</h2>
             <p className="mt-0.5 text-[12px] text-muted">Si un código parece correcto (HS + 6 números), revisá si ese pedido existe o si le diste otro código al cliente.</p>
-            <div className="mt-2 flex flex-wrap gap-2">{codigosPerdidos.map(([c, n]) => <span key={c} className="rounded-full border border-line px-2.5 py-1 font-mono text-[12px]">{c}{n > 1 ? <b className="ml-1 text-amber-300">×{n}</b> : null}</span>)}</div>
+            <div className="mt-2 flex flex-wrap gap-2">{codigosPerdidos.map(([c, n]) => <span key={c} className="inline-flex items-center gap-1 rounded-full border border-line py-1 pl-2.5 pr-1 font-mono text-[12px]">{c}{n > 1 ? <b className="ml-1 text-amber-300">×{n}</b> : null}<button className="grid size-5 place-items-center rounded-full text-muted hover:bg-white/10 hover:text-white" title="Quitar (queda guardado)" aria-label={`Quitar ${c}`} onClick={() => void revisar(eventosCodigo.filter((e) => e.mensaje === c).map((e) => e.id))}><X size={12} /></button></span>)}</div>
           </section>
         )}
 
@@ -219,9 +253,9 @@ export function SaludClientesPage() {
         {(sinConfirmar.length > 0 || sinPedidos.length > 0) && (
           <section className="mt-6 grid gap-3 lg:grid-cols-2">
             {sinConfirmar.length > 0 && <ListaAyuda titulo="Se registraron y no confirmaron el correo" nota="Puede que el correo les haya caído en spam o no les llegó."
-              cuentas={sinConfirmar} mensaje={(c) => `Hola${primerNombre(c.nombre) ? ` ${primerNombre(c.nombre)}` : ''}, te saluda HAUSLINE. Vimos que creaste tu cuenta en nuestra tienda. ¿Te llegó el correo para confirmarla? Revisá también la carpeta de spam; si no aparece, te ayudamos por aquí.`} />}
+              cuentas={sinConfirmar} onListo={(c) => void contactado(c.user_id, 'sin_confirmar')} mensaje={(c) => `Hola${primerNombre(c.nombre) ? ` ${primerNombre(c.nombre)}` : ''}, te saluda HAUSLINE. Vimos que creaste tu cuenta en nuestra tienda. ¿Te llegó el correo para confirmarla? Revisá también la carpeta de spam; si no aparece, te ayudamos por aquí.`} />}
             {sinPedidos.length > 0 && <ListaAyuda titulo="Cuentas sin pedidos vinculados" nota="Si ya te compraron, puede que hayan usado otro correo. Vinculalo desde la ficha del cliente (Cuenta web)."
-              cuentas={sinPedidos} mensaje={(c) => `Hola${primerNombre(c.nombre) ? ` ${primerNombre(c.nombre)}` : ''}, te saluda HAUSLINE. Vimos que creaste tu cuenta. Si ya tenés un pedido con nosotros y no te aparece, decinos tu código de pedido y lo vinculamos a tu cuenta.`} />}
+              cuentas={sinPedidos} onListo={(c) => void contactado(c.user_id, 'sin_pedidos')} mensaje={(c) => `Hola${primerNombre(c.nombre) ? ` ${primerNombre(c.nombre)}` : ''}, te saluda HAUSLINE. Vimos que creaste tu cuenta. Si ya tenés un pedido con nosotros y no te aparece, decinos tu código de pedido y lo vinculamos a tu cuenta.`} />}
           </section>
         )}
 
@@ -264,7 +298,7 @@ function Barra({ etiqueta, valor, total }: { etiqueta: string; valor: number; to
   return <div className="mt-3"><div className="flex justify-between text-sm"><span>{etiqueta}</span><b>{valor}{total ? <span className="ml-1 text-[11px] font-normal text-muted">({pct}%)</span> : null}</b></div><div className="mt-1 h-2 rounded-full bg-white/[0.06]"><div className="h-2 rounded-full bg-accent" style={{ width: `${pct}%` }} /></div></div>
 }
 
-function ListaAyuda({ titulo, nota, cuentas, mensaje }: { titulo: string; nota: string; cuentas: CuentaCliente[]; mensaje: (c: CuentaCliente) => string }) {
+function ListaAyuda({ titulo, nota, cuentas, mensaje, onListo }: { titulo: string; nota: string; cuentas: CuentaCliente[]; mensaje: (c: CuentaCliente) => string; onListo: (c: CuentaCliente) => void }) {
   return (
     <div className="rounded-2xl border border-amber-400/25 bg-amber-400/[0.04] p-4">
       <p className="text-sm font-semibold text-amber-200">{titulo} ({cuentas.length})</p>
@@ -274,6 +308,7 @@ function ListaAyuda({ titulo, nota, cuentas, mensaje }: { titulo: string; nota: 
           <li key={c.user_id} className="flex items-center gap-2 text-sm">
             <span className="min-w-0 flex-1 truncate">{c.nombre || c.correo} <span className="text-[11px] text-muted">· {hace(c.creada_at)}</span></span>
             {c.telefono && <a className="inline-flex shrink-0 items-center gap-1 text-xs text-accent hover:underline" href={whatsappUrl(c.telefono, mensaje(c))} target="_blank" rel="noreferrer"><MessageCircle size={13} /> WhatsApp</a>}
+            <button className="inline-flex shrink-0 items-center gap-1 text-xs text-muted hover:text-white" title="Sale de la lista (queda guardado)" onClick={() => onListo(c)}><Check size={13} /> Ya lo contacté</button>
           </li>
         ))}
       </ul>

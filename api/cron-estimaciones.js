@@ -152,7 +152,7 @@ async function enviarResumenSaludClientes(client) {
   const destino = (process.env.AVISO_ADMIN || process.env.SMTP_USER || '').trim()
   if (!destino) return 0
   const desde = new Date(Date.now() - 86_400_000).toISOString()
-  const { data, error } = await client.from('eventos_cliente').select('nombre,mensaje,origen,visita,id').eq('tipo', 'error').gte('created_at', desde).limit(2000)
+  const { data, error } = await client.from('eventos_cliente').select('nombre,mensaje,origen,visita,id').eq('tipo', 'error').is('revisado_at', null).gte('created_at', desde).limit(2000)
   if (error) throw new Error(error.message)
   if (!data?.length) return 0
   const grupos = new Map()
