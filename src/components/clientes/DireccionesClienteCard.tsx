@@ -1,7 +1,7 @@
 import { Copy, MapPin, Pencil, Truck } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { costoDelivery, direccionesDeCliente, fijarCostoDireccion, lineasDireccion, tarifasDelivery, urlMapa, type CostoDelivery, type DireccionCliente, type TarifaDelivery } from '../../services/direccionesCliente.service'
+import { costoDelivery, direccionesDeCliente, direccionesDeCuenta, fijarCostoDireccion, lineasDireccion, tarifasDelivery, urlMapa, type CostoDelivery, type DireccionCliente, type TarifaDelivery } from '../../services/direccionesCliente.service'
 
 const TIPO: Record<DireccionCliente['tipo'], string> = { residencial: 'Casa', trabajo: 'Trabajo', otro: 'Otro' }
 const precio = (c: CostoDelivery) => `${c.moneda === 'NIO' ? 'C$' : 'US$'} ${c.costo.toFixed(2)}`
@@ -9,8 +9,10 @@ const precio = (c: CostoDelivery) => `${c.moneda === 'NIO' ? 'C$' : 'US$'} ${c.c
 // Direcciones que el cliente guardó en Mi cuenta (tienda), con su ubicación y el costo de
 // delivery que ve él. Desde aquí se fija un costo propio por dirección y, en el pedido, se
 // usa para agregar el envío (onUsar abre el modal "Agregar envío" ya lleno).
-export function DireccionesClienteCard({ clienteId, compacto = false, tipoCambio = 37, onUsar }: {
-  clienteId: string
+// Se usa con clienteId (ficha / pedido) o con userId (una cuenta web que todavía no compró).
+export function DireccionesClienteCard({ clienteId, userId, compacto = false, tipoCambio = 37, onUsar }: {
+  clienteId?: string
+  userId?: string
   compacto?: boolean
   tipoCambio?: number
   onUsar?: (costoUsd: number | null, detalle: string) => void
@@ -23,10 +25,13 @@ export function DireccionesClienteCard({ clienteId, compacto = false, tipoCambio
 
   const cargar = useCallback(async () => {
     try {
-      const [d, t] = await Promise.all([direccionesDeCliente(clienteId), tarifasDelivery()])
+      const buscar = userId
+        ? direccionesDeCuenta(userId).then((direcciones) => ({ tieneCuenta: true, direcciones }))
+        : clienteId ? direccionesDeCliente(clienteId) : Promise.resolve({ tieneCuenta: false, direcciones: [] })
+      const [d, t] = await Promise.all([buscar, tarifasDelivery()])
       setDatos(d); setTarifas(t)
     } catch { setDatos({ tieneCuenta: false, direcciones: [] }) }
-  }, [clienteId])
+  }, [clienteId, userId])
   useEffect(() => { void Promise.resolve().then(cargar) }, [cargar])
 
   if (!datos) return null

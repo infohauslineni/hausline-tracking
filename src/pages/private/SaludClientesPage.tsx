@@ -1,9 +1,11 @@
-import { AlertTriangle, Check, CheckCircle2, ChevronDown, Eye, HeartPulse, MessageCircle, RefreshCw, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, Eye, HeartPulse, MapPin, MessageCircle, RefreshCw, X } from 'lucide-react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { listarCuentasClientes, listarCuentasRevisadas, listarEventosClientes, marcarCuentaRevisada, marcarEventosRevisados, type CuentaCliente, type CuentaRevisada, type EventoCliente, type MotivoAyuda } from '../../services/saludClientes.service'
 import { whatsappUrl } from '../../utils/whatsapp'
+import { DireccionesClienteCard } from '../../components/clientes/DireccionesClienteCard'
+import { contarDireccionesPorCuenta } from '../../services/direccionesCliente.service'
 
 type Rango = 1 | 7 | 30
 const RANGOS: [Rango, string][] = [[1, 'Últimas 24 h'], [7, '7 días'], [30, '30 días']]
@@ -67,15 +69,18 @@ export function SaludClientesPage() {
   const [verTodas, setVerTodas] = useState(false)
   const [verRevisados, setVerRevisados] = useState(false)
   const [revisadas, setRevisadas] = useState<CuentaRevisada[]>([])
+  const [numDirecciones, setNumDirecciones] = useState<Map<string, number>>(new Map())
+  const [cuentaAbierta, setCuentaAbierta] = useState<string | null>(null)
   // Momento de la última carga: base de "últimas 24 h / 7 días" (fijo entre renders).
   const [ahora, setAhora] = useState(() => Date.now())
 
   const cargar = useCallback(async () => {
     if (!isSupabaseConfigured) return // loading ya arranca en false sin Supabase
-    const [c, e, r] = await Promise.allSettled([listarCuentasClientes(), listarEventosClientes(30), listarCuentasRevisadas()])
+    const [c, e, r, d] = await Promise.allSettled([listarCuentasClientes(), listarEventosClientes(30), listarCuentasRevisadas(), contarDireccionesPorCuenta()])
     if (c.status === 'fulfilled') setCuentas(c.value)
     if (e.status === 'fulfilled') setEventos(e.value)
     if (r.status === 'fulfilled') setRevisadas(r.value)
+    if (d.status === 'fulfilled') setNumDirecciones(d.value)
     setAhora(Date.now())
     if (c.status === 'rejected' || e.status === 'rejected') toast.error('No se pudo cargar todo. ¿Aplicaste la migración 202609260001_salud_clientes?')
     setLoading(false)
@@ -262,22 +267,32 @@ export function SaludClientesPage() {
         {/* Todas las cuentas */}
         <section className="mt-6">
           <h2 className="text-sm font-bold">Cuentas de clientes ({cuentas.length})</h2>
+          <p className="mt-0.5 text-[12px] text-muted">Tocá "Ver" en Direcciones para ver dónde vive el cliente (con su ubicación en el mapa), aunque todavía no haya comprado.</p>
           {cuentas.length === 0 ? <div className="mt-3 rounded-2xl border border-line bg-panel px-6 py-12 text-center"><HeartPulse size={28} className="mx-auto text-muted" /><p className="mt-3 text-sm text-muted">Todavía nadie creó una cuenta en la tienda.</p></div> : (
             <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-panel">
               <table className="w-full min-w-[640px] text-left text-sm">
                 <thead className="text-[10px] uppercase tracking-wide text-muted"><tr className="border-b border-line">
-                  <th className="px-4 py-2.5 font-bold">Cliente</th><th className="px-3 py-2.5 font-bold">Creada</th><th className="px-3 py-2.5 font-bold">Correo</th><th className="px-3 py-2.5 font-bold">Último ingreso</th><th className="px-3 py-2.5 text-right font-bold">Pedidos</th>
+                  <th className="px-4 py-2.5 font-bold">Cliente</th><th className="px-3 py-2.5 font-bold">Creada</th><th className="px-3 py-2.5 font-bold">Correo</th><th className="px-3 py-2.5 font-bold">Último ingreso</th><th className="px-3 py-2.5 font-bold">Direcciones</th><th className="px-3 py-2.5 text-right font-bold">Pedidos</th>
                 </tr></thead>
                 <tbody>
-                  {tablaCuentas.map((c) => (
-                    <tr key={c.user_id} className="border-b border-line/60 last:border-0">
+                  {tablaCuentas.map((c) => {
+                    const nDir = numDirecciones.get(c.user_id) ?? 0
+                    const abiertaCuenta = cuentaAbierta === c.user_id
+                    return <Fragment key={c.user_id}>
+                    <tr className="border-b border-line/60 last:border-0">
                       <td className="px-4 py-2.5"><p className="font-semibold">{c.nombre || 'Sin nombre'}</p><p className="text-[11px] text-muted">{c.correo}</p></td>
                       <td className="px-3 py-2.5 text-[12px] text-muted">{fechaHora(c.creada_at)}</td>
                       <td className="px-3 py-2.5 text-[12px]">{c.confirmada_at ? <span className="text-emerald-300">Confirmado</span> : <span className="text-amber-300">Sin confirmar</span>}</td>
                       <td className="px-3 py-2.5 text-[12px] text-muted">{hace(c.ultimo_ingreso_at)}</td>
+                      <td className="px-3 py-2.5 text-[12px]">{nDir ? <button className="inline-flex items-center gap-1 font-semibold text-accent hover:underline" onClick={() => setCuentaAbierta(abiertaCuenta ? null : c.user_id)}><MapPin size={13} /> {nDir} · {abiertaCuenta ? 'Ocultar' : 'Ver'}</button> : <span className="text-muted">—</span>}</td>
                       <td className="px-3 py-2.5 text-right font-semibold">{c.pedidos}</td>
                     </tr>
-                  ))}
+                    {abiertaCuenta && <tr className="border-b border-line/60"><td colSpan={6} className="px-4 pb-4">
+                      {c.telefono && <a className="mt-2 inline-flex items-center gap-1 text-xs text-accent hover:underline" href={whatsappUrl(c.telefono)} target="_blank" rel="noreferrer"><MessageCircle size={13} /> WhatsApp {c.telefono}</a>}
+                      <DireccionesClienteCard userId={c.user_id} />
+                    </td></tr>}
+                    </Fragment>
+                  })}
                 </tbody>
               </table>
               {cuentas.length > 15 && <button className="w-full border-t border-line py-2.5 text-xs font-semibold text-accent" onClick={() => setVerTodas((v) => !v)}>{verTodas ? 'Ver menos' : `Ver las ${cuentas.length}`}</button>}

@@ -34,10 +34,26 @@ export async function direccionesDeCliente(clienteId: string): Promise<{ tieneCu
     userId = data?.[0]?.user_id ?? null
   }
   if (!userId) return { tieneCuenta: false, direcciones: [] }
+  return { tieneCuenta: true, direcciones: await direccionesDeCuenta(userId) }
+}
+
+// Direcciones de una cuenta web (sirve también para clientes que todavía no compraron y por
+// eso no tienen ficha en Clientes).
+export async function direccionesDeCuenta(userId: string): Promise<DireccionCliente[]> {
+  if (!supabase) return []
   const { data, error } = await supabase.from('direcciones_cliente').select('*').eq('user_id', userId)
     .order('predeterminada', { ascending: false }).order('created_at')
   if (error) throw error
-  return { tieneCuenta: true, direcciones: (data ?? []) as DireccionCliente[] }
+  return (data ?? []) as DireccionCliente[]
+}
+
+// Cuántas direcciones guardó cada cuenta (para la lista de cuentas de Salud de clientes).
+export async function contarDireccionesPorCuenta(): Promise<Map<string, number>> {
+  const m = new Map<string, number>()
+  if (!supabase) return m
+  const { data } = await supabase.from('direcciones_cliente').select('user_id').limit(5000)
+  for (const r of (data ?? []) as { user_id: string }[]) m.set(r.user_id, (m.get(r.user_id) ?? 0) + 1)
+  return m
 }
 
 export async function tarifasDelivery(): Promise<TarifaDelivery[]> {
