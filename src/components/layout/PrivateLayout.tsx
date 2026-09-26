@@ -1,4 +1,4 @@
-import { ArrowUpRight, BarChart3, Bell, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, MoreHorizontal, PackagePlus, PackageSearch, Plus, ReceiptText, RotateCcw, Settings, ShoppingBag, Star, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
+import { ArrowUpRight, BarChart3, Bell, Boxes, CircleGauge, CreditCard, HandCoins, HeartPulse, Inbox, LogOut, Menu, MoreHorizontal, PackagePlus, PackageSearch, Plus, ReceiptText, RotateCcw, Settings, ShoppingBag, Star, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -27,10 +27,17 @@ async function calcularEstado(): Promise<{ badges: Badges; alertas: Alerta[] }> 
     const { contarReembolsosPorAtender } = await import('../../services/reembolsos.service')
     reembolsos = await contarReembolsosPorAtender()
   } catch { /* sin permiso (operador) o sin migración 202609250002 */ }
+  // Errores que vieron los clientes en las últimas 24 h (sin la migración 202609260001, 0).
+  let erroresClientes = 0
+  try {
+    const { contarErroresClientes24h } = await import('../../services/saludClientes.service')
+    erroresClientes = await contarErroresClientes24h()
+  } catch { /* sin migración 202609260001 */ }
   const badges: Badges = {
     '/pedidos': pedidos.filter((p) => p.estado === 'disponible_entrega').length,
     '/solicitudes': solicitudes,
     '/reembolsos': reembolsos,
+    '/salud-clientes': erroresClientes,
     '/pagos': pedidos.filter((p) => (p.estado === 'disponible_entrega' || p.estado === 'entregado') && Number(p.saldo) > 0.01).length,
     '/logistica': pedidos.filter((p) => p.estado === 'incidencia').length,
   }
@@ -50,6 +57,7 @@ const operaciones: NavItem[] = [
 const clientesProductos: NavItem[] = [
   { to: '/clientes', label: 'Clientes', icon: Users },
   { to: '/resenas', label: 'Reseñas', icon: Star },
+  { to: '/salud-clientes', label: 'Salud de clientes', icon: HeartPulse, nuevo: true },
   { to: '/productos', label: 'Productos', icon: PackageSearch },
   { to: '/stock', label: 'Compras libres', icon: HandCoins },
 ]

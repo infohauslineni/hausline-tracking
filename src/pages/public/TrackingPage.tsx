@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { PortalShell, Wordmark } from '../../components/public/PortalChrome'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { buscarPedidoPublico } from '../../services/publicTracking.service'
+import { mensajeDeError, registrarEventoCliente } from '../../utils/salud'
 import type { EstadoPedido } from '../../types/domain'
 import type { PublicOrder } from '../../types/publicTracking'
 import { estimateAfterArrival, postponeToMinFuture, postponeUntilFuture } from '../../utils/estimates'
@@ -47,8 +48,13 @@ export function TrackingPage() {
       // La animación "Buscando tu pedido" se muestra al menos un momento (evita el parpadeo).
       if (!silent) { const resto = 900 - (Date.now() - inicio); if (resto > 0) await new Promise((r) => setTimeout(r, resto)) }
       setOrder(data); setNotFound(!data); if (data) recordarPedido(data.codigo)
+      if (!silent) registrarEventoCliente(data ? 'vio_seguimiento' : 'seguimiento_no_encontrado', { mensaje: code.trim().toUpperCase() })
     }
-    catch { if (!silent) setNotFound(true) }
+    catch (error) {
+      // Falla del sistema: el cliente ve "no encontrado", así que la anotamos para el panel.
+      registrarEventoCliente('seguimiento_error', { tipo: 'error', mensaje: `${code.trim().toUpperCase()} · ${mensajeDeError(error)}`, detalle: { silencioso: silent } })
+      if (!silent) setNotFound(true)
+    }
     finally { if (!silent) setLoading(false) }
   }, [])
 

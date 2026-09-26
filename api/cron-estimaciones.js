@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { registrarEnTrack17, pollGuiasActivas } from './_track17.js'
 import { obtenerCatalogoMergeado, mapearCatalogoAProductos } from './_catalogo.js'
-import { enviarCorreoBodega, enviarCorreoAbandono, enviarCorreoRetraso } from './_correo.js'
+import { enviarCorreoBodega, enviarCorreoAbandono, enviarCorreoRetraso, enviarCorreoSaludClientesAdmin } from './_correo.js'
 
 const GRACIA_BODEGA = 2
 const CARGO_BODEGA_DIARIO = 5
@@ -137,6 +137,36 @@ async function enviarAvisosRetraso(client) {
 // Sincroniza el catálogo web (tienda + feed + panel) → tabla `productos` del tracking.
 // Corre una vez al día para que los cambios de precio/foto de la web lleguen solos, sin
 // que nadie toque "Sincronizar catálogo". Mismo mapeo que la sincronización manual.
+// Resumen diario al admin de los errores que vieron los clientes (eventos_cliente, migración
+// 202609260001). Solo se manda si hubo alguno. Mismos nombres que la pantalla "Salud de clientes".
+const TITULO_ERROR = {
+  error_visto: 'Le salió un error en pantalla', rpc_error: 'No cargaron sus datos', aviso_error: 'Le salió un aviso de error',
+  js_error: 'Falla de la página (código)', promesa_error: 'Falla de la página (código)', supabase_no_cargo: 'No cargó el sistema de cuentas',
+  enlace_invalido: 'El enlace del correo no funcionó', login_fallido: 'Falla del sistema al ingresar', crear_fallido: 'Falla del sistema al crear la cuenta',
+  recuperar_fallido: 'Falla al enviar el correo de recuperación', nueva_fallido: 'Falla al guardar la contraseña nueva', checkout_error: 'Falla en el checkout',
+  comprobante_error: 'No pudo subir el comprobante', seguimiento_error: 'El seguimiento no cargó (vio "no encontrado")',
+  fotos_error: 'No cargaron las fotos del seguimiento', pantalla_error: 'Vio la pantalla "Algo salió mal"',
+}
+const ORIGEN_ERROR = { tienda: 'Tienda', cuenta: 'Mi cuenta', checkout: 'Checkout', seguimiento: 'Seguimiento' }
+async function enviarResumenSaludClientes(client) {
+  const destino = (process.env.AVISO_ADMIN || process.env.SMTP_USER || '').trim()
+  if (!destino) return 0
+  const desde = new Date(Date.now() - 86_400_000).toISOString()
+  const { data, error } = await client.from('eventos_cliente').select('nombre,mensaje,origen,visita,id').eq('tipo', 'error').gte('created_at', desde).limit(2000)
+  if (error) throw new Error(error.message)
+  if (!data?.length) return 0
+  const grupos = new Map()
+  for (const e of data) {
+    const clave = `${e.nombre}|${e.mensaje ?? ''}`
+    const g = grupos.get(clave) ?? { titulo: TITULO_ERROR[e.nombre] ?? e.nombre, mensaje: e.mensaje, origen: ORIGEN_ERROR[e.origen] ?? e.origen, veces: 0, visitas: new Set() }
+    g.veces++; g.visitas.add(e.visita ?? `id${e.id}`); grupos.set(clave, g)
+  }
+  const lista = [...grupos.values()].map((g) => ({ ...g, clientes: g.visitas.size })).sort((a, b) => b.clientes - a.clientes || b.veces - a.veces)
+  const clientes = new Set(data.map((e) => e.visita ?? `id${e.id}`)).size
+  await enviarCorreoSaludClientesAdmin({ to: destino, grupos: lista, total: data.length, clientes })
+  return data.length
+}
+
 async function sincronizarCatalogoServidor(client) {
   const merged = await obtenerCatalogoMergeado()
   const records = mapearCatalogoAProductos(merged)
@@ -294,8 +324,17 @@ export default async function handler(request, response) {
     console.error('cron: aviso de retraso falló (¿migración 202609020001 sin aplicar?)', retrasoError?.message)
   }
 
+  // Resumen de errores que vieron los clientes (solo si hubo). Aislado para no tumbar lo principal.
+  let saludClientes = 0
+  try {
+    saludClientes = await enviarResumenSaludClientes(client)
+  } catch (saludError) {
+    console.error('cron: resumen salud de clientes falló (¿migración 202609260001 sin aplicar?)', saludError?.message)
+  }
+
   return response.status(200).json({
     ok: true,
+    salud_clientes: saludClientes,
     updated,
     avanzados: Number(avanzados ?? 0),
     avanzados_calidad: Number(avanzadosCalidad ?? 0),

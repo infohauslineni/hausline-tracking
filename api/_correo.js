@@ -1090,3 +1090,34 @@ export async function enviarCorreoReembolsoDecisionAdmin({ to, s }) {
     html,
   })
 }
+
+// Al ADMIN (cron diario): errores que vieron los clientes en las últimas 24 h (tabla
+// eventos_cliente). Solo se manda si hubo alguno: así se entera aunque nadie lo reporte.
+export async function enviarCorreoSaludClientesAdmin({ to, grupos, total, clientes }) {
+  const appUrl = (process.env.APP_URL ?? process.env.VITE_PUBLIC_APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
+  const filas = grupos.slice(0, 8).map((g) => `<tr>
+    <td style="padding:10px 0;border-bottom:1px solid #eee;vertical-align:top;width:44px"><span style="display:inline-block;min-width:28px;padding:3px 6px;border-radius:6px;background:#fee2e2;color:#b91c1c;font-weight:700;font-size:13px;text-align:center">${g.veces}</span></td>
+    <td style="padding:10px 0;border-bottom:1px solid #eee"><div style="font-size:14px;color:#0b0f19;font-weight:600">${esc(g.titulo)}</div>${g.mensaje ? `<div style="font-size:12px;color:#6b7280;margin-top:2px;word-break:break-word">${esc(g.mensaje)}</div>` : ''}<div style="font-size:11px;color:#9ca3af;margin-top:3px">${esc(g.origen)} · ${g.clientes === 1 ? '1 cliente' : `${g.clientes} clientes`}</div></td>
+  </tr>`).join('')
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;background:#ececed;font-family:Arial,Helvetica,sans-serif">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ececed"><tr><td align="center" style="padding:28px 14px">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#fff;border-radius:14px;overflow:hidden">
+      <tr><td style="background:#050505;padding:22px 24px;color:#fff;font-size:18px;font-weight:700;letter-spacing:3px;text-align:center">HAUSLINE</td></tr>
+      <tr><td style="padding:26px 24px">
+        <p style="margin:0 0 6px;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#b91c1c;font-weight:700">Salud de clientes · últimas 24 h</p>
+        <h1 style="margin:0 0 10px;font-size:20px;color:#0b0f19">${clientes === 1 ? '1 cliente tuvo' : `${clientes} clientes tuvieron`} problemas en la tienda</h1>
+        <p style="margin:0 0 14px;font-size:14px;color:#374151;line-height:1.5">${total} ${total === 1 ? 'error' : 'errores'} que los clientes vieron en pantalla (Mi cuenta, checkout o seguimiento). Puede que nadie te lo haya dicho.</p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${filas}</table>
+        <a href="${appUrl}/salud-clientes" style="display:block;margin-top:22px;background:#050505;color:#fff;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:2px;text-transform:uppercase;text-align:center;padding:15px;border-radius:6px">Ver detalles</a>
+      </td></tr>
+    </table>
+  </td></tr></table>
+</body></html>`
+  await transporteSmtp().sendMail({
+    from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
+    to,
+    subject: `⚠️ ${clientes === 1 ? '1 cliente tuvo' : `${clientes} clientes tuvieron`} problemas en la tienda (últimas 24 h)`,
+    html,
+  })
+}

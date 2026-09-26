@@ -1,0 +1,53 @@
+import { supabase } from '../lib/supabase'
+
+// "Salud de clientes": cuentas creadas en la tienda (Mi cuenta) + lo que la tienda, el
+// checkout y el seguimiento anotan solos cuando a un cliente le falla algo
+// (tabla eventos_cliente, migración 202609260001).
+export type CuentaCliente = {
+  user_id: string
+  nombre: string
+  correo: string
+  telefono: string | null
+  creada_at: string
+  confirmada_at: string | null
+  ultimo_ingreso_at: string | null
+  pedidos: number
+}
+
+export type EventoCliente = {
+  id: number
+  created_at: string
+  origen: 'tienda' | 'cuenta' | 'checkout' | 'seguimiento'
+  tipo: 'error' | 'evento'
+  nombre: string
+  pagina: string | null
+  mensaje: string | null
+  detalle: Record<string, unknown> | null
+  visita: string | null
+  dispositivo: string | null
+  user_id: string | null
+}
+
+export async function listarCuentasClientes(): Promise<CuentaCliente[]> {
+  if (!supabase) return []
+  const { data, error } = await supabase.rpc('cuentas_clientes_resumen')
+  if (error) throw error
+  return (data ?? []) as CuentaCliente[]
+}
+
+export async function listarEventosClientes(dias: number): Promise<EventoCliente[]> {
+  if (!supabase) return []
+  const desde = new Date(Date.now() - dias * 86_400_000).toISOString()
+  const { data, error } = await supabase.from('eventos_cliente').select('*').gte('created_at', desde).order('created_at', { ascending: false }).limit(5000)
+  if (error) throw error
+  return (data ?? []) as EventoCliente[]
+}
+
+// Para el contador del menú: errores de clientes en las últimas 24 h.
+export async function contarErroresClientes24h(): Promise<number> {
+  if (!supabase) return 0
+  const desde = new Date(Date.now() - 86_400_000).toISOString()
+  const { count, error } = await supabase.from('eventos_cliente').select('id', { count: 'exact', head: true }).eq('tipo', 'error').gte('created_at', desde)
+  if (error) throw error
+  return count ?? 0
+}

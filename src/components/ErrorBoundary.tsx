@@ -1,5 +1,6 @@
 import { Component, type ReactNode } from 'react'
 import { recargarUnaVez } from '../lib/reloadOnce'
+import { registrarEventoCliente } from '../utils/salud'
 
 // Detecta un fallo al cargar un "chunk" (import dinámico). Pasa sobre todo DESPUÉS de un
 // deploy: la página abierta pide un archivo con el hash viejo que ya no existe (404) y la
@@ -21,7 +22,9 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   }
 
   componentDidCatch(error: Error) {
-    if (esErrorDeChunk(error)) recargarUnaVez()
+    if (esErrorDeChunk(error)) { recargarUnaVez(); return }
+    // En las páginas del cliente (seguimiento), avisamos al panel que alguien vio "Algo salió mal".
+    if (/^\/(pedido|mis-pedidos)/.test(window.location.pathname)) registrarEventoCliente('pantalla_error', { tipo: 'error', mensaje: error.message })
   }
 
   render() {

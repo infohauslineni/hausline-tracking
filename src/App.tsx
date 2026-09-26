@@ -27,6 +27,7 @@ const ContenidoPage = lazy(() => import('./pages/private/ContenidoPage').then((m
 const ResenasPage = lazy(() => import('./pages/private/ResenasPage').then((module) => ({ default: module.ResenasPage })))
 const ReembolsosPage = lazy(() => import('./pages/private/ReembolsosPage').then((module) => ({ default: module.ReembolsosPage })))
 const CuponesPage = lazy(() => import('./pages/private/CuponesPage').then((module) => ({ default: module.CuponesPage })))
+const SaludClientesPage = lazy(() => import('./pages/private/SaludClientesPage').then((module) => ({ default: module.SaludClientesPage })))
 const PromocionesPage = lazy(() => import('./pages/private/PromocionesPage').then((module) => ({ default: module.PromocionesPage })))
 const TrackingPage = lazy(() => import('./pages/public/TrackingPage').then((module) => ({ default: module.TrackingPage })))
 const MisPedidosPage = lazy(() => import('./pages/public/MisPedidosPage').then((module) => ({ default: module.MisPedidosPage })))
@@ -71,6 +72,7 @@ export function App() {
           <Route path="/clientes" element={<ClientesPage />} />
           <Route path="/clientes/:id" element={<ClienteDetailPage />} />
           <Route path="/resenas" element={<ResenasPage />} />
+          <Route path="/salud-clientes" element={<SaludClientesPage />} />
           <Route path="/cupones" element={<CuponesPage />} />
           <Route path="/reembolsos" element={<ReembolsosPage />} />
           <Route path="/promociones" element={<PromocionesPage />} />

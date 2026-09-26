@@ -5,6 +5,7 @@ import type { EstadoPedido, Pedido } from '../types/domain'
 import type { PublicImage, PublicOrder } from '../types/publicTracking'
 import { estadoLabelPublico } from '../constants/orders'
 import { estimateDateForPreview } from '../utils/estimates'
+import { registrarEventoCliente } from '../utils/salud'
 
 // CANCELADO sí se le muestra al cliente (pidió el dueño): el seguimiento dice "Cancelado".
 // INCIDENCIA / "requiere atención" siguen siendo internos: el cliente ve el último estado
@@ -77,7 +78,7 @@ export async function buscarPedidoPublico(code: string): Promise<PublicOrder | n
 async function fotosPublicas(codigo: string): Promise<PublicImage[]> {
   try {
     const res = await fetch('/api/fotos-pedido', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fotosPublicas: true, codigo }) })
-    if (!res.ok) return []
+    if (!res.ok) { registrarEventoCliente('fotos_error', { tipo: 'error', mensaje: `${codigo} · HTTP ${res.status}` }); return [] }
     const json = await res.json() as { imagenes?: PublicImage[] }
     return Array.isArray(json.imagenes) ? json.imagenes : []
   } catch { return [] }
