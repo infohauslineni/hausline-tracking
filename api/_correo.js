@@ -731,6 +731,27 @@ export async function enviarCorreoAbandono({ correo, nombre, codigo, producto })
   })
 }
 
+// Aviso 3 horas ANTES de que venza un encargo web sin pago (tarea programada cada 15 min en
+// notificar-estado.js). Lleva la hora exacta de vencimiento (hora de Nicaragua) y el botón
+// a la página de pago.
+export async function enviarCorreoEncargoPorVencer({ correo, nombre, codigo, productos, vence }) {
+  const base = (process.env.CATALOGO_BASE_URL ?? 'https://hauslineshopni.es/').replace(/\/$/, '')
+  const checkoutUrl = `${base}/checkout/?c=${encodeURIComponent(codigo)}`
+  const hora = vence ? new Intl.DateTimeFormat('es-NI', { timeZone: 'America/Managua', hour: 'numeric', minute: '2-digit' }).format(new Date(vence)) : null
+  const lista = (productos ?? []).slice(0, 3).map((p) => `<strong>${esc(p)}</strong>`).join(', ') + ((productos ?? []).length > 3 ? ' y más' : '')
+  const nota = `Tu encargo ${codigo}${lista ? ` (${lista})` : ''} vence${hora ? ` hoy a las <strong>${esc(hora)}</strong>` : ' en unas 3 horas'} (hora de Nicaragua). Si no recibimos tu pago antes, se cancela solo y el producto queda libre. Completá tu pago y enviá tu comprobante para que lo mandemos a pedir.`
+  await transporteSmtp().sendMail({
+    from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
+    to: correo,
+    subject: `⏰ ${codigo}: tu encargo vence en unas 3 horas`,
+    html: plantillaCorreo({
+      nombre, codigo, estado: null, estadoLabel: 'Tu encargo está por vencer', nota,
+      urlSeguimiento: checkoutUrl, esNuevo: false, factura: null, fotos: [],
+      ctaTexto: 'Pagar y enviar comprobante', ctaUrl: checkoutUrl, pedirResena: false,
+    }),
+  })
+}
+
 // Correo automático de "ESPERAMOS TU PAGO". Se dispara al instante en que el cliente
 // crea un encargo desde la web (mismo webhook que avisa al admin). Le confirma su código
 // temporal SOL-####, le dice que estamos esperando el pago y le da un botón para pagar y

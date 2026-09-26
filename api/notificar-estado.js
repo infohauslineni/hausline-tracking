@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { ESTADO_LABEL, enviarCorreoPedido, enviarCorreoCancelacion, enviarCorreoBienvenida, enviarCorreoReembolsoAdmin, enviarCorreoReembolsoRechazado, enviarCorreoReembolsoRecibido, enviarCorreoReembolsoAprobado, enviarCorreoReembolsoDecisionAdmin } from './_correo.js'
+import { ESTADO_LABEL, enviarCorreoPedido, enviarCorreoCancelacion, enviarCorreoBienvenida, enviarCorreoReembolsoAdmin, enviarCorreoReembolsoRechazado, enviarCorreoReembolsoRecibido, enviarCorreoReembolsoAprobado, enviarCorreoReembolsoDecisionAdmin, enviarCorreoEncargoPorVencer } from './_correo.js'
 import { facturaPdfBuffer } from './_factura-pdf.js'
 import { subirFacturaDrive, subirArchivoDrive } from './_drive.js'
 import { cerrarEmail, reservarEmail } from './_email-eventos.js'
@@ -452,6 +452,46 @@ async function fotosPedidoPublico(response, body) {
   return response.status(200).json({ ok: true, imagenes: lista.map((a, i) => ({ ...a, url: firmadas?.[i]?.signedUrl ?? undefined })) })
 }
 
+// Encargos web que vencen en las próximas 3 horas y todavía no tienen pago reportado: se le
+// manda al cliente UN correo de aviso (aviso_vence_at evita repetirlo). Un carrito (grupo)
+// recibe un solo correo. Se marca ANTES de enviar para que dos corridas seguidas no dupliquen;
+// si el envío falla, se desmarca y lo reintenta la próxima corrida.
+async function recordatoriosEncargos(response) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(500).json({ ok: false })
+  const client = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  const ahora = Date.now()
+  const { data, error } = await client.from('solicitudes')
+    .select('id, codigo, grupo_codigo, cliente_nombre, cliente_correo, producto, vence_at')
+    .eq('estado', 'pendiente').is('pago_reportado_at', null).is('aviso_vence_at', null)
+    .not('cliente_correo', 'is', null)
+    .gt('vence_at', new Date(ahora).toISOString()).lte('vence_at', new Date(ahora + 3 * 3_600_000).toISOString())
+    .limit(300)
+  if (error) return response.status(502).json({ ok: false, error: error.message })
+
+  const grupos = new Map()
+  for (const s of data ?? []) {
+    const clave = s.grupo_codigo || s.codigo
+    grupos.set(clave, [...(grupos.get(clave) ?? []), s])
+  }
+  let enviados = 0
+  for (const [codigo, filas] of grupos) {
+    const correo = String(filas.find((f) => String(f.cliente_correo ?? '').trim())?.cliente_correo ?? '').trim()
+    if (!correo) continue
+    const ids = filas.map((f) => f.id)
+    const { error: marcaError } = await client.from('solicitudes').update({ aviso_vence_at: new Date().toISOString() }).in('id', ids).is('aviso_vence_at', null)
+    if (marcaError) { console.error('recordatorio vencimiento: no se pudo marcar', codigo, marcaError.message); continue }
+    try {
+      const vence = filas.map((f) => f.vence_at).sort()[0]
+      await enviarCorreoEncargoPorVencer({ correo, nombre: filas[0].cliente_nombre ?? null, codigo, productos: filas.map((f) => f.producto).filter(Boolean), vence })
+      enviados++
+    } catch (e) {
+      console.error('recordatorio vencimiento: correo falló', codigo, e?.message)
+      await client.from('solicitudes').update({ aviso_vence_at: null }).in('id', ids)
+    }
+  }
+  return response.status(200).json({ ok: true, enviados })
+}
+
 const ORIGEN_TIENDA = 'https://hauslineshopni.es'
 
 export default async function handler(request, response) {
@@ -485,6 +525,8 @@ export default async function handler(request, response) {
   if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
     return response.status(500).json({ ok: false, error: 'Missing SMTP configuration' })
   }
+  // Tarea programada de Supabase (pg_cron cada 15 min, migración 202609260004).
+  if (body.tarea === 'recordatorios_encargos') return recordatoriosEncargos(response)
 
   const record = body.record ?? {}
   const oldRecord = body.old_record ?? {}
