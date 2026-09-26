@@ -145,7 +145,7 @@ const TITULO_ERROR = {
   enlace_invalido: 'El enlace del correo no funcionó', login_fallido: 'Falla del sistema al ingresar', crear_fallido: 'Falla del sistema al crear la cuenta',
   recuperar_fallido: 'Falla al enviar el correo de recuperación', nueva_fallido: 'Falla al guardar la contraseña nueva', checkout_error: 'Falla en el checkout',
   comprobante_error: 'No pudo subir el comprobante', seguimiento_error: 'El seguimiento no cargó (vio "no encontrado")',
-  fotos_error: 'No cargaron las fotos del seguimiento', pantalla_error: 'Vio la pantalla "Algo salió mal"',
+  fotos_error: 'No cargaron las fotos del seguimiento', pantalla_error: 'Vio la pantalla "Algo salió mal"', cupon_error: 'No se pudo validar el cupón',
 }
 const ORIGEN_ERROR = { tienda: 'Tienda', cuenta: 'Mi cuenta', checkout: 'Checkout', seguimiento: 'Seguimiento' }
 async function enviarResumenSaludClientes(client) {

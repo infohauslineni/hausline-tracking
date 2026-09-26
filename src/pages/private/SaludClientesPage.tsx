@@ -26,6 +26,7 @@ const NOMBRE_ERROR: Record<string, string> = {
   seguimiento_error: 'El seguimiento no cargó (vio "no encontrado")',
   fotos_error: 'No cargaron las fotos del seguimiento',
   pantalla_error: 'Vio la pantalla "Algo salió mal"',
+  cupon_error: 'No se pudo validar el cupón',
 }
 const ORIGEN: Record<EventoCliente['origen'], string> = { tienda: 'Tienda', cuenta: 'Mi cuenta', checkout: 'Checkout', seguimiento: 'Seguimiento' }
 const MOTIVO_LOGIN: Record<string, string> = {
