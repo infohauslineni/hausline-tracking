@@ -558,12 +558,7 @@ export async function enviarCorreoEncargoAdmin({ to, solicitud }) {
   const appUrl = (process.env.APP_URL ?? process.env.VITE_PUBLIC_APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
   const panelUrl = `${appUrl}/solicitudes`
 
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
-    port: Number(process.env.SMTP_PORT ?? 465),
-    secure: true,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  })
+  const transporter = transporteSmtp()
 
   await transporter.sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
@@ -668,10 +663,7 @@ export async function enviarCorreoEncargoAdminGrupo({ to, solicitudes, pagoRepor
   const subject = pagoReportado
     ? `💰 Pago reportado · ${nombre} · ${solicitudes.length} ${solicitudes.length === 1 ? 'producto' : 'productos'} · ${monto} — verificá`
     : `Nuevo encargo · ${nombre} · ${solicitudes.length} productos · ${monto}`
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST ?? 'smtp.gmail.com', port: Number(process.env.SMTP_PORT ?? 465), secure: true,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  })
+  const transporter = transporteSmtp()
   await transporter.sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to,
@@ -689,12 +681,7 @@ export async function enviarCorreoBodega({ correo, nombre, codigo, dias, diasCob
   const cargoTxt = montoUSD(cargo) + (cordobas ? ` (≈ C$ ${Number(cordobas).toLocaleString('es-NI')})` : '')
   const nota = `Tu pedido lleva <strong>${dias} días</strong> disponible para entrega. Pasados los 2 días de gracia, se cobran US$ 5 por cada día extra en bodega. Hasta hoy se han sumado <strong>${cargoTxt}</strong> (${diasCobrados} ${diasCobrados === 1 ? 'día' : 'días'}) a tu factura final. Coordiná tu entrega y pago para que no siga subiendo.`
 
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
-    port: Number(process.env.SMTP_PORT ?? 465),
-    secure: true,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  })
+  const transporter = transporteSmtp()
 
   await transporter.sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
@@ -712,12 +699,7 @@ export async function enviarCorreoAbandono({ correo, nombre, codigo, producto })
   const checkoutUrl = `${base}/checkout/?c=${encodeURIComponent(codigo)}`
   const nota = `Tu pedido ${codigo}${producto ? ` de <strong>${esc(producto)}</strong>` : ''} quedó a un paso de confirmarse. Completá tu pago y lo mandamos a pedir enseguida — recordá que el encargo se cancela solo a las 24 horas de creado.`
 
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
-    port: Number(process.env.SMTP_PORT ?? 465),
-    secure: true,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  })
+  const transporter = transporteSmtp()
 
   await transporter.sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
@@ -762,12 +744,7 @@ export async function enviarCorreoEsperandoPago({ correo, nombre, codigo, produc
   const checkoutUrl = `${base}/checkout/?c=${encodeURIComponent(codigo)}`
   const nota = `¡Recibimos tu pedido <strong>${esc(codigo)}</strong>!${producto ? ` de <strong>${esc(producto)}</strong>` : ''} Estamos <strong>esperando tu pago</strong> para confirmarlo. Realizá la transferencia y enviá tu comprobante desde el botón de abajo. Guardá tu código: es tu referencia para cualquier consulta. Tenemos tu pedido en espera por <strong>24 horas</strong>; si no recibimos el pago, se cancela solo.<br><br><span style="font-size:12px;color:#8b93a7;">Importante: los pedidos por encargo <strong>no admiten devoluciones de dinero ni cambios</strong>.</span>`
 
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
-    port: Number(process.env.SMTP_PORT ?? 465),
-    secure: true,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  })
+  const transporter = transporteSmtp()
 
   await transporter.sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
@@ -788,10 +765,7 @@ export async function enviarCorreoEsperandoPagoGrupo({ correo, nombre, codigos, 
   const base = (process.env.CATALOGO_BASE_URL ?? 'https://hauslineshopni.es/').replace(/\/$/, '')
   const checkoutUrl = `${base}/checkout/?c=${encodeURIComponent(codigos.join(','))}`
   const nota = `¡Recibimos tu pedido de <strong>${cantidad} productos</strong>! Estamos <strong>esperando tu pago</strong> para confirmarlo. Realizá la transferencia y enviá tu comprobante desde el botón de abajo. Tenemos tu pedido en espera por <strong>24 horas</strong>; si no recibimos el pago, se cancela solo.<br><br><span style="font-size:12px;color:#8b93a7;">Importante: los pedidos por encargo <strong>no admiten devoluciones de dinero ni cambios</strong>.</span>`
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST ?? 'smtp.gmail.com', port: Number(process.env.SMTP_PORT ?? 465), secure: true,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  })
+  const transporter = transporteSmtp()
   await transporter.sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to: correo,
@@ -811,12 +785,7 @@ export async function enviarCorreoRetraso({ correo, nombre, codigo, estado }) {
   const urlSeguimiento = urlPedidoCuenta(codigo)
   const nota = `Queremos contarte que tu pedido <strong>${esc(codigo)}</strong> está tardando un poco más de lo habitual en su tránsito internacional. Los envíos internacionales a veces tienen demoras en aduana o transporte que no dependen de nosotros; ya le estamos dando seguimiento para que llegue lo antes posible. Gracias por tu paciencia y por confiar en nosotros — cualquier duda, escríbenos.`
 
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
-    port: Number(process.env.SMTP_PORT ?? 465),
-    secure: true,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  })
+  const transporter = transporteSmtp()
 
   await transporter.sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
@@ -851,12 +820,7 @@ export async function enviarCorreoCancelacion({ correo, nombre, codigo, motivo, 
   if (hayReembolso) nota += ` Ya iniciamos la <strong>devolución de ${montoUSD(monto)}</strong> que habías pagado. ${POLITICA_DEVOLUCION}`
   nota += ' Cualquier duda quedamos a la orden y gracias por tu comprensión.'
 
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
-    port: Number(process.env.SMTP_PORT ?? 465),
-    secure: true,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  })
+  const transporter = transporteSmtp()
 
   const bccArchivo = process.env.ARCHIVO_BCC ?? 'alerta@hauslineshopni.es'
   await transporter.sendMail({
@@ -879,12 +843,7 @@ export async function enviarCorreoPedido({ correo, nombre, codigo, estado, esNue
   const nota = ESTADO_NOTA[estado] ?? 'Tu pedido fue actualizado.'
   const urlSeguimiento = urlPedidoCuenta(codigo)
 
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
-    port: Number(process.env.SMTP_PORT ?? 465),
-    secure: true,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  })
+  const transporter = transporteSmtp()
 
   // Cuando hay factura (creación o entrega), se adjunta también en PDF. Si el PDF
   // falla por lo que sea, el correo se envía igual con la tabla en el cuerpo.
@@ -940,10 +899,7 @@ export async function enviarCorreoItemEstado({ correo, nombre, codigo, producto,
   if (!label) return false
   const nota = (ITEM_ESTADO_NOTA[estadoItem] || (() => `Tu producto <strong>${esc(producto)}</strong> fue actualizado.`))(producto)
   const urlSeguimiento = urlPedidoCuenta(codigo)
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST ?? 'smtp.gmail.com', port: Number(process.env.SMTP_PORT ?? 465), secure: true,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  })
+  const transporter = transporteSmtp()
   const attachments = []
   if (Array.isArray(fotos) && fotos.length) {
     for (const f of fotos) attachments.push({ filename: f.filename, content: f.content, contentType: f.contentType || 'image/webp', cid: f.cid })
@@ -978,12 +934,7 @@ export async function enviarCorreoBienvenida({ correo, nombre }) {
       <tr><td style="padding-top:24px;font-size:12px;line-height:1.6;color:#8b8b8b;">¿Compraste antes con este mismo correo? Tus pedidos aparecen solos en tu cuenta.</td></tr>
     </table>
   </td></tr></table></body></html>`
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
-    port: Number(process.env.SMTP_PORT ?? 465),
-    secure: true,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  })
+  const transporter = transporteSmtp()
   await transporter.sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to: correo,
@@ -992,12 +943,65 @@ export async function enviarCorreoBienvenida({ correo, nombre }) {
   })
 }
 
-// ─────────────── Solicitudes de cancelación / reembolso (Mi cuenta de la tienda) ───────────────
+// ─────────────── Transporte SMTP (todos los correos del sistema salen por acá) ───────────────
+// Gmail marca como LEÍDO todo lo que sale de la propia cuenta, incluida la copia de archivo
+// (BCC a alerta@) y los avisos al admin. Entonces las etiquetas de Gmail ("Esperamos tu pago",
+// "Orden confirmada"…) no mostraban el contador de no leídos. Tras enviar, si la cuenta que envía
+// está entre los destinatarios, se entra por IMAP (misma contraseña de aplicación) y esa copia se
+// marca como NO leída; los filtros de Gmail le siguen poniendo la etiqueta. Best-effort: si falla,
+// el correo ya salió igual. Se apaga con ARCHIVO_NO_LEIDO=0.
 function transporteSmtp() {
-  return nodemailer.createTransport({
+  const t = nodemailer.createTransport({
     host: process.env.SMTP_HOST ?? 'smtp.gmail.com', port: Number(process.env.SMTP_PORT ?? 465), secure: true,
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
   })
+  const enviar = t.sendMail.bind(t)
+  t.sendMail = async (opciones) => {
+    const info = await enviar(opciones)
+    await marcarCopiaNoLeida(opciones, info)
+    return info
+  }
+  return t
+}
+
+async function marcarCopiaNoLeida(opciones, info) {
+  const cuenta = String(process.env.SMTP_USER ?? '').trim().toLowerCase()
+  if (!cuenta || !process.env.SMTP_PASS || process.env.ARCHIVO_NO_LEIDO === '0' || !info?.messageId) return
+  const destinos = [opciones.to, opciones.cc, opciones.bcc].flat().filter(Boolean).map((d) => (typeof d === 'string' ? d : d.address ?? '')).join(',').toLowerCase()
+  if (!destinos.includes(cuenta)) return
+  let limite
+  try {
+    await Promise.race([
+      marcarNoLeidoImap(info.messageId.replace(/^<|>$/g, '')),
+      new Promise((_, rechazar) => { limite = setTimeout(() => rechazar(new Error('IMAP tardó demasiado')), 9000) }),
+    ])
+  } catch (err) {
+    console.warn('No se pudo marcar la copia como no leída:', err instanceof Error ? err.message : err)
+  } finally { clearTimeout(limite) }
+}
+
+async function marcarNoLeidoImap(messageId) {
+  const { ImapFlow } = await import('imapflow')
+  const client = new ImapFlow({
+    host: process.env.IMAP_HOST ?? 'imap.gmail.com', port: 993, secure: true, logger: false,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  })
+  await client.connect()
+  try {
+    // "Todos" / "All Mail" (el nombre cambia con el idioma de Gmail; se busca por su marca \All).
+    const buzones = await client.list()
+    const todos = buzones.find((b) => b.specialUse === '\\All')?.path ?? '[Gmail]/All Mail'
+    const lock = await client.getMailboxLock(todos)
+    try {
+      // La copia puede tardar un instante en aparecer: hasta 4 intentos.
+      for (let intento = 0; intento < 4; intento++) {
+        const uids = await client.search({ gmraw: `rfc822msgid:${messageId}` }, { uid: true })
+        if (uids && uids.length) { await client.messageFlagsRemove(uids, ['\\Seen'], { uid: true }); return }
+        await new Promise((r) => setTimeout(r, 1200))
+        await client.noop()
+      }
+    } finally { lock.release() }
+  } finally { await client.logout().catch(() => undefined) }
 }
 
 // Al ADMIN: un cliente pidió cancelar su pedido. Hay que revisarla en el panel (Reembolsos).
