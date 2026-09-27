@@ -1,4 +1,4 @@
-import { ArrowUpRight, BarChart3, Bell, Boxes, CircleGauge, CreditCard, HandCoins, HeartPulse, Inbox, LogOut, Menu, MoreHorizontal, PackagePlus, PackageSearch, Plus, ReceiptText, RotateCcw, Settings, ShoppingBag, Star, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
+import { ArrowUpRight, BarChart3, Bell, Boxes, CircleGauge, CreditCard, HandCoins, HeartPulse, Inbox, Link2, LogOut, Menu, MoreHorizontal, PackagePlus, PackageSearch, Plus, ReceiptText, RotateCcw, Settings, ShoppingBag, Star, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -60,6 +60,7 @@ const clientesProductos: NavItem[] = [
   { to: '/salud-clientes', label: 'Salud de clientes', icon: HeartPulse, nuevo: true },
   { to: '/productos', label: 'Productos', icon: PackageSearch },
   { to: '/stock', label: 'Compras libres', icon: HandCoins },
+  { to: '/venta-libre', label: 'Venta libre', icon: Link2, nuevo: true },
 ]
 // "Mi cuenta" es el hub de dinero: gastos, ingresos, salidas, estado de cuenta y saldo.
 // Por eso "Gastos" ya no es una entrada aparte (se registran desde Mi cuenta).

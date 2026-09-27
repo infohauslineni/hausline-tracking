@@ -206,9 +206,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error('La conexión tardó demasiado. Revisá tu internet e intentá de nuevo.')
       }
       if (resultado.error) throw resultado.error
+      // En segundo plano: entra también al catálogo de la tienda con las mismas credenciales
+      // (para "Venta libre"). Si falla (p. ej. el empleado no tiene usuario ahí), no pasa nada.
+      void import('../services/ventaLibre.service').then((m) => m.conectarTienda(email, password)).catch(() => undefined)
     },
     async signOut() {
       if (!supabase) return
+      void import('../services/ventaLibre.service').then((m) => m.desconectarTienda()).catch(() => undefined)
       const { error } = await supabase.auth.signOut()
       if (error) throw error
     },

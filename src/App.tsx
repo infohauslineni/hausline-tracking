@@ -29,6 +29,7 @@ const ResenasPage = lazy(() => import('./pages/private/ResenasPage').then((modul
 const ReembolsosPage = lazy(() => import('./pages/private/ReembolsosPage').then((module) => ({ default: module.ReembolsosPage })))
 const CuponesPage = lazy(() => import('./pages/private/CuponesPage').then((module) => ({ default: module.CuponesPage })))
 const SaludClientesPage = lazy(() => import('./pages/private/SaludClientesPage').then((module) => ({ default: module.SaludClientesPage })))
+const VentaLibrePage = lazy(() => import('./pages/private/VentaLibrePage').then((module) => ({ default: module.VentaLibrePage })))
 const PromocionesPage = lazy(() => import('./pages/private/PromocionesPage').then((module) => ({ default: module.PromocionesPage })))
 const PrivacidadPage = lazy(() => import('./pages/public/PrivacidadPage').then((module) => ({ default: module.PrivacidadPage })))
 const TerminosPage = lazy(() => import('./pages/public/TerminosPage').then((module) => ({ default: module.TerminosPage })))
@@ -59,6 +60,7 @@ export function App() {
           <Route path="/ventas" element={<VentasPage />} />
           <Route path="/productos" element={<ProductosPage />} />
           <Route path="/stock" element={<InventarioPage />} />
+          <Route path="/venta-libre" element={<VentaLibrePage />} />
           <Route path="/inventario" element={<Navigate to="/stock" replace />} />
           <Route path="/inversiones" element={<Navigate to="/stock" replace />} />
           <Route path="/deudas" element={<Navigate to="/gastos" replace />} />
