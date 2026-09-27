@@ -25,7 +25,7 @@ const NOMBRE_ERROR: Record<string, string> = {
   nueva_fallido: 'Falla al guardar la contraseña nueva',
   checkout_error: 'Falla en el checkout',
   comprobante_error: 'No pudo subir el comprobante',
-  seguimiento_error: 'El seguimiento no cargó (vio "no encontrado")',
+  seguimiento_error: 'El seguimiento no cargó (vio "No pudimos cargar tu pedido")',
   fotos_error: 'No cargaron las fotos del seguimiento',
   pantalla_error: 'Vio la pantalla "Algo salió mal"',
   cupon_error: 'No se pudo validar el cupón',
