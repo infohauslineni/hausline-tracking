@@ -968,11 +968,11 @@ async function marcarCopiaNoLeida(opciones, info) {
   const cuenta = String(process.env.SMTP_USER ?? '').trim().toLowerCase()
   if (!cuenta || !process.env.SMTP_PASS || process.env.ARCHIVO_NO_LEIDO === '0' || !info?.messageId) return
   const destinos = [opciones.to, opciones.cc, opciones.bcc].flat().filter(Boolean).map((d) => (typeof d === 'string' ? d : d.address ?? '')).join(',').toLowerCase()
-  if (!destinos.includes(cuenta)) return
+  if (!destinos.includes(cuenta)) { console.log('archivo-no-leido: omitido (la cuenta que envía no recibe copia)'); return }
   let limite
   try {
     await Promise.race([
-      marcarNoLeidoImap(info.messageId.replace(/^<|>$/g, '')),
+      marcarNoLeidoImap(info.messageId.replace(/^<|>$/g, '')).then((ok) => console.log(`archivo-no-leido: ${ok ? 'copia marcada NO leída' : 'no se encontró la copia en Gmail'} · ${opciones.subject ?? ''}`)),
       new Promise((_, rechazar) => { limite = setTimeout(() => rechazar(new Error('IMAP tardó demasiado')), 9000) }),
     ])
   } catch (err) {
@@ -996,10 +996,11 @@ async function marcarNoLeidoImap(messageId) {
       // La copia puede tardar un instante en aparecer: hasta 4 intentos.
       for (let intento = 0; intento < 4; intento++) {
         const uids = await client.search({ gmraw: `rfc822msgid:${messageId}` }, { uid: true })
-        if (uids && uids.length) { await client.messageFlagsRemove(uids, ['\\Seen'], { uid: true }); return }
+        if (uids && uids.length) { await client.messageFlagsRemove(uids, ['\\Seen'], { uid: true }); return true }
         await new Promise((r) => setTimeout(r, 1200))
         await client.noop()
       }
+      return false
     } finally { lock.release() }
   } finally { await client.logout().catch(() => undefined) }
 }
