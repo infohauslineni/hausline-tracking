@@ -213,7 +213,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async signOut() {
       if (!supabase) return
       void import('../services/ventaLibre.service').then((m) => m.desconectarTienda()).catch(() => undefined)
-      const { error } = await supabase.auth.signOut()
+      // scope local: cierra SOLO este navegador. El cierre global (por defecto) también tumbaba la
+      // sesión de admin.html de la tienda (usa la misma cuenta para cupones/promos).
+      const { error } = await supabase.auth.signOut({ scope: 'local' })
       if (error) throw error
     },
     async resetPassword(email) {

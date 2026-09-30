@@ -28,7 +28,8 @@ export async function conectarTienda(email: string, password: string) {
   const { error } = await catalogo().auth.signInWithPassword({ email, password })
   if (error) throw new Error(/invalid/i.test(error.message) ? 'Correo o contraseña incorrectos para la tienda.' : error.message)
 }
-export async function desconectarTienda() { try { await catalogo().auth.signOut() } catch { /* sin sesión */ } }
+// scope local: no cerrar la sesión de admin.html (misma cuenta del catálogo) en otras pestañas/navegadores.
+export async function desconectarTienda() { try { await catalogo().auth.signOut({ scope: 'local' }) } catch { /* sin sesión */ } }
 
 export type DatosVentaLibre = Record<string, unknown> & {
   codigo: string; nombre: string; marca?: string; categoria: string; subcategoria?: string
