@@ -12,7 +12,11 @@ import type { Cliente, Cupon } from '../../types/domain'
 // Descripción legible del descuento: "10%" o "US$ 5.00".
 const valorLabel = (c: Pick<Cupon, 'tipo' | 'valor'>) => c.tipo === 'porcentaje' ? `${Number(c.valor)}%` : `US$ ${Number(c.valor).toFixed(2)}`
 const usosLabel = (c: Pick<Cupon, 'usos_max' | 'usos_confirmados'>) => c.usos_max == null ? `${c.usos_confirmados} usos · ilimitado` : `${c.usos_confirmados} / ${c.usos_max} usos`
-const vencido = (c: Pick<Cupon, 'vence_el'>) => !!c.vence_el && c.vence_el < new Date().toISOString().slice(0, 10)
+// "Hoy" en Nicaragua (UTC-6): igual que la base, así un cupón no vence a las 6 p. m. de su último día.
+const hoyNic = () => new Date(Date.now() - 6 * 3600e3).toISOString().slice(0, 10)
+const fmtFecha = (d: string) => d.split('-').reverse().join('/')
+const vencido = (c: Pick<Cupon, 'vence_el'>) => !!c.vence_el && c.vence_el < hoyNic()
+const programado = (c: Pick<Cupon, 'inicia_el'>) => !!c.inicia_el && c.inicia_el > hoyNic()
 const agotado = (c: Pick<Cupon, 'usos_max' | 'usos_confirmados'>) => c.usos_max != null && c.usos_confirmados >= c.usos_max
 
 export function CuponesPage() {
@@ -73,7 +77,7 @@ export function CuponesPage() {
     {loading ? <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{[1,2,3].map((n) => <div key={n} className="h-40 animate-pulse rounded-2xl border border-line bg-panel" />)}</div>
       : cupones.length === 0 ? <div className="mt-8 grid min-h-64 place-items-center rounded-2xl border border-dashed border-line text-center"><div><Ticket className="mx-auto text-muted" /><h2 className="mt-3 font-semibold">Sin cupones todavía</h2><p className="mt-1 text-sm text-muted">Crea un descuento para un cliente o un código para regalar en redes.</p><button onClick={() => { setEditing(null); setOpen(true) }} className="primary-button mx-auto mt-5 px-5"><Plus size={17} /> Nuevo cupón</button></div></div>
       : <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{cupones.map((c) => {
-          const inactivo = !c.activo || vencido(c) || agotado(c)
+          const inactivo = !c.activo || vencido(c) || agotado(c) || programado(c)
           const motivo = !c.activo ? 'Desactivado' : vencido(c) ? 'Vencido' : agotado(c) ? 'Agotado' : null
           return <article key={c.id} className={`rounded-2xl border p-4 ${inactivo ? 'border-line bg-panel/50 opacity-70' : 'border-accent/25 bg-panel'}`}>
             <div className="flex items-start justify-between gap-2">
@@ -86,7 +90,8 @@ export function CuponesPage() {
             <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
               {c.cliente_id ? <span className="inline-flex items-center gap-1 rounded-full bg-sky-400/10 px-2 py-0.5 text-sky-300"><Users size={12} /> {c.clientes?.nombre ?? 'Cliente'}</span> : <span className="inline-flex items-center gap-1 rounded-full bg-white/[0.06] px-2 py-0.5 text-muted">Código para redes</span>}
               <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-muted">{usosLabel(c)}</span>
-              {c.vence_el && <span className={`rounded-full px-2 py-0.5 ${vencido(c) ? 'bg-red-400/10 text-red-300' : 'bg-white/[0.06] text-muted'}`}>vence {c.vence_el}</span>}
+              {c.inicia_el && <span className={`rounded-full px-2 py-0.5 ${programado(c) ? 'bg-amber-400/10 font-semibold text-amber-300' : 'bg-white/[0.06] text-muted'}`}>{programado(c) ? 'Programado · ' : ''}desde {fmtFecha(c.inicia_el)}</span>}
+              {c.vence_el && <span className={`rounded-full px-2 py-0.5 ${vencido(c) ? 'bg-red-400/10 text-red-300' : 'bg-white/[0.06] text-muted'}`}>hasta {fmtFecha(c.vence_el)}</span>}
               {motivo && <span className="rounded-full bg-red-400/10 px-2 py-0.5 font-semibold text-red-300">{motivo}</span>}
             </div>
             {c.nota && <p className="mt-3 border-t border-line pt-2 text-xs text-muted">{c.nota}</p>}
@@ -114,6 +119,7 @@ export function CuponModal({ open, cupon, clientePreset, onClose, onSaved }: { o
   const [clienteId, setClienteId] = useState('')
   const [usos, setUsos] = useState<'1' | 'varios' | 'ilimitado'>('1')
   const [usosMax, setUsosMax] = useState(20)
+  const [iniciaEl, setIniciaEl] = useState('')
   const [venceEl, setVenceEl] = useState('')
   const [nota, setNota] = useState('')
   const [saving, setSaving] = useState(false)
@@ -124,11 +130,11 @@ export function CuponModal({ open, cupon, clientePreset, onClose, onSaved }: { o
     if (cupon) {
       setCodigo(cupon.codigo); setTipo(cupon.tipo); setValor(Number(cupon.valor)); setClienteId(cupon.cliente_id ?? '')
       setUsos(cupon.usos_max == null ? 'ilimitado' : cupon.usos_max === 1 ? '1' : 'varios'); setUsosMax(cupon.usos_max && cupon.usos_max > 1 ? cupon.usos_max : 20)
-      setVenceEl(cupon.vence_el ?? ''); setNota(cupon.nota ?? '')
+      setIniciaEl(cupon.inicia_el ?? ''); setVenceEl(cupon.vence_el ?? ''); setNota(cupon.nota ?? '')
     } else {
       const preset = clientePreset ?? null
       setCodigo(generarCodigo(preset ? preset.nombre.split(' ')[0] : 'HAUS'))
-      setTipo('porcentaje'); setValor(10); setClienteId(preset?.id ?? ''); setUsos(preset ? '1' : 'ilimitado'); setUsosMax(20); setVenceEl(''); setNota('')
+      setTipo('porcentaje'); setValor(10); setClienteId(preset?.id ?? ''); setUsos(preset ? '1' : 'ilimitado'); setUsosMax(20); setIniciaEl(''); setVenceEl(''); setNota('')
     }
   }, [open, cupon, clientePreset])
 
@@ -137,13 +143,14 @@ export function CuponModal({ open, cupon, clientePreset, onClose, onSaved }: { o
     if (codigo.trim().length < 3) return toast.error('El código es muy corto.')
     if (!(valor > 0)) return toast.error('Indica el valor del descuento.')
     if (tipo === 'porcentaje' && valor > 100) return toast.error('El porcentaje no puede pasar de 100.')
+    if (iniciaEl && venceEl && venceEl < iniciaEl) return toast.error('La fecha en que termina no puede ser antes de la de inicio.')
     setSaving(true)
     try {
-      const input: CuponInput = { codigo: codigo.trim(), tipo, valor: Number(valor), cliente_id: clienteId || null, usos_max: usos === 'ilimitado' ? null : usos === '1' ? 1 : Number(usosMax), vence_el: venceEl || null, nota: nota.trim() || null }
+      const input: CuponInput = { codigo: codigo.trim(), tipo, valor: Number(valor), cliente_id: clienteId || null, usos_max: usos === 'ilimitado' ? null : usos === '1' ? 1 : Number(usosMax), inicia_el: iniciaEl || null, vence_el: venceEl || null, nota: nota.trim() || null }
       const saved = await guardarCupon(input, cupon?.id)
       toast.success(cupon ? 'Cupón actualizado.' : 'Cupón creado.')
       onSaved(saved)
-    } catch (err) { toast.error(err instanceof Error && err.message.includes('duplicate') ? 'Ese código ya existe.' : 'No se pudo guardar el cupón.') } finally { setSaving(false) }
+    } catch (err) { const m = err instanceof Error ? err.message : ''; toast.error(m.includes('duplicate') ? 'Ese código ya existe.' : m.includes('inicia_el') ? 'Falta aplicar la migración 202609300001 (fecha de inicio) en Supabase.' : 'No se pudo guardar el cupón.') } finally { setSaving(false) }
   }
 
   return <Modal open={open} onClose={onClose} title={cupon ? 'Editar cupón' : 'Nuevo cupón'} description="El descuento se aplica al total del pedido. Un cupón por cliente se ofrece en su próxima compra; sin cliente, es un código suelto para redes.">
@@ -153,8 +160,10 @@ export function CuponModal({ open, cupon, clientePreset, onClose, onSaved }: { o
       <label className="form-field"><span>{tipo === 'porcentaje' ? 'Porcentaje (%)' : 'Monto (US$)'}</span><input type="number" min="0" step={tipo === 'porcentaje' ? '1' : '0.01'} value={valor} onChange={(e) => setValor(Number(e.target.value))} /></label>
       <label className="form-field sm:col-span-2"><span>¿Para un cliente? (opcional)</span><select value={clienteId} onChange={(e) => setClienteId(e.target.value)} disabled={!!clientePreset}><option value="">Código suelto (para redes)</option>{clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre} · {c.whatsapp}</option>)}</select></label>
       <label className="form-field"><span>Usos</span><select value={usos} onChange={(e) => setUsos(e.target.value as '1' | 'varios' | 'ilimitado')}><option value="1">Un solo uso</option><option value="varios">Varios (con tope)</option><option value="ilimitado">Ilimitado</option></select></label>
-      {usos === 'varios' ? <label className="form-field"><span>Tope de usos</span><input type="number" min="1" step="1" value={usosMax} onChange={(e) => setUsosMax(Number(e.target.value))} /></label> : <label className="form-field"><span>Vence (opcional)</span><input type="date" value={venceEl} onChange={(e) => setVenceEl(e.target.value)} /></label>}
-      {usos === 'varios' && <label className="form-field sm:col-span-2"><span>Vence (opcional)</span><input type="date" value={venceEl} onChange={(e) => setVenceEl(e.target.value)} /></label>}
+      {usos === 'varios' ? <label className="form-field"><span>Tope de usos</span><input type="number" min="1" step="1" value={usosMax} onChange={(e) => setUsosMax(Number(e.target.value))} /></label> : <div className="hidden sm:block" />}
+      <label className="form-field"><span>Empieza (opcional)</span><input type="date" value={iniciaEl} onChange={(e) => setIniciaEl(e.target.value)} /></label>
+      <label className="form-field"><span>Termina (opcional)</span><input type="date" value={venceEl} onChange={(e) => setVenceEl(e.target.value)} /></label>
+      <p className="col-span-full -mt-1 text-xs text-muted">Vacío = empieza ya / no vence. Funciona desde las 12 a. m. del día de inicio hasta las 11:59 p. m. del último día (hora de Nicaragua).</p>
       <label className="form-field sm:col-span-2"><span>Nota (opcional)</span><input value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej: promo del Día de las Madres" /></label>
       <div className="col-span-full flex justify-end gap-2 pt-1"><button type="button" className="subtle-button px-4" onClick={onClose}>Cancelar</button><button className="primary-button px-5" disabled={saving}>{saving ? 'Guardando…' : 'Guardar cupón'}</button></div>
     </form>

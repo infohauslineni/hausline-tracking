@@ -4,7 +4,7 @@ import { cachedQuery, invalidateCache } from '../utils/queryCache'
 
 function client() { if (!supabase) throw new Error('Supabase no está configurado.'); return supabase }
 
-export type CuponInput = Pick<Cupon, 'codigo' | 'tipo' | 'valor' | 'cliente_id' | 'usos_max' | 'vence_el' | 'nota'> & { activo?: boolean }
+export type CuponInput = Pick<Cupon, 'codigo' | 'tipo' | 'valor' | 'cliente_id' | 'usos_max' | 'inicia_el' | 'vence_el' | 'nota'> & { activo?: boolean }
 
 // Lista los cupones (con el nombre del cliente si es un cupón personal), del más nuevo al más viejo.
 export async function listarCupones(onFresh?: (value: Cupon[]) => void) {
@@ -16,7 +16,10 @@ export async function listarCupones(onFresh?: (value: Cupon[]) => void) {
 }
 
 export async function guardarCupon(input: CuponInput, id?: string) {
-  const payload = { ...input, codigo: input.codigo.trim().toUpperCase(), valor: Number(input.valor), usos_max: input.usos_max && input.usos_max > 0 ? Number(input.usos_max) : null, vence_el: input.vence_el || null, nota: input.nota?.trim() || null }
+  const { inicia_el, ...resto } = input
+  const payload = { ...resto, codigo: input.codigo.trim().toUpperCase(), valor: Number(input.valor), usos_max: input.usos_max && input.usos_max > 0 ? Number(input.usos_max) : null, vence_el: input.vence_el || null, nota: input.nota?.trim() || null,
+    // Al crear sin fecha de inicio no se manda el campo (así funciona aunque falte la migración 202609300001).
+    ...(inicia_el || id ? { inicia_el: inicia_el || null } : {}) }
   const query = id ? client().from('cupones').update(payload).eq('id', id) : client().from('cupones').insert(payload)
   const { data, error } = await query.select('*, clientes(nombre, whatsapp)').single()
   if (error) throw error
@@ -40,15 +43,15 @@ export async function eliminarCupon(id: string) {
 // Cupón personal ACTIVO de un cliente (para ofrecerlo al registrar su próxima compra).
 // Devuelve null si no tiene, o si ya venció / se agotó.
 export async function cuponActivoDeCliente(clienteId: string): Promise<Cupon | null> {
-  const hoy = new Date().toISOString().slice(0, 10)
+  const hoy = new Date(Date.now() - 6 * 3600e3).toISOString().slice(0, 10) // hoy en Nicaragua (UTC-6)
   const { data, error } = await client().from('cupones').select('*, clientes(nombre, whatsapp)')
     .eq('cliente_id', clienteId).eq('activo', true)
     .or(`vence_el.is.null,vence_el.gte.${hoy}`)
     .order('created_at', { ascending: false }).limit(5)
   if (error) throw error
   const cupones = (data as unknown as Cupon[]) ?? []
-  // Descarta los que ya llegaron a su tope de usos.
-  return cupones.find((c) => c.usos_max == null || c.usos_confirmados < c.usos_max) ?? null
+  // Descarta los que ya llegaron a su tope de usos o que todavía no empiezan.
+  return cupones.find((c) => (c.usos_max == null || c.usos_confirmados < c.usos_max) && !(c.inicia_el && c.inicia_el > hoy)) ?? null
 }
 
 // Valida un código para un total dado (no lo consume). Sirve en el panel y en la tienda.

@@ -95,12 +95,16 @@ export function generarHistoriaCupon(cupon: Cupon): Promise<Blob> {
   ctx.fillStyle = ACCENT
   ctx.fillText('hauslineshopni.es', cx, pillY + pillH + 200)
 
-  // Detalles opcionales (vencimiento).
+  // Detalles opcionales (vigencia).
   let detalleY = cardY + cardH - 60
-  if (cupon.vence_el) {
+  const hoy = new Date(Date.now() - 6 * 3600e3).toISOString().slice(0, 10) // Nicaragua
+  const desde = cupon.inicia_el && cupon.inicia_el > hoy ? cupon.inicia_el : null
+  if (cupon.vence_el || desde) {
     ctx.font = '600 34px "Helvetica Neue", Arial, sans-serif'
     ctx.fillStyle = '#8a938d'
-    ctx.fillText(`Válido hasta ${fmtFecha(cupon.vence_el)}`, cx, detalleY)
+    const txt = desde && cupon.vence_el ? `Válido del ${fmtFecha(desde)} al ${fmtFecha(cupon.vence_el)}`
+      : desde ? `Válido desde el ${fmtFecha(desde)}` : `Válido hasta ${fmtFecha(cupon.vence_el!)}`
+    ctx.fillText(txt, cx, detalleY)
     detalleY -= 46
   }
   if (cupon.usos_max === 1) {

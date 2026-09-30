@@ -89,6 +89,7 @@ export type Cupon = {
   cliente_id: string | null
   usos_max: number | null
   usos_confirmados: number
+  inicia_el?: string | null
   vence_el: string | null
   nota: string | null
   activo: boolean
