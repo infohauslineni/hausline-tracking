@@ -17,6 +17,7 @@ const NOMBRE_ERROR: Record<string, string> = {
   aviso_error: 'Le salió un aviso de error',
   js_error: 'Falla de la página (código)',
   promesa_error: 'Falla de la página (código)',
+  script_no_cargo: 'No le cargó un archivo de la tienda',
   supabase_no_cargo: 'No cargó el sistema de cuentas',
   enlace_invalido: 'El enlace del correo no funcionó (vencido o inválido)',
   login_fallido: 'Falla del sistema al ingresar',
@@ -46,6 +47,14 @@ function hace(iso: string | null) {
   if (h < 24) return `Hace ${h} h`
   const d = Math.round(h / 24)
   return d < 30 ? `Hace ${d} ${d === 1 ? 'día' : 'días'}` : fechaHora(iso)
+}
+// Dónde falló el código (archivo:línea) y qué archivo de la tienda no le cargó, si alguno.
+function detalleError(e: EventoCliente) {
+  const d = e.detalle ?? {}
+  const partes: string[] = []
+  if (typeof d.archivo === 'string' && d.archivo) partes.push(d.linea ? `${d.archivo}:${d.linea}` : d.archivo)
+  if (Array.isArray(d.sin_cargar) && d.sin_cargar.length) partes.push(`no cargó ${d.sin_cargar.join(', ')}`)
+  return partes.join(' · ')
 }
 const visitasDe = (lista: EventoCliente[]) => new Set(lista.map((e) => e.visita ?? `id${e.id}`)).size
 const primerNombre = (n: string) => (n || '').trim().split(/\s+/)[0] || ''
@@ -234,6 +243,7 @@ export function SaludClientesPage() {
                             <span className="text-white/80">{fechaHora(e.created_at)}</span>
                             <span className="text-muted">{e.dispositivo ?? '—'}</span>
                             <span className="break-all font-mono text-[11px] text-muted">{e.pagina}</span>
+                            {detalleError(e) && <span className="break-all font-mono text-[11px] text-amber-200/80">{detalleError(e)}</span>}
                             {e.user_id && correoDe.get(e.user_id) && <span className="text-accent">{correoDe.get(e.user_id)}</span>}
                           </li>
                         ))}

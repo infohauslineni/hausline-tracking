@@ -141,7 +141,7 @@ async function enviarAvisosRetraso(client) {
 // 202609260001). Solo se manda si hubo alguno. Mismos nombres que la pantalla "Salud de clientes".
 const TITULO_ERROR = {
   error_visto: 'Le salió un error en pantalla', rpc_error: 'No cargaron sus datos', aviso_error: 'Le salió un aviso de error',
-  js_error: 'Falla de la página (código)', promesa_error: 'Falla de la página (código)', supabase_no_cargo: 'No cargó el sistema de cuentas',
+  js_error: 'Falla de la página (código)', promesa_error: 'Falla de la página (código)', script_no_cargo: 'No le cargó un archivo de la tienda', supabase_no_cargo: 'No cargó el sistema de cuentas',
   enlace_invalido: 'El enlace del correo no funcionó', login_fallido: 'Falla del sistema al ingresar', crear_fallido: 'Falla del sistema al crear la cuenta',
   recuperar_fallido: 'Falla al enviar el correo de recuperación', nueva_fallido: 'Falla al guardar la contraseña nueva', checkout_error: 'Falla en el checkout',
   comprobante_error: 'No pudo subir el comprobante', seguimiento_error: 'El seguimiento no cargó (vio "No pudimos cargar tu pedido")',
