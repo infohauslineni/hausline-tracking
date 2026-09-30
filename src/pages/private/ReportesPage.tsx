@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { Modal } from '../../components/ui/Modal'
 import { OperacionesCharts } from '../../components/OperacionesCharts'
 import { ReportesGenerales } from './ReportesGenerales'
+import { ProductosVendidos } from './ProductosVendidos'
 import { guardarConfiguracionFinanzas, obtenerConfiguracionFinanzas, obtenerGananciaRealizada, obtenerSaldoCuenta, periodoComercial, retirarGanancia } from '../../services/finanzas.service'
 import type { ConfiguracionFinanzas, GananciaRealizada } from '../../types/domain'
 
@@ -17,7 +18,7 @@ export function ReportesPage() {
   const [saldoCuenta, setSaldoCuenta] = useState(0)
   const [loading, setLoading] = useState(true)
   const [withdrawPrompt, setWithdrawPrompt] = useState(false)
-  const [tab, setTab] = useState<'reportes' | 'cierre'>('reportes')
+  const [tab, setTab] = useState<'reportes' | 'productos' | 'cierre'>('reportes')
 
   const load = async () => {
     setLoading(true)
@@ -67,12 +68,14 @@ export function ReportesPage() {
 
   return <div>
     <div><p className="eyebrow">Análisis</p><h1 className="page-title">Reportes</h1><p className="page-subtitle">Métricas reales de tu negocio y cierre comercial del mes.</p></div>
-    <div className="mt-5 flex w-fit gap-1 rounded-xl border border-line bg-white/[.02] p-1">
+    <div className="mt-5 flex w-fit max-w-full gap-1 overflow-x-auto rounded-xl border border-line bg-white/[.02] p-1">
       <button type="button" onClick={() => setTab('reportes')} className={`rounded-lg px-4 py-1.5 text-xs font-semibold transition ${tab === 'reportes' ? 'bg-accent text-black' : 'text-muted hover:text-white'}`}>Reportes</button>
+      <button type="button" onClick={() => setTab('productos')} className={`rounded-lg px-4 py-1.5 text-xs font-semibold transition ${tab === 'productos' ? 'bg-accent text-black' : 'text-muted hover:text-white'}`}>Productos más vendidos</button>
       <button type="button" onClick={() => setTab('cierre')} className={`rounded-lg px-4 py-1.5 text-xs font-semibold transition ${tab === 'cierre' ? 'bg-accent text-black' : 'text-muted hover:text-white'}`}>Cierre y retiro</button>
     </div>
 
     {tab === 'reportes' && <div className="mt-5"><ReportesGenerales /></div>}
+    {tab === 'productos' && <div className="mt-5"><ProductosVendidos /></div>}
 
     {tab === 'cierre' && <div className="mt-5">
     <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><p className="eyebrow">Cierre comercial</p><h2 className="page-title text-2xl!">Ganancia mensual real</h2><p className="page-subtitle">Solo cuenta pedidos entregados y dinero efectivamente recibido.</p></div><button className="primary-button px-5" disabled={loading || withdrawable <= 0} onClick={() => void withdraw()}><Download size={17} /> Retirar ganancia disponible</button></div>
