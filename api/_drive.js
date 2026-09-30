@@ -6,6 +6,27 @@
 //   DRIVE_WEBHOOK_SECRET = secreto compartido (debe coincidir con el del script)
 // Si falta la config, no hace nada (así el correo nunca se rompe por esto).
 
+// POST al Apps Script. Estricto: si Google responde con una página (p. ej. pide volver a
+// autorizar el script, o la implementación dejó de ser pública) en vez de JSON, es un ERROR.
+// Antes eso contaba como "archivado" y el archivo no aparecía en Drive sin dejar rastro.
+async function enviarADrive(url, body) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    redirect: 'follow', // Apps Script responde con un redirect a googleusercontent
+  })
+  const texto = await res.text().catch(() => '')
+  let json = null
+  try { json = JSON.parse(texto) } catch { /* no es JSON */ }
+  if (!res.ok || !json || typeof json !== 'object' || json.ok === false) {
+    const detalle = json ? JSON.stringify(json) : texto.replace(/<[^>]+>/g, ' ').replace(/s+/g, ' ').trim()
+    throw new Error(`Drive HTTP ${res.status}: ${detalle.slice(0, 200) || 'respuesta vacía'}`)
+  }
+  console.log(`drive: archivado ${body.mes} / ${body.codigo} / ${body.filename}`)
+  return json
+}
+
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
 // "Agosto 2026" a partir de la fecha del pedido (así las dos facturas del mismo pedido
@@ -36,17 +57,7 @@ export async function subirArchivoDrive({ codigo, fecha, filename, data, mime })
     dataBase64: Buffer.from(data).toString('base64'),
   }
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-    redirect: 'follow', // Apps Script responde con un redirect a googleusercontent
-  })
-  const json = await res.json().catch(() => ({}))
-  if (!res.ok || json?.ok === false) {
-    throw new Error(`Drive HTTP ${res.status}: ${JSON.stringify(json).slice(0, 200)}`)
-  }
-  return json
+  return enviarADrive(url, body)
 }
 
 // Sube un PDF a Drive bajo:  HAUSLINE Facturas / <mes> / <codigo> / <filename>
@@ -66,15 +77,5 @@ export async function subirFacturaDrive({ codigo, fecha, filename, pdf }) {
     dataBase64: Buffer.from(pdf).toString('base64'),
   }
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-    redirect: 'follow', // Apps Script responde con un redirect a googleusercontent
-  })
-  const json = await res.json().catch(() => ({}))
-  if (!res.ok || json?.ok === false) {
-    throw new Error(`Drive HTTP ${res.status}: ${JSON.stringify(json).slice(0, 200)}`)
-  }
-  return json
+  return enviarADrive(url, body)
 }

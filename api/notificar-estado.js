@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { ESTADO_LABEL, enviarCorreoPedido, enviarCorreoCancelacion, enviarCorreoBienvenida, enviarCorreoReembolsoAdmin, enviarCorreoReembolsoRechazado, enviarCorreoReembolsoRecibido, enviarCorreoReembolsoAprobado, enviarCorreoReembolsoDecisionAdmin, enviarCorreoEncargoPorVencer } from './_correo.js'
 import { facturaPdfBuffer } from './_factura-pdf.js'
-import { subirFacturaDrive, subirArchivoDrive } from './_drive.js'
+import { subirFacturaDrive, subirArchivoDrive, mesCarpeta } from './_drive.js'
 import { cerrarEmail, reservarEmail } from './_email-eventos.js'
 
 // Reenvío manual (panel): cada tipo de foto corresponde a la etapa/correo que la lleva.
@@ -191,6 +191,54 @@ async function obtenerFactura(codigo, esNuevo) {
     fecha: pedido.fecha_pedido || null,
     variante: esNuevo ? 'compra' : 'pago',
   }
+}
+
+// Archivado MANUAL en Drive desde el panel (botón "Archivar en Drive" del pedido): sube
+// "Orden confirmada" y, si el pedido ya está pagado/entregado, "Comprobante pagado", a
+// HAUSLINE Facturas / <mes del pedido> / <código>. A diferencia del archivado automático
+// (best-effort, solo log), aquí se devuelve el error REAL para mostrarlo en el panel.
+async function archivarDriveManual(response, body, authorization) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return response.status(500).json({ ok: false, error: 'Falta configuración del servidor.' })
+  }
+  if (!process.env.DRIVE_WEBHOOK_URL || !process.env.DRIVE_WEBHOOK_SECRET) {
+    return response.status(200).json({ ok: false, error: 'Drive no está configurado en Vercel (DRIVE_WEBHOOK_URL / DRIVE_WEBHOOK_SECRET).' })
+  }
+  const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+  const token = String(authorization).replace(/^Bearers+/i, '').trim()
+  if (!token) return response.status(401).json({ ok: false })
+  const { data: userData } = await admin.auth.getUser(token).catch(() => ({ data: { user: null } }))
+  if (!userData?.user) return response.status(401).json({ ok: false })
+  const { data: perfil } = await admin.from('perfiles').select('rol, activo').eq('id', userData.user.id).maybeSingle()
+  if (!perfil || !perfil.activo || (perfil.rol !== 'admin' && perfil.rol !== 'operador')) {
+    return response.status(403).json({ ok: false, error: 'No autorizado.' })
+  }
+
+  const codigo = String(body.codigo ?? '').trim()
+  if (!codigo) return response.status(400).json({ ok: false, error: 'Falta el código.' })
+  const { data: pedido } = await admin.from('pedidos').select('codigo, estado, saldo, fecha_pedido, clientes(nombre)').eq('codigo', codigo).maybeSingle()
+  if (!pedido) return response.status(404).json({ ok: false, error: 'No se encontró el pedido.' })
+  const cli = Array.isArray(pedido.clientes) ? pedido.clientes[0] : pedido.clientes
+  const nombre = cli?.nombre ?? null
+  const pagado = ['pagado', 'entregado'].includes(pedido.estado) || Number(pedido.saldo) <= 0
+
+  const archivos = []
+  for (const esNuevo of pagado ? [true, false] : [true]) {
+    const factura = await obtenerFactura(codigo, esNuevo)
+    if (!factura) return response.status(200).json({ ok: false, error: 'No se pudo armar la factura (el pedido no tiene productos).', archivos })
+    const tipo = factura.variante === 'pago' ? 'Comprobante pagado' : 'Orden confirmada'
+    try {
+      const pdf = await facturaPdfBuffer({ codigo, nombre, fecha: factura.fecha, factura })
+      await subirFacturaDrive({ codigo, fecha: factura.fecha, filename: `${codigo} - ${tipo}.pdf`, pdf })
+      archivos.push(`${codigo} - ${tipo}.pdf`)
+    } catch (driveError) {
+      console.error('archivar-drive manual: falló', driveError?.message)
+      return response.status(200).json({ ok: false, error: driveError?.message || 'No se pudo subir a Drive.', archivos })
+    }
+  }
+  return response.status(200).json({ ok: true, archivos, carpeta: `HAUSLINE Facturas / ${mesCarpeta(pedido.fecha_pedido)} / ${codigo}` })
 }
 
 // Aviso por correo del pedido. Lo dispara SIEMPRE el webhook de Supabase (con el
@@ -513,6 +561,8 @@ export default async function handler(request, response) {
 
   // Reenvío manual desde el panel (JWT del usuario, no el secreto del webhook).
   if (body.resend) return reenviarFotosEtapa(request, response, body, authorization)
+  // "Archivar en Drive" desde el pedido (JWT del usuario): vuelve a subir las facturas.
+  if (body.archivarDrive) return archivarDriveManual(response, body, authorization)
   // Correo de cancelación desde el panel (también con JWT del usuario).
   if (body.cancelacion) return enviarCancelacion(request, response, body, authorization)
   // Solicitud de cancelación / reembolso (cliente → aviso al admin; admin → rechazo al cliente).

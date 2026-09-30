@@ -212,8 +212,26 @@ export async function archivarComprobanteDrive(codigo: string, file: File, fecha
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
     body: JSON.stringify({ codigo, fecha: fecha || undefined, filename: `${codigo} - Comprobante de pago.webp`, mime: 'image/webp', dataBase64 }),
   })
-  if (!res.ok) throw new Error('No se pudo archivar el comprobante en Drive.')
+  if (!res.ok) { const j = await res.json().catch(() => ({})) as { error?: string }; throw new Error(j.error || `No se pudo archivar el comprobante en Drive (HTTP ${res.status}).`) }
   return res.json().catch(() => ({}))
+}
+
+// Botón "Archivar en Drive" del pedido: vuelve a subir sus facturas (Orden confirmada y, si ya
+// está pagado, Comprobante pagado) a su carpeta de Drive. Devuelve la carpeta o lanza con el
+// motivo REAL (p. ej. si el Apps Script de Google pide volver a autorizarlo).
+export async function archivarPedidoDrive(codigo: string): Promise<{ archivos: string[]; carpeta: string }> {
+  const client = requireSupabase()
+  const { data: sessionData } = await client.auth.getSession()
+  const token = sessionData.session?.access_token
+  if (!token) throw new Error('Sesión no disponible.')
+  const res = await fetch('/api/notificar-estado', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ archivarDrive: true, codigo }),
+  })
+  const j = await res.json().catch(() => ({})) as { ok?: boolean; error?: string; archivos?: string[]; carpeta?: string }
+  if (!res.ok || !j.ok) throw new Error(j.error || `No se pudo archivar en Drive (HTTP ${res.status}).`)
+  return { archivos: j.archivos ?? [], carpeta: j.carpeta ?? '' }
 }
 
 export async function eliminarArchivo(file: ArchivoPedido) { const client = requireSupabase(); const { error: storageError } = await client.storage.from('pedidos').remove([file.storage_path]); if (storageError) throw storageError; const { error } = await client.from('archivos_pedido').delete().eq('id', file.id); if (error) throw error }

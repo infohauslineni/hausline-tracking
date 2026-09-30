@@ -46,6 +46,6 @@ export default async function handler(request, response) {
     return response.status(200).json({ ok: true, drive: result })
   } catch (error) {
     console.error('archivar-comprobante: falló', error?.message)
-    return response.status(502).json({ ok: false, error: 'No se pudo archivar en Drive' })
+    return response.status(502).json({ ok: false, error: error?.message || 'No se pudo archivar en Drive' })
   }
 }
