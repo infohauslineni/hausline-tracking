@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Eye, EyeOff, Pencil, Plus, Trash2, Wallet } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, Eye, Pencil, Plus, Trash2, Wallet } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { Modal } from '../ui/Modal'
@@ -49,11 +49,15 @@ export function CuentasBancarias({ refreshKey = 0 }: { refreshKey?: number }) {
     const mostrar = !cuenta.mostrar_clientes
     if (mostrar && !(cuenta.numero ?? '').trim()) { toast.error('Poné el número de cuenta (Editar) antes de mostrarla a los clientes.'); return }
     setCambiando(cuenta.id)
+    // Cambio al instante en pantalla (el interruptor se mueve ya); si la base falla, se revierte.
+    setCuentas((lista) => lista.map((c) => c.id === cuenta.id ? { ...c, mostrar_clientes: mostrar } : c))
     try {
       await mostrarCuentaAClientes(cuenta.id, mostrar)
-      setCuentas((lista) => lista.map((c) => c.id === cuenta.id ? { ...c, mostrar_clientes: mostrar } : c))
-      toast.success(mostrar ? `${cuenta.nombre} ahora se muestra a los clientes.` : `${cuenta.nombre} ya no se muestra a los clientes.`)
-    } catch (error) { toast.error(error instanceof Error ? error.message : 'No se pudo cambiar.') } finally { setCambiando(null) }
+      toast.success(mostrar ? `Listo: los clientes ya ven ${cuenta.nombre} al pagar.` : `Listo: ${cuenta.nombre} ya no le sale a los clientes.`)
+    } catch (error) {
+      setCuentas((lista) => lista.map((c) => c.id === cuenta.id ? { ...c, mostrar_clientes: !mostrar } : c))
+      toast.error(error instanceof Error ? error.message : 'No se pudo cambiar.')
+    } finally { setCambiando(null) }
   }
   const visibles = cuentas.filter((c) => c.mostrar_clientes)
 
@@ -69,15 +73,25 @@ export function CuentasBancarias({ refreshKey = 0 }: { refreshKey?: number }) {
       </div>
     </div>
 
-    {cuentas.length > 0 && <p className="mt-2 text-[11px] leading-4 text-muted">
-      <Eye size={12} className="mr-1 inline" />Cuentas que ven los clientes (checkout, pago del encargo y WhatsApp): {visibles.length
-        ? <strong className="text-white">{visibles.map((c) => c.nombre).join(', ')}</strong>
-        : <span>ninguna marcada — se usa la lista fija de respaldo.</span>} Tocá <b>Visible a clientes</b> en una tarjeta para cambiarlas.
-    </p>}
+    {/* Vista previa: exactamente las cuentas que el cliente ve al pagar (checkout, pago del encargo y WhatsApp). */}
+    {cuentas.length > 0 && <div className="mt-3 rounded-2xl border border-line bg-white/[.02] p-3.5">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="grid size-7 place-items-center rounded-lg bg-emerald-400/15 text-emerald-300"><Eye size={15} /></span>
+        <strong className="text-sm">Lo que ven los clientes al pagar</strong>
+        <span className="rounded-full bg-white/[.06] px-2 py-0.5 text-[11px] text-muted">{visibles.length} de {cuentas.length} cuentas</span>
+      </div>
+      {visibles.length
+        ? <div className="mt-3 flex flex-wrap gap-2">{visibles.map((c) => <span key={c.id} className="inline-flex items-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-400/[.07] py-1.5 pl-2 pr-3 text-xs">
+            <span className="text-base leading-none">{c.emoji || '🏦'}</span>
+            <span className="min-w-0"><b className="block leading-tight text-white">{c.nombre}</b><span className="block text-[10.5px] text-muted">{[c.banco, c.moneda === 'USD' ? 'Dólares' : 'Córdobas', c.numero].filter(Boolean).join(' · ')}</span></span>
+          </span>)}</div>
+        : <p className="mt-3 flex items-center gap-2 rounded-xl border border-amber-400/30 bg-amber-400/[.07] px-3 py-2 text-xs text-amber-200"><AlertTriangle size={14} className="shrink-0" /> No hay ninguna encendida: los clientes ven la lista fija de respaldo. Prendé al menos una.</p>}
+      <p className="mt-2.5 text-[11px] leading-4 text-muted">Prendé o apagá el interruptor <b className="text-white/80">“Mostrar a clientes”</b> de cada tarjeta. El cambio se aplica al instante en la tienda y en los mensajes de WhatsApp.</p>
+    </div>}
 
     <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {cuentas.map((cuenta) => (
-        <article key={cuenta.id} className="relative overflow-hidden rounded-2xl p-4 text-white shadow-lg" style={{ background: gradiente(cuenta) }}>
+        <article key={cuenta.id} className={`relative overflow-hidden rounded-2xl p-4 text-white shadow-lg transition ${cuenta.mostrar_clientes ? 'ring-2 ring-emerald-300/80 ring-offset-2 ring-offset-[#0b0d0c]' : ''}`} style={{ background: gradiente(cuenta) }}>
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-2.5">
               <span className="grid size-10 place-items-center rounded-xl bg-white/20 text-xl backdrop-blur">{cuenta.emoji || '🏦'}</span>
@@ -86,7 +100,10 @@ export function CuentasBancarias({ refreshKey = 0 }: { refreshKey?: number }) {
                 <span className="block truncate text-[11px] text-white/80">{cuenta.banco || cuenta.numero || '—'}</span>
               </div>
             </div>
-            <button className="grid size-7 shrink-0 place-items-center rounded-lg bg-white/15 text-white/90 transition hover:bg-white/25" onClick={() => setEditing(cuenta)} aria-label="Editar cuenta" title="Editar / ajustar saldo"><Pencil size={14} /></button>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {cuenta.mostrar_clientes && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-300 px-2 py-0.5 text-[9.5px] font-bold tracking-wide text-emerald-950"><span className="size-1.5 animate-pulse rounded-full bg-emerald-700" />EN CHECKOUT</span>}
+              <button className="grid size-7 place-items-center rounded-lg bg-white/15 text-white/90 transition hover:bg-white/25" onClick={() => setEditing(cuenta)} aria-label="Editar cuenta" title="Editar / ajustar saldo"><Pencil size={14} /></button>
+            </div>
           </div>
           {cuenta.proposito && cuenta.proposito !== 'ambos' && <span className="mt-2.5 inline-block rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide backdrop-blur">{cuenta.proposito === 'recibir' ? 'Solo recibir' : 'Solo comprar'}</span>}
           <p className="mt-3 text-[11px] text-white/80">Saldo disponible</p>
@@ -102,10 +119,17 @@ export function CuentasBancarias({ refreshKey = 0 }: { refreshKey?: number }) {
             </div>
           })()}
           {cuenta.numero && <span className="mt-1 block font-mono text-[11px] text-white/70">{cuenta.numero}{cuenta.titular ? ` · ${cuenta.titular}` : ''}</span>}
-          <button type="button" disabled={cambiando === cuenta.id} onClick={() => void alternarVisible(cuenta)}
-            className={`mt-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-60 ${cuenta.mostrar_clientes ? 'bg-white text-black' : 'bg-black/25 text-white/85 hover:bg-black/35'}`}
-            aria-pressed={!!cuenta.mostrar_clientes} title="Mostrar u ocultar esta cuenta en la tienda y en los mensajes al cliente">
-            {cuenta.mostrar_clientes ? <Eye size={13} /> : <EyeOff size={13} />}{cuenta.mostrar_clientes ? 'Visible a clientes' : 'Oculta a clientes'}
+          {/* Interruptor "Mostrar a clientes": toda la franja es tocable. */}
+          <button type="button" role="switch" aria-checked={!!cuenta.mostrar_clientes} disabled={cambiando === cuenta.id} onClick={() => void alternarVisible(cuenta)}
+            className="mt-3 flex w-full items-center justify-between gap-3 rounded-xl bg-black/25 px-3 py-2 text-left transition hover:bg-black/35 disabled:cursor-wait"
+            title="Mostrar u ocultar esta cuenta en la tienda y en los mensajes al cliente">
+            <span className="min-w-0">
+              <span className="block text-[12px] font-semibold">Mostrar a clientes</span>
+              <span className="block text-[10.5px] text-white/75">{cambiando === cuenta.id ? 'Guardando…' : cuenta.mostrar_clientes ? 'Sí · la ven al pagar y en WhatsApp' : 'No · los clientes no la ven'}</span>
+            </span>
+            <span className={`relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 ${cuenta.mostrar_clientes ? 'bg-emerald-400' : 'bg-white/25'}`}>
+              <span className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-all duration-200 ${cuenta.mostrar_clientes ? 'left-[22px]' : 'left-0.5'}`} />
+            </span>
           </button>
         </article>
       ))}
