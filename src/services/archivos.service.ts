@@ -261,3 +261,14 @@ export async function ponerEntregaInmediataCompra(inversionId: string, tallas: s
   const j = await res.json().catch(() => ({})) as { ok?: boolean; error?: string }
   if (!res.ok || !j.ok) throw new Error(j.error || 'No se pudo poner en Entrega inmediata (HTTP ' + res.status + ').')
 }
+
+// "Quitar de Entrega inmediata": el producto deja de salir en esa sección (sigue por encargo).
+export async function quitarEntregaInmediata(codigo: string): Promise<void> {
+  const client = requireSupabase()
+  const { data: sessionData } = await client.auth.getSession()
+  const token = sessionData.session?.access_token
+  if (!token) throw new Error('Sesión no disponible.')
+  const res = await fetch('/api/notificar-estado', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token }, body: JSON.stringify({ entregaInmediataCompra: true, quitar: true, codigo }) })
+  const j = await res.json().catch(() => ({})) as { ok?: boolean; error?: string }
+  if (!res.ok || !j.ok) throw new Error(j.error || 'No se pudo quitar de Entrega inmediata (HTTP ' + res.status + ').')
+}

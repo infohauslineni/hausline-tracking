@@ -216,6 +216,22 @@ async function entregaInmediataDesdeCompra(response, body, authorization) {
   const { data: perfil } = await admin.from('perfiles').select('rol, activo').eq('id', userData.user.id).maybeSingle()
   if (!perfil || !perfil.activo || perfil.rol !== 'admin') return response.status(403).json({ ok: false, error: 'Solo el administrador puede hacerlo.' })
 
+  const { data: secretoQ } = await admin.from('config_privada').select('valor').eq('clave', 'secreto_entrega_inmediata').maybeSingle()
+  // QUITAR de Entrega inmediata (por código de producto): deja de salir en esa sección de la tienda.
+  if (body.quitar) {
+    const codigo = String(body.codigo ?? '').trim()
+    if (!codigo) return response.status(400).json({ ok: false, error: 'Falta el código del producto.' })
+    if (!secretoQ?.valor) return response.status(200).json({ ok: false, error: 'Falta la clave de entrega inmediata en el sistema.' })
+    const rq = await fetch('https://xgdijumnmaqfirmckugw.supabase.co/rest/v1/rpc/quitar_entrega_inmediata', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', apikey: CATALOGO_KEY, authorization: `Bearer ${CATALOGO_KEY}` },
+      body: JSON.stringify({ p_secreto: secretoQ.valor, p_codigo: codigo }),
+    }).catch(() => null)
+    const vq = rq ? await rq.json().catch(() => null) : null
+    if (vq === 'ok') return response.status(200).json({ ok: true })
+    return response.status(200).json({ ok: false, error: vq === 'sin fila en el catálogo' ? `El producto ${codigo} no está en el admin de la tienda.` : (rq && !rq.ok ? 'Falta aplicar el SQL del catálogo (quitar_entrega_inmediata).' : 'No se pudo conectar con la tienda.') })
+  }
+
   const id = String(body.inversionId ?? '').trim()
   const tallas = (Array.isArray(body.tallas) ? body.tallas : []).map((t) => String(t ?? '').trim()).filter(Boolean).slice(0, 20)
   if (!id) return response.status(400).json({ ok: false, error: 'Falta la compra.' })
