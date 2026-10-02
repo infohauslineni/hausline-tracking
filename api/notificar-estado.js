@@ -128,7 +128,9 @@ async function rellenarFotosCatalogo(items) {
 // y JUSTO DESPUÉS los productos, así que al crear puede que los ítems todavía no
 // estén. Por eso reintentamos unos segundos. El total se calcula sumando los
 // subtotales de los ítems. Si aun así no hay ítems, devuelve null y va sin tabla.
-async function obtenerFactura(codigo, esNuevo) {
+// modo 'auto' (aviso de "Disponible para entrega"): usa el abono REAL; si ya no debe nada sale
+// como comprobante PAGADO, si debe sale como "saldo pendiente" con el monto a pagar.
+async function obtenerFactura(codigo, esNuevo, modo) {
   const base = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!base || !key || !codigo) return null
@@ -181,15 +183,17 @@ async function obtenerFactura(codigo, esNuevo) {
   }
 
   const total = Math.max(0, items.reduce((sum, it) => sum + it.subtotal, 0))
-  // Al entregar (comprobante) se da por pagado el total; al crear se usa el abono real.
-  const abono = esNuevo ? (Number(pedido.abono) || 0) : total
+  // Al entregar (comprobante) se da por pagado el total; al crear (y en 'auto') se usa el abono real.
+  const real = esNuevo || modo === 'auto'
+  const abono = real ? Math.min(total, Number(pedido.abono) || 0) : total
+  const saldo = Math.max(0, Math.round((total - abono) * 100) / 100)
   return {
     items,
     total,
     abono,
-    saldo: Math.max(0, total - abono),
+    saldo,
     fecha: pedido.fecha_pedido || null,
-    variante: esNuevo ? 'compra' : 'pago',
+    variante: esNuevo ? 'compra' : (modo === 'auto' && saldo > 0.01) ? 'saldo' : 'pago',
   }
 }
 
@@ -576,8 +580,51 @@ export default async function handler(request, response) {
     return response.status(500).json({ ok: false, error: 'Missing SMTP configuration' })
   }
   // Tarea programada de Supabase (pg_cron cada 15 min, migración 202609260004).
-  if (body.tarea === 'recordatorios_encargos') return recordatoriosEncargos(response)
+  if (body.tarea === 'recordatorios_encargos') {
+    // Misma vuelta de 15 min: también salen los avisos de "Disponible para entrega" con 1 h de espera.
+    await disponiblesProgramados().catch((e) => console.error('disponibles programados:', e?.message))
+    return recordatoriosEncargos(response)
+  }
 
+  return procesarAvisoPedido(body, response)
+}
+
+// "Disponible para entrega" NO se avisa al instante: la tarea de cada 15 min lo manda cuando ya
+// pasó 1 HORA (así hay tiempo de corregir si se marcó por error, o de registrar el pago antes).
+// El correo lleva la factura con el saldo real: PAGADA si ya no debe, o con el SALDO PENDIENTE.
+// Si en esa hora el pedido pasó a "Pagado", no se manda (ya le llegó el comprobante de pago).
+const recolector = () => ({ status: () => ({ json: (o) => o }) })
+async function disponiblesProgramados() {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return 0
+  const client = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  const ahora = Date.now()
+  const { data, error } = await client.from('historial_pedidos')
+    .select('estado_anterior, created_at, pedidos!inner(codigo, estado, clientes(correo, nombre))')
+    .eq('estado_nuevo', 'disponible_entrega')
+    .lte('created_at', new Date(ahora - 3_600_000).toISOString())
+    .gte('created_at', new Date(ahora - 48 * 3_600_000).toISOString())
+    .order('created_at', { ascending: false }).limit(100)
+  if (error) { console.error('disponibles programados:', error.message); return 0 }
+  const vistos = new Set()
+  let enviados = 0
+  for (const h of data ?? []) {
+    const p = Array.isArray(h.pedidos) ? h.pedidos[0] : h.pedidos
+    if (!p || p.estado !== 'disponible_entrega' || vistos.has(p.codigo)) continue
+    vistos.add(p.codigo)
+    const cli = Array.isArray(p.clientes) ? p.clientes[0] : p.clientes
+    if (!String(cli?.correo ?? '').trim()) continue
+    // El candado anti-duplicados (email_eventos) evita mandarlo otra vez en la próxima vuelta.
+    const r = await procesarAvisoPedido({
+      type: 'UPDATE', table: 'pedidos', programado: true,
+      record: { codigo: p.codigo, estado: 'disponible_entrega' }, old_record: { estado: h.estado_anterior },
+      cliente_correo: cli.correo, cliente_nombre: cli.nombre ?? null,
+    }, recolector()).catch((e) => { console.error('disponible programado falló', p.codigo, e?.message); return null })
+    if (r?.sent) { enviados++; console.log(`disponible programado: enviado ${p.codigo} (${r.factura ?? 'sin factura'})`) }
+  }
+  return enviados
+}
+
+async function procesarAvisoPedido(body, response) {
   const record = body.record ?? {}
   const oldRecord = body.old_record ?? {}
 
@@ -598,6 +645,7 @@ export default async function handler(request, response) {
   // bodega (recibido_estados_unidos / transito_nicaragua) se muestran como "En tránsito
   // internacional", igual que transito_internacional → así manda UN solo correo de tránsito.
   if (!esNuevo && ESTADO_LABEL[estado] === ESTADO_LABEL[oldRecord.estado]) return response.status(200).json({ ok: true, skipped: 'misma etiqueta pública' })
+  if (!esNuevo && estado === 'disponible_entrega' && !body.programado) return response.status(200).json({ ok: true, skipped: 'programado: sale 1 hora después' })
 
   // El correo y el nombre del cliente vienen dentro del aviso (los agrega el trigger de Supabase),
   // así no hace falta la llave de servicio de Supabase en el servidor.
@@ -616,8 +664,10 @@ export default async function handler(request, response) {
   // a "Entregado" sin pasar por "Pagado" (pagó al recibir), el comprobante sale en
   // "Entregado"; si ya venía de "Pagado", no se repite el comprobante.
   const yaPagado = oldRecord.estado === 'pagado'
-  const conFactura = esNuevo || estado === 'pagado' || (estado === 'entregado' && !yaPagado)
-  const factura = conFactura ? await obtenerFactura(record.codigo, esNuevo) : null
+  const conFactura = esNuevo || estado === 'pagado' || estado === 'disponible_entrega' || (estado === 'entregado' && !yaPagado)
+  const factura = !conFactura ? null
+    : estado === 'disponible_entrega' ? await obtenerFactura(record.codigo, false, 'auto')
+      : await obtenerFactura(record.codigo, esNuevo)
 
   // Fotos dentro del correo, según la etapa (todas ya con su marca grabada al subirlas):
   //   • Control de calidad          → fotos de revisión (tipo control_calidad)
@@ -680,7 +730,7 @@ export default async function handler(request, response) {
   if (factura) {
     try {
       const pdf = await facturaPdfBuffer({ codigo: record.codigo, nombre, fecha: factura.fecha, factura })
-      const tipo = factura.variante === 'pago' ? 'Comprobante pagado' : 'Orden confirmada'
+      const tipo = factura.variante === 'pago' ? 'Comprobante pagado' : factura.variante === 'saldo' ? 'Saldo pendiente' : 'Orden confirmada'
       await subirFacturaDrive({ codigo: record.codigo, fecha: factura.fecha, filename: `${record.codigo} - ${tipo}.pdf`, pdf })
       archivado = true
     } catch (driveError) {
@@ -688,5 +738,5 @@ export default async function handler(request, response) {
     }
   }
 
-  return response.status(200).json({ ok: true, sent: correo, archivado, fotos: fotos.length, fotosArchivadas })
+  return response.status(200).json({ ok: true, sent: correo, archivado, fotos: fotos.length, fotosArchivadas, factura: factura?.variante ?? null })
 }

@@ -64,6 +64,7 @@ export function PedidoDetailPage() {
   const [archivandoDrive, setArchivandoDrive] = useState(false)
   // Datos de entrega del cliente: se abre solo al marcar "Disponible para entrega".
   const [datosEntregaOpen, setDatosEntregaOpen] = useState(false)
+  const [preguntaPagoOpen, setPreguntaPagoOpen] = useState(false)
   // Cobro: la cuenta manda la moneda (el cliente transfiere en C$ o US$). `montoUsd` es lo
   // que reduce el saldo del pedido (siempre en dólares); `montoCuenta` es lo que entró a la tarjeta.
   const [ingresoCobro, setIngresoCobro] = useState<Ingreso>(INGRESO_VACIO)
@@ -109,7 +110,8 @@ export function PedidoDetailPage() {
     const totalUsd = Math.max(0, Math.max(0, Number(pedido.saldo)) + c)
     setCobrarDestino(destino); setCobrarBodega(c > 0); setIngresoCobro({ cuentaId: null, moneda: 'USD', montoUsd: totalUsd, montoCuenta: totalUsd }); setComprobante(null); setPaymentOpen(true)
   }
-  const updateStatus = async () => {
+  // forzar = ya se respondió la pregunta "¿ya pagó?" de Disponible para entrega.
+  const updateStatus = async (forzar = false) => {
     if (estadoSeleccionado === pedido.estado) return toast.info('Selecciona una etapa diferente.')
     // El cobro y la entrega registran dinero (pagos/caja): solo el administrador. El operador
     // mueve las etapas operativas hasta "disponible para entrega".
@@ -125,6 +127,10 @@ export function PedidoDetailPage() {
         iniciarCobro(estadoSeleccionado); return
       }
     }
+    // "Disponible para entrega" con saldo: antes se pregunta si ya pagó. Si pagó, se registra el
+    // pago (pasa a "Pagado" y le llega la factura PAGADA al instante); si no, se marca disponible y
+    // en 1 hora le llega el correo con la factura del SALDO PENDIENTE.
+    if (esAdmin && !forzar && estadoSeleccionado === 'disponible_entrega' && Number(pedido.saldo || 0) > 0.01) { setPreguntaPagoOpen(true); return }
     // "En preparación" es cuando se le compra al proveedor: el administrador registra cuánto
     // costó y de qué cuenta sale, para que se descuente de la caja. El operador solo mueve la
     // etapa (no ve ni registra finanzas).
@@ -136,7 +142,7 @@ export function PedidoDetailPage() {
       setNotaEtapa(''); setNotaInternaEtapa('')
       setPedido((current) => current ? { ...current, ...updated } : updated)
       if (estadoSeleccionado === 'disponible_entrega') setDatosEntregaOpen(true)
-      toast.success(estadoSeleccionado === 'disponible_entrega' ? 'Pedido disponible. El mensaje de WhatsApp está listo.' : estadoSeleccionado === 'control_calidad' && qualityPhotosReady ? 'Control de calidad actualizado. El mensaje de WhatsApp está listo.' : 'Etapa del pedido actualizada.')
+      toast.success(estadoSeleccionado === 'disponible_entrega' ? (Number(updated.saldo ?? pedido.saldo ?? 0) > 0.01 ? 'Pedido disponible. En 1 hora le llega el correo con su factura de saldo pendiente.' : 'Pedido disponible. En 1 hora le llega el correo con su factura pagada.') : estadoSeleccionado === 'control_calidad' && qualityPhotosReady ? 'Control de calidad actualizado. El mensaje de WhatsApp está listo.' : 'Etapa del pedido actualizada.')
     } catch { toast.error('No se pudo actualizar la etapa.') }
     finally { setSavingStatus(false) }
   }
@@ -322,6 +328,18 @@ export function PedidoDetailPage() {
       {cargoBodega?.activo && <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-red-400/25 bg-red-400/[0.05] p-3"><input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-accent" checked={cobrarBodega} onChange={(e) => { const on = e.target.checked; setCobrarBodega(on); fijarCobroUsd(Math.max(0, Number(pedido.saldo) + (on ? cargoBodega.cargo : 0))) }} /><span className="flex flex-col"><span className="text-sm font-medium text-red-100">Cobrar cargo por bodega · US$ {cargoBodega.cargo.toFixed(2)}</span><span className="text-[11px] text-red-100/70">{cargoBodega.diasCobrados} {cargoBodega.diasCobrados === 1 ? 'día' : 'días'} × US$ {CARGO_BODEGA_DIARIO} (≈ C$ {cordobasBodega}). Se agrega como línea a la factura.</span></span></label>}
       <label className="form-field"><span>Método de pago</span><input value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} /></label><IngresoEnCuenta tipoCambio={tipoCambio} value={ingresoCobro} onChange={setIngresoCobro} label="Monto recibido" /><ComprobanteUploader value={comprobante} onChange={setComprobante} requerido={paymentAmount > 0} />{(() => { const cargoAplicado = cobrarBodega ? cargoBodega?.cargo ?? 0 : 0; const extra = paymentAmount - Number(pedido.saldo) - cargoAplicado; return extra > 0.5 ? <div className="rounded-xl border border-accent/20 bg-accent/[.05] p-3 text-xs text-accent">Incluye USD {extra.toFixed(2)} adicionales por delivery.</div> : null })()}<div className="flex justify-end gap-2"><button className="subtle-button" onClick={() => setPaymentOpen(false)}>Cancelar</button><button className="primary-button px-5" disabled={savingStatus || (paymentAmount > 0 && !comprobante)} onClick={() => void confirmarCobro()}>{savingStatus ? 'Guardando…' : cobrarDestino === 'pagado' ? 'Registrar pago' : 'Confirmar entrega'}</button></div></div></Modal>
     <Modal open={envioOpen} onClose={() => setEnvioOpen(false)} title="Agregar envío / delivery"><div className="space-y-4"><p className="text-sm leading-6 text-muted">Calcula el envío con la agencia y escríbelo aquí. Se suma al total del pedido y sale como una línea en la factura, así le das al cliente el total ya con envío. Déjalo en 0 para quitarlo.</p><label className="form-field"><span>Costo del envío (USD)</span><input type="number" min="0" step=".01" value={envioMonto} onChange={(e) => setEnvioMonto(e.target.value)} placeholder="Ej: 4.00" autoFocus /></label><label className="form-field"><span>Detalle (opcional)</span><input value={envioNota} onChange={(e) => setEnvioNota(e.target.value)} placeholder="Ej: Cargotrans a Estelí / delivery zona 5" /></label>{Number(envioMonto) > 0 && <div className="rounded-xl border border-accent/20 bg-accent/[.05] p-3 text-xs text-accent">Nuevo saldo del cliente: USD {(Number(pedido.saldo) + (Number(envioMonto) || 0) - (Number(pedido.pedido_items?.find((it) => it.producto === 'Envío / delivery')?.precio_unitario) || 0)).toFixed(2)}</div>}<div className="flex justify-end gap-2"><button className="subtle-button" onClick={() => setEnvioOpen(false)}>Cancelar</button><button className="primary-button px-5" disabled={savingStatus} onClick={() => void guardarEnvio()}>{savingStatus ? 'Guardando…' : 'Guardar envío'}</button></div></div></Modal>
+    <Modal open={preguntaPagoOpen} onClose={() => setPreguntaPagoOpen(false)} title="¿El cliente ya pagó el saldo?" description={`Saldo pendiente: US$ ${Number(pedido.saldo || 0).toFixed(2)}. Según lo que elijas, le llega el correo con la factura que corresponde.`}>
+      <div className="grid gap-3">
+        <button className="rounded-2xl border border-accent/40 bg-accent/[.06] p-4 text-left transition hover:bg-accent/[.12]" onClick={() => { setPreguntaPagoOpen(false); iniciarCobro('pagado') }}>
+          <strong className="flex items-center gap-2 text-white"><CheckCircle2 size={18} className="text-accent" /> Sí, ya pagó · registrar el pago</strong>
+          <span className="mt-1 block text-xs text-muted">Subís el comprobante, el pedido queda en <b className="text-white">Pagado</b> y al cliente le llega <b className="text-white">al instante</b> la factura marcada como PAGADA.</span>
+        </button>
+        <button className="rounded-2xl border border-line bg-white/[.02] p-4 text-left transition hover:bg-white/[.05]" onClick={() => { setPreguntaPagoOpen(false); void updateStatus(true) }}>
+          <strong className="flex items-center gap-2 text-white"><Wallet size={18} className="text-amber-300" /> No, todavía debe · marcar disponible</strong>
+          <span className="mt-1 block text-xs text-muted">Queda en <b className="text-white">Disponible para entrega</b> y <b className="text-white">en 1 hora</b> le llega el correo con la factura del <b className="text-white">saldo pendiente</b>. Cuando pague, tocá “Registrar pago” y le llega la factura pagada.</span>
+        </button>
+      </div>
+    </Modal>
     <DatosEntregaModal open={datosEntregaOpen} pedido={pedido} mostrarSaldo={esAdmin} onClose={() => setDatosEntregaOpen(false)} />
     <FacturaModal factura={factura} onClose={() => setFactura(null)} title={cobrarDestino === 'pagado' ? 'Pago registrado' : 'Entrega confirmada'} description="Comparte el comprobante de pago con el cliente." codeLabel="Código del pedido" note="El comprobante confirma el pago recibido e incluye el detalle del pedido. La imagen es ideal para WhatsApp y el PDF para archivarlo." closeLabel="Cerrar" />
     {cancelOpen && <CancelarPedidoModal pedido={pedido} open onClose={() => setCancelOpen(false)} onDone={(updated) => setPedido((current) => current ? { ...current, ...updated } : updated)} />}

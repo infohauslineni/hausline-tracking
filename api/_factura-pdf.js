@@ -92,7 +92,7 @@ export async function facturaPdfBuffer({ codigo, nombre, fecha, factura }) {
   // Encabezado
   doc.rect(0, 0, W, 120).fill(VERDE)
   doc.fillColor('#b7ff00').font('Helvetica-Bold').fontSize(26).text('HAUSLINE', M, 34)
-  doc.fillColor('#ffffff').font('Helvetica').fontSize(11).text(esPago ? 'COMPROBANTE DE PAGO' : 'FACTURA DE COMPRA', M, 68)
+  doc.fillColor('#ffffff').font('Helvetica').fontSize(11).text(esPago ? 'COMPROBANTE DE PAGO' : factura?.variante === 'saldo' ? 'ESTADO DE CUENTA · SALDO PENDIENTE' : 'FACTURA DE COMPRA', M, 68)
   doc.fillColor('#9aa79a').fontSize(9).text('King of Shoes · hausline.ni', M, 86)
   doc.fillColor('#b7ff00').font('Helvetica-Bold').fontSize(15).text(codigo || '', W - M - 200, 40, { width: 200, align: 'right' })
   doc.fillColor('#9aa79a').font('Helvetica').fontSize(9).text('Código de seguimiento', W - M - 200, 62, { width: 200, align: 'right' })

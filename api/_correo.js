@@ -140,7 +140,7 @@ export function bloqueFactura(factura) {
           <!-- Factura -->
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 30px;">
             <tr><td class="card" style="border:1px solid #e6e8ec;border-radius:12px;padding:20px 18px 16px;">
-              <div style="font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#8b93a7;margin-bottom:14px;">${esPago ? 'Comprobante de pago' : 'Detalle de tu compra'}</div>
+              <div style="font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#8b93a7;margin-bottom:14px;">${esPago ? 'Comprobante de pago' : factura.variante === 'saldo' ? 'Tu saldo pendiente' : 'Detalle de tu compra'}</div>
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td style="padding:0 0 10px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#8b93a7;">Producto</td>
@@ -840,7 +840,10 @@ export async function enviarCorreoCancelacion({ correo, nombre, codigo, motivo, 
 // (al crear el pedido) o del pago (al entregarlo).
 export async function enviarCorreoPedido({ correo, nombre, codigo, estado, esNuevo, factura, fotos, pedirResena }) {
   const estadoLabel = ESTADO_LABEL[estado]
-  const nota = ESTADO_NOTA[estado] ?? 'Tu pedido fue actualizado.'
+  let nota = ESTADO_NOTA[estado] ?? 'Tu pedido fue actualizado.'
+  // Disponible con saldo: se le dice cuánto falta y cómo pagarlo (la factura va abajo con el detalle).
+  if (estado === 'disponible_entrega' && factura?.variante === 'saldo') nota = `Tu pedido ya está disponible para entrega. Tenés un saldo pendiente de US${Number(factura.saldo).toFixed(2)}: podés pagarlo por transferencia y enviarnos el comprobante por WhatsApp, o al recibirlo. Escríbenos para coordinar el envío o retiro.`
+  else if (estado === 'disponible_entrega' && factura?.variante === 'pago') nota = 'Tu pedido ya está disponible para entrega y está completamente pagado. Escríbenos para coordinar el envío o retiro.'
   const urlSeguimiento = urlPedidoCuenta(codigo)
 
   const transporter = transporteSmtp()
