@@ -1,4 +1,4 @@
-import { CalendarClock, Check, Clock3, Cloud, Coins, Info, Power, RefreshCw, Save, ShieldCheck, Smartphone, Trash2, UserPlus, Users } from 'lucide-react'
+import { CalendarClock, Check, Clock3, Cloud, Coins, DatabaseBackup, Info, Power, RefreshCw, Save, ShieldCheck, Smartphone, Trash2, UserPlus, Users } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { ESTADOS_PEDIDO } from '../../constants/orders'
@@ -9,6 +9,7 @@ import { activarUsuario, crearOperador, eliminarUsuario, listarEquipo, type Miem
 import { DEFAULT_ESTIMACIONES, guardarConfiguracionEstimaciones, obtenerConfiguracionEstimaciones, recalcularEstimaciones, type ConfiguracionEstimaciones } from '../../services/estimaciones.service'
 import type { EstadoPedido } from '../../types/domain'
 import { TarifasDeliverySection } from '../../components/config/TarifasDeliverySection'
+import { hacerRespaldoAhora } from '../../services/archivos.service'
 
 const EDITABLE_STATES: EstadoPedido[] = ['pedido_confirmado', 'en_preparacion', 'transito_internacional', 'llego_nicaragua']
 
@@ -50,7 +51,7 @@ export function ConfiguracionPage() {
         <section className="form-section"><h2 className="flex items-center gap-2 font-semibold"><Clock3 size={18} className="text-accent" /> Días restantes por etapa</h2><p className="mt-2 text-xs leading-5 text-muted">Ajusta el tiempo base esperado desde cada estado. El margen se suma automáticamente.</p><div className="mt-5 grid gap-3 sm:grid-cols-2">{EDITABLE_STATES.map((estado) => <label className="form-field" key={estado}><span>{ESTADOS_PEDIDO.find((item) => item.value === estado)?.label}</span><div className="flex items-center gap-2"><input type="number" min="0" max="90" value={config.dias_por_estado[estado] ?? 0} onChange={(event) => setDays(estado, Number(event.target.value))} /><span className="shrink-0 text-xs text-muted">días</span></div></label>)}</div></section>
       </div>
 
-      <aside className="space-y-5"><section className="form-section"><Cloud size={20} className="text-accent" /><h2 className="mt-3 font-semibold">Actualización diaria</h2><p className="mt-2 text-xs leading-5 text-muted">Vercel ejecutará una revisión cada mañana aunque tu computadora esté apagada. También se recalcula inmediatamente cuando cambias el estado.</p><div className="mt-4 flex items-center gap-2 text-xs text-[#62eaa0]"><Check size={15} /> Programación preparada</div></section><section className="form-section"><Smartphone size={20} className="text-accent" /><h2 className="mt-3 font-semibold">Web tradicional responsive</h2><p className="mt-2 text-xs leading-5 text-muted">Optimizada para iPhone, Android, tablet y computadora. No incluye instalación, modo offline, manifest ni Service Worker.</p></section><section className="form-section"><ShieldCheck size={20} className="text-accent" /><h2 className="mt-3 font-semibold">Estimación honesta</h2><p className="mt-2 text-xs leading-5 text-muted">La página pública la identifica como estimada y explica que puede variar. Nunca se presenta como una fecha confirmada por la paquetería.</p></section></aside>
+      <aside className="space-y-5"><RespaldoSection /><section className="form-section"><Cloud size={20} className="text-accent" /><h2 className="mt-3 font-semibold">Actualización diaria</h2><p className="mt-2 text-xs leading-5 text-muted">Vercel ejecutará una revisión cada mañana aunque tu computadora esté apagada. También se recalcula inmediatamente cuando cambias el estado.</p><div className="mt-4 flex items-center gap-2 text-xs text-[#62eaa0]"><Check size={15} /> Programación preparada</div></section><section className="form-section"><Smartphone size={20} className="text-accent" /><h2 className="mt-3 font-semibold">Web tradicional responsive</h2><p className="mt-2 text-xs leading-5 text-muted">Optimizada para iPhone, Android, tablet y computadora. No incluye instalación, modo offline, manifest ni Service Worker.</p></section><section className="form-section"><ShieldCheck size={20} className="text-accent" /><h2 className="mt-3 font-semibold">Estimación honesta</h2><p className="mt-2 text-xs leading-5 text-muted">La página pública la identifica como estimada y explica que puede variar. Nunca se presenta como una fecha confirmada por la paquetería.</p></section></aside>
     </div>
 
     <EquipoSection />
@@ -124,5 +125,25 @@ function EquipoSection() {
             {m.id !== user?.id && <button className="subtle-button min-h-9 px-3 text-red-300 hover:text-red-200" disabled={busy === m.id} onClick={() => void borrar(m)} title="Eliminar usuario" aria-label="Eliminar usuario"><Trash2 size={15} /></button>}
           </div>)}
     </div>
+  </section>
+}
+
+// Respaldo semanal: cada lunes 5 a. m. se guarda en Drive un Excel con TODO (pedidos, clientes,
+// pagos, gastos, cuentas…). Este botón hace uno al instante.
+function RespaldoSection() {
+  const [haciendo, setHaciendo] = useState(false)
+  const respaldar = async () => {
+    setHaciendo(true)
+    try {
+      const r = await hacerRespaldoAhora()
+      toast.success(`Respaldo guardado en Drive: ${r.filename}`, { description: `${r.carpeta} · ${r.filas.toLocaleString('es-NI')} filas · ${r.kb.toLocaleString('es-NI')} KB`, duration: 12000 })
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo hacer el respaldo.', { duration: 12000 }) }
+    finally { setHaciendo(false) }
+  }
+  return <section className="form-section">
+    <DatabaseBackup size={20} className="text-accent" />
+    <h2 className="mt-3 font-semibold">Respaldo semanal</h2>
+    <p className="mt-2 text-xs leading-5 text-muted">Cada <b className="text-white">lunes a las 5 a. m.</b> se guarda en tu Drive un Excel con toda la información: pedidos, productos, clientes, pagos, gastos, cuentas, encargos y cupones. Carpeta: <b className="text-white">HAUSLINE Facturas → (mes) → RESPALDOS</b>.</p>
+    <button className="subtle-button mt-4 w-full" disabled={haciendo || !isSupabaseConfigured} onClick={() => void respaldar()}><DatabaseBackup size={16} /> {haciendo ? 'Haciendo respaldo… (puede tardar 30 s)' : 'Hacer respaldo ahora'}</button>
   </section>
 }

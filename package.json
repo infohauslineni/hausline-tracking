@@ -12,6 +12,7 @@
   "dependencies": {
     "@hookform/resolvers": "5.4.0",
     "@supabase/supabase-js": "2.110.4",
+    "exceljs": "^4.4.0",
     "framer-motion": "12.42.2",
     "imapflow": "^2.0.7",
     "lucide-react": "1.24.0",

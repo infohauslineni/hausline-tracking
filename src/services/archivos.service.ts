@@ -236,3 +236,16 @@ export async function archivarPedidoDrive(codigo: string): Promise<{ archivos: s
 
 export async function eliminarArchivo(file: ArchivoPedido) { const client = requireSupabase(); const { error: storageError } = await client.storage.from('pedidos').remove([file.storage_path]); if (storageError) throw storageError; const { error } = await client.from('archivos_pedido').delete().eq('id', file.id); if (error) throw error }
 export async function marcarPrincipal(file: ArchivoPedido) { const client = requireSupabase(); await client.from('archivos_pedido').update({ es_principal: false }).eq('pedido_id', file.pedido_id); const { error } = await client.from('archivos_pedido').update({ es_principal: true }).eq('id', file.id); if (error) throw error; await client.from('pedidos').update({ imagen_principal: file.storage_path }).eq('id', file.pedido_id) }
+
+// "Hacer respaldo ahora" (Configuración): Excel con toda la información a Drive. El automático
+// corre solo los lunes a las 5 a. m. Devuelve el nombre del archivo y la carpeta, o lanza el motivo.
+export async function hacerRespaldoAhora(): Promise<{ filename: string; carpeta: string; filas: number; kb: number }> {
+  const client = requireSupabase()
+  const { data: sessionData } = await client.auth.getSession()
+  const token = sessionData.session?.access_token
+  if (!token) throw new Error('Sesión no disponible.')
+  const res = await fetch('/api/notificar-estado', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token }, body: JSON.stringify({ respaldoAhora: true }) })
+  const j = await res.json().catch(() => ({})) as { ok?: boolean; error?: string; filename?: string; carpeta?: string; filas?: number; kb?: number }
+  if (!res.ok || !j.ok) throw new Error(j.error || 'No se pudo hacer el respaldo (HTTP ' + res.status + ').')
+  return { filename: j.filename ?? '', carpeta: j.carpeta ?? '', filas: j.filas ?? 0, kb: j.kb ?? 0 }
+}

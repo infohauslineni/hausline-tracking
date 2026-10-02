@@ -71,6 +71,31 @@ export async function enviarCorreoCarritoAbandonado({ correo, nombre, items, tot
   })
 }
 
+// BAJÓ DE PRECIO: productos que el cliente guardó en favoritos (Mi cuenta) y ahora cuestan menos
+// (oferta o precio rebajado). Un correo con todos los que bajaron.
+export async function enviarCorreoBajaPrecio({ correo, nombre, items }) {
+  const base = baseTienda()
+  const lista = (Array.isArray(items) ? items : []).slice(0, 6)
+  const urlDe = (it) => `${base}/p/${encodeURIComponent(it.codigo)}/`
+  const filas = lista.map((it) => {
+    const img = absolutizarImagen(it.imagen)
+    const url = urlDe(it)
+    const pct = it.antes > 0 ? Math.round((1 - it.ahora / it.antes) * 100) : 0
+    return `<tr><td class="rowline" style="padding:10px 0;border-bottom:1px solid #eef0f2;width:64px;vertical-align:top">${img ? `<a href="${esc(url)}"><img src="${esc(img)}" width="56" height="56" alt="" style="display:block;width:56px;height:56px;border-radius:8px;object-fit:cover;border:1px solid #eef0f2"></a>` : ''}</td>`
+      + `<td class="rowline" style="padding:10px 0 10px 12px;border-bottom:1px solid #eef0f2;vertical-align:top"><a class="t-primary" href="${esc(url)}" style="color:#0b0f19;text-decoration:none;font-size:14px;font-weight:600">${esc(it.nombre || 'Producto')}</a>${pct > 0 ? `<div style="margin-top:5px"><span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#dcfce7;color:#166534;font-size:11px;font-weight:700">−${pct}%</span></div>` : ''}</td>`
+      + `<td class="rowline" style="padding:10px 0;border-bottom:1px solid #eef0f2;text-align:right;white-space:nowrap;vertical-align:top"><div style="font-size:12px;color:#9aa0ab;text-decoration:line-through">${montoUSDcorto(it.antes)}</div><div class="t-primary" style="font-size:15px;font-weight:800;color:#0b0f19">${montoUSDcorto(it.ahora)}</div></td></tr>`
+  }).join('')
+  const destino = lista.length === 1 ? urlDe(lista[0]) : `${base}/cuenta/favoritos/`
+  const nota = `${lista.length === 1 ? 'Un producto que guardaste en tus favoritos <strong>bajó de precio</strong>' : `<strong>${lista.length} productos</strong> que guardaste en tus favoritos <strong>bajaron de precio</strong>`}. Las ofertas duran poco y las tallas se agotan: aprovechalo.`
+    + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px">${filas}</table>`
+  const n = primerNombre(nombre)
+  await transporteSmtp().sendMail({
+    from: remitente(), to: correo,
+    subject: lista.length === 1 ? `⬇️ Bajó de precio: ${lista[0].nombre}` : `⬇️ ${n ? `${n}, b` : 'B'}ajaron de precio ${lista.length} de tus favoritos`,
+    html: plantillaCorreo({ nombre, codigo: null, estado: null, estadoLabel: lista.length === 1 ? '¡Bajó de precio!' : '¡Bajaron de precio!', nota, urlSeguimiento: destino, esNuevo: false, factura: null, fotos: [], ctaTexto: lista.length === 1 ? 'Verlo ahora' : 'Ver mis favoritos', ctaUrl: destino, pedirResena: false }),
+  })
+}
+
 // (3) REPORTE DIARIO al dueño (7 a. m. Nicaragua): lo de ayer + lo que hay que atender hoy.
 export async function enviarCorreoReporteDiario({ to, r }) {
   const appUrl = (process.env.APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')

@@ -4,6 +4,7 @@ import { facturaPdfBuffer } from './_factura-pdf.js'
 import { subirFacturaDrive, subirArchivoDrive, mesCarpeta } from './_drive.js'
 import { cerrarEmail, reservarEmail } from './_email-eventos.js'
 import { automatizaciones } from './_automatico.js'
+import { hacerRespaldo } from './_respaldo.js'
 
 // La tarea de cada 15 min hace varias cosas (avisos, recordatorios, reporte): le damos margen.
 export const config = { maxDuration: 60 }
@@ -198,6 +199,24 @@ async function obtenerFactura(codigo, esNuevo, modo) {
     saldo,
     fecha: pedido.fecha_pedido || null,
     variante: esNuevo ? 'compra' : (modo === 'auto' && saldo > 0.01) ? 'saldo' : 'pago',
+  }
+}
+
+// Respaldo MANUAL (el automático corre los lunes 5 a. m.). Solo administrador.
+async function respaldoManual(response, authorization) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(500).json({ ok: false, error: 'Falta configuración del servidor.' })
+  const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  const token = String(authorization).replace(/^Bearer\s+/i, '').trim()
+  if (!token) return response.status(401).json({ ok: false })
+  const { data: userData } = await admin.auth.getUser(token).catch(() => ({ data: { user: null } }))
+  if (!userData?.user) return response.status(401).json({ ok: false })
+  const { data: perfil } = await admin.from('perfiles').select('rol, activo').eq('id', userData.user.id).maybeSingle()
+  if (!perfil || !perfil.activo || perfil.rol !== 'admin') return response.status(403).json({ ok: false, error: 'Solo el administrador puede hacer respaldos.' })
+  try {
+    return response.status(200).json({ ok: true, ...(await hacerRespaldo(admin)) })
+  } catch (e) {
+    console.error('respaldo manual: falló', e?.message)
+    return response.status(200).json({ ok: false, error: e?.message || 'No se pudo hacer el respaldo.' })
   }
 }
 
@@ -571,6 +590,8 @@ export default async function handler(request, response) {
   if (body.resend) return reenviarFotosEtapa(request, response, body, authorization)
   // "Archivar en Drive" desde el pedido (JWT del usuario): vuelve a subir las facturas.
   if (body.archivarDrive) return archivarDriveManual(response, body, authorization)
+  // "Hacer respaldo ahora" desde Configuración (JWT del admin): Excel completo a Drive.
+  if (body.respaldoAhora) return respaldoManual(response, authorization)
   // Correo de cancelación desde el panel (también con JWT del usuario).
   if (body.cancelacion) return enviarCancelacion(request, response, body, authorization)
   // Solicitud de cancelación / reembolso (cliente → aviso al admin; admin → rechazo al cliente).

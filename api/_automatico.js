@@ -6,11 +6,14 @@
 //   6. Carrito abandonado         → dejó su correo en el checkout y no terminó (2 h después)
 //   7. Volver a comprar           → 30 días después de entregado, cupón personal
 //   8. Recordatorio de reseña     → 5 días después de entregado, si no dejó reseña
+//   · Bajó de precio              → favorito de Mi cuenta que ahora cuesta menos
+//   · Respaldo semanal            → lunes 5 a. m., Excel completo en Drive (api/_respaldo.js)
 // A los CLIENTES solo se les escribe de 9 a. m. a 8 p. m. (hora de Nicaragua).
 import { createClient } from '@supabase/supabase-js'
 import { ESTADO_LABEL } from './_correo.js'
-import { enviarCorreoCarritoAbandonado, enviarCorreoRecompra, enviarCorreoRecordatorioResena, enviarCorreoRecordatorioSaldo, enviarCorreoReporteDiario } from './_correo-auto.js'
+import { enviarCorreoBajaPrecio, enviarCorreoCarritoAbandonado, enviarCorreoRecompra, enviarCorreoRecordatorioResena, enviarCorreoRecordatorioSaldo, enviarCorreoReporteDiario } from './_correo-auto.js'
 import { cerrarEmail, reservarEmail } from './_email-eventos.js'
+import { hacerRespaldo } from './_respaldo.js'
 
 const HORA = 3_600_000
 const DIA = 24 * HORA
@@ -140,6 +143,62 @@ async function carritosAbandonados(db) {
   return n
 }
 
+// ---------- Respaldo semanal (lunes 5 a. m.) ----------
+async function respaldoSemanal(db) {
+  if (ahoraNic().getUTCDay() !== 1 || horaNic() !== 5) return false
+  return unaVez(`respaldo:${fechaNic()}`, 'respaldo', {}, async () => { const r = await hacerRespaldo(db); console.log('respaldo semanal:', JSON.stringify(r)) })
+}
+
+// ---------- Bajó de precio (favoritos de Mi cuenta) ----------
+// Cada favorito guarda el precio que tenía cuando el cliente lo marcó. Si hoy se vende más
+// barato (oferta o rebaja) se le avisa. Una vez por producto y precio: si vuelve a bajar, otro aviso.
+async function bajaPrecioFavoritos(db) {
+  if (!horarioCliente()) return 0
+  const { data: favs, error } = await db.from('favoritos_cliente').select('user_id, codigo, nombre, precio, imagen').gt('precio', 0).limit(5000)
+  if (error) throw new Error(error.message)
+  if (!favs?.length) return 0
+  const codigos = [...new Set(favs.map((f) => f.codigo))]
+  const precios = new Map()
+  for (let i = 0; i < codigos.length; i += 200) {
+    const { data } = await db.from('productos').select('codigo, nombre, precio_venta, imagen').in('codigo', codigos.slice(i, i + 200))
+    for (const p of data ?? []) precios.set(p.codigo, p)
+  }
+  // Por cliente, los favoritos que bajaron al menos US$1 y 3 %.
+  const porUsuario = new Map()
+  for (const f of favs) {
+    const p = precios.get(f.codigo)
+    const antes = Number(f.precio), ahora = Number(p?.precio_venta)
+    // (Una baja de más del 70 % suele ser un precio mal escrito: no se avisa.)
+    if (!(ahora > 0) || antes - ahora < 1 || ahora > antes * 0.97 || ahora < antes * 0.3) continue
+    porUsuario.set(f.user_id, [...(porUsuario.get(f.user_id) ?? []), { codigo: f.codigo, nombre: p.nombre || f.nombre, imagen: p.imagen || f.imagen, antes, ahora }])
+  }
+  if (!porUsuario.size) return 0
+  const { data: cuentas } = await db.from('cuentas_cliente').select('user_id, nombre, correo').in('user_id', [...porUsuario.keys()])
+  const cuentaDe = new Map((cuentas ?? []).map((c) => [c.user_id, c]))
+  let n = 0
+  for (const [userId, items] of porUsuario) {
+    const c = cuentaDe.get(userId)
+    const correo = String(c?.correo ?? '').trim()
+    if (!correo) continue
+    // Candado por producto y precio: solo entran al correo los que todavía no se avisaron.
+    const nuevos = []
+    for (const it of items) {
+      const r = await reservarEmail({ clave: `baja:${userId}:${it.codigo}:${it.ahora.toFixed(2)}`, tipo: 'baja_precio', codigo: it.codigo, destinatario: correo })
+      if (!r.duplicado) nuevos.push({ ...it, reserva: r.id })
+    }
+    if (!nuevos.length) continue
+    try {
+      await enviarCorreoBajaPrecio({ correo, nombre: c?.nombre ?? null, items: nuevos })
+      for (const it of nuevos) await cerrarEmail(it.reserva)
+      n++
+    } catch (e) {
+      for (const it of nuevos) await cerrarEmail(it.reserva, e?.message || 'error de envío')
+      console.error('auto baja de precio: falló', userId, e?.message)
+    }
+  }
+  return n
+}
+
 // ---------- 3. Reporte diario ----------
 async function reporteDiario(db) {
   if (horaNic() !== 7) return false
@@ -156,7 +215,7 @@ async function reporteDiario(db) {
     rango(db.from('solicitudes').select('estado')),
     db.from('pedidos').select('codigo, estado, saldo, updated_at, clientes(nombre), historial_pedidos(estado_nuevo, created_at)').not('estado', 'in', '(entregado,cancelado)').neq('activo', false).limit(1000),
     db.from('cuentas_bancarias').select('nombre, moneda, saldo').eq('activo', true).order('orden'),
-    rango(db.from('email_eventos').select('tipo').in('tipo', ['recordatorio_saldo', 'recompra', 'recordatorio_resena', 'carrito_abandonado']).not('enviado_at', 'is', null)),
+    rango(db.from('email_eventos').select('tipo').in('tipo', ['recordatorio_saldo', 'recompra', 'recordatorio_resena', 'carrito_abandonado', 'baja_precio', 'respaldo']).not('enviado_at', 'is', null)),
   ])
   const signo = (p) => (p.tipo === 'reembolso' ? -1 : 1) * Number(p.monto || 0)
   const ped = (nuevos.data ?? []).filter((p) => p.estado !== 'cancelado')
@@ -167,7 +226,7 @@ async function reporteDiario(db) {
   const nombreCli = (p) => uno(p.clientes)?.nombre ?? 'Cliente'
   const conteo = {}
   for (const e of eventos.data ?? []) conteo[e.tipo] = (conteo[e.tipo] ?? 0) + 1
-  const NOMBRE = { recordatorio_saldo: 'saldo', recompra: 'volver a comprar', recordatorio_resena: 'reseña', carrito_abandonado: 'carrito abandonado' }
+  const NOMBRE = { recordatorio_saldo: 'saldo', recompra: 'volver a comprar', recordatorio_resena: 'reseña', carrito_abandonado: 'carrito abandonado', baja_precio: 'bajó de precio', respaldo: 'respaldo semanal guardado' }
 
   const r = {
     fechaTxt: new Intl.DateTimeFormat('es-NI', { dateStyle: 'full', timeZone: 'UTC' }).format(new Date(iniAyer.getTime() + 12 * HORA)),
@@ -200,5 +259,7 @@ export async function automatizaciones() {
   await paso('saldo', recordatorioSaldo)
   await paso('carritos', carritosAbandonados)
   await paso('post_entrega', postEntrega)
+  await paso('baja_precio', bajaPrecioFavoritos)
+  await paso('respaldo', respaldoSemanal)
   return res
 }
