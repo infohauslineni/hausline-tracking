@@ -3,6 +3,10 @@ import { ESTADO_LABEL, enviarCorreoPedido, enviarCorreoCancelacion, enviarCorreo
 import { facturaPdfBuffer } from './_factura-pdf.js'
 import { subirFacturaDrive, subirArchivoDrive, mesCarpeta } from './_drive.js'
 import { cerrarEmail, reservarEmail } from './_email-eventos.js'
+import { automatizaciones } from './_automatico.js'
+
+// La tarea de cada 15 min hace varias cosas (avisos, recordatorios, reporte): le damos margen.
+export const config = { maxDuration: 60 }
 
 // Reenvío manual (panel): cada tipo de foto corresponde a la etapa/correo que la lleva.
 const TIPO_A_ESTADO = {
@@ -583,6 +587,9 @@ export default async function handler(request, response) {
   if (body.tarea === 'recordatorios_encargos') {
     // Misma vuelta de 15 min: también salen los avisos de "Disponible para entrega" con 1 h de espera.
     await disponiblesProgramados().catch((e) => console.error('disponibles programados:', e?.message))
+    // Saldo, reporte diario, carrito abandonado, volver a comprar y reseña (api/_automatico.js).
+    const auto = await automatizaciones().catch((e) => { console.error('automatizaciones:', e?.message); return null })
+    if (auto && Object.values(auto).some((v) => v && v !== 0 && !(typeof v === 'object' && !Object.values(v).some(Boolean)))) console.log('automatizaciones:', JSON.stringify(auto))
     return recordatoriosEncargos(response)
   }
 

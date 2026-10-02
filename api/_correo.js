@@ -75,7 +75,7 @@ export function absolutizarImagen(src) {
 }
 
 // Escapa texto que viene de la base (nombres de producto, etc.) para el HTML del correo.
-function esc(valor) {
+export function esc(valor) {
   return String(valor ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 }
 
@@ -85,7 +85,7 @@ function montoUSD(valor) {
 
 // Versión corta ("$165.00") para las columnas de las líneas de la factura, donde el
 // ancho importa en el teléfono. En los totales se sigue usando "USD …" (tienen espacio).
-function montoUSDcorto(valor) {
+export function montoUSDcorto(valor) {
   const n = Number(valor) || 0
   return n < 0 ? `−$${Math.abs(n).toFixed(2)}` : `$${n.toFixed(2)}`
 }
@@ -339,7 +339,8 @@ export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, url
     ? `Confirmamos tu pedido ${codigo}. Sigue cada etapa desde aquí.`
     : `${codigo}: ${estadoLabel}. Revisa el detalle del seguimiento.`
   const anio = new Date().getFullYear()
-  const titulo = tituloEstado(estado)
+  // Sin etapa (recordatorios, cupones, carrito…): el titular es la etiqueta propia del correo.
+  const titulo = estado ? tituloEstado(estado) : (estadoLabel || tituloEstado(estado))
   const kicker = esNuevo ? 'Confirmación de pedido' : 'Actualización de pedido'
   const correoContacto = process.env.CONTACT_EMAIL || 'alerta@hauslineshopni.es'
   const telContacto = process.env.CONTACT_PHONE || '+505 7899 5116'
@@ -358,7 +359,7 @@ export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, url
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="color-scheme" content="light dark">
   <meta name="supported-color-schemes" content="light dark">
-  <title>Pedido ${codigo}</title>
+  <title>${codigo ? `Pedido ${codigo}` : 'HAUSLINE'}</title>
   <!--[if mso]><style>body,table,td,a{font-family:Arial,Helvetica,sans-serif !important;}</style><![endif]-->
   <style>
     :root { color-scheme: light dark; supported-color-schemes: light dark; }
@@ -410,7 +411,7 @@ export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, url
         <!-- Titular editorial -->
         <tr><td class="pad" style="padding:36px 24px 0;">
           <h1 class="t-primary" style="margin:0;font-family:${serif};font-weight:400;font-size:30px;line-height:1.18;color:#0b0f19;">${esc(titulo)}</h1>
-          <p style="margin:14px 0 0;font-size:12px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#aeb4bb;">Pedido #${codigo}</p>
+          ${codigo ? `<p style="margin:14px 0 0;font-size:12px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#aeb4bb;">Pedido #${codigo}</p>` : ''}
         </td></tr>
 
         <!-- Datos del pedido primero (foto, talla, código, precio) -->
@@ -953,7 +954,7 @@ export async function enviarCorreoBienvenida({ correo, nombre }) {
 // está entre los destinatarios, se entra por IMAP (misma contraseña de aplicación) y esa copia se
 // marca como NO leída; los filtros de Gmail le siguen poniendo la etiqueta. Best-effort: si falla,
 // el correo ya salió igual. Se apaga con ARCHIVO_NO_LEIDO=0.
-function transporteSmtp() {
+export function transporteSmtp() {
   const t = nodemailer.createTransport({
     host: process.env.SMTP_HOST ?? 'smtp.gmail.com', port: Number(process.env.SMTP_PORT ?? 465), secure: true,
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
