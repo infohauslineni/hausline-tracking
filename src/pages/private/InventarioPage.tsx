@@ -1,4 +1,4 @@
-import { Bookmark, Boxes, CircleDollarSign, Eye, ImagePlus, Link2, PackageCheck, Pencil, Plus, Printer, Search, ShoppingBag, Tag, Trash2, TrendingUp, Wallet, X } from 'lucide-react'
+import { Bookmark, Boxes, CircleDollarSign, Eye, Zap, ImagePlus, Link2, PackageCheck, Pencil, Plus, Printer, Search, ShoppingBag, Tag, Trash2, TrendingUp, Wallet, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -37,6 +37,8 @@ export function InventarioPage() {
   const [printingId, setPrintingId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'todos' | Inversion['estado']>('todos')
+  // Datos para "Registrar costo" de un producto de entrega inmediata (abre el formulario ya lleno).
+  const [inicial, setInicial] = useState<Partial<typeof empty> | null>(null)
   const load = () => {
     void Promise.all([listarInversiones(setItems), listarProductos((catalog) => setProducts(catalog.filter((item) => item.activo)))]).then(([investments, catalog]) => { setItems(investments); setProducts(catalog.filter((item) => item.activo)) }).catch(() => toast.error('No se pudo cargar el inventario. Ejecuta la migración nueva.'))
     // Ventas ya cerradas: se usan para reimprimir el recibo de un producto vendido con su cliente y monto reales.
@@ -97,11 +99,17 @@ export function InventarioPage() {
 
   return <div><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Compras propias · sin pedido de cliente</p><h1 className="page-title">Compras libres</h1><p className="page-subtitle">Lo que compras por tu cuenta para vender (ej. unos Golden Goose para stock): si ya lo pagaste o no, si viene en camino o ya lo tenés, y apartalo a un cliente como pedido normal.</p></div><button className="primary-button px-5" onClick={() => { setEditing(null); setOpen(true) }}><Plus size={17} /> Registrar compra</button></div>
     <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5"><Metric icon={CircleDollarSign} label="Capital invertido" value={`USD ${metrics.invested.toFixed(2)}`} /><Metric icon={Wallet} label={`Por pagar al proveedor${metrics.debtCount ? ` (${metrics.debtCount})` : ''}`} value={`USD ${metrics.debt.toFixed(2)}`} warn={metrics.debt > 0} /><Metric icon={Boxes} label="Unidades activas" value={String(metrics.units)} /><Metric icon={ShoppingBag} label="Venta potencial" value={`USD ${metrics.potential.toFixed(2)}`} /><Metric icon={TrendingUp} label="Ganancia potencial" value={`USD ${Math.max(0, metrics.potential - metrics.costActive).toFixed(2)}`} accent /></div>
+    <EntregaInmediataTienda items={items} onRegistrar={(datos) => {
+      const prod = products.find((p) => p.codigo?.trim().toUpperCase() === String(datos.codigo).toUpperCase())
+      setEditing(null)
+      setInicial({ ...datos, producto_id: prod?.id ?? '', costo_unitario: prod && Number(prod.precio_compra) > 0 ? String(prod.precio_compra) : '' })
+      setOpen(true)
+    }} />
     <div className="mt-6 grid gap-3 sm:grid-cols-[1fr_240px]"><div className="relative"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" size={18} /><input className="search-input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Producto, código, marca o tracking" /></div><select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}><option value="todos">Todos los estados ({items.length})</option>{(Object.keys(statusLabel) as Inversion['estado'][]).map((estado) => <option value={estado} key={estado}>{statusLabel[estado]} ({counts[estado] ?? 0})</option>)}</select></div>
     <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{visible.map((item) => { const cerrado = item.estado === 'vendido' || item.estado === 'descartado'; const extra = linkedExpenses(item); return <article className={`panel-card transition ${cerrado ? 'opacity-70' : ''}`} key={item.id}><div className="flex items-start justify-between gap-3"><button className="grid size-20 shrink-0 place-items-center overflow-hidden rounded-xl bg-accent/10 text-accent" onClick={() => setPreview(item)} aria-label={`Vista para cliente de ${item.producto}`}>{item.imagen ? <img src={item.imagen} alt={item.producto} className="size-full object-cover" /> : <PackageCheck size={22} />}</button><div className="flex items-start gap-2"><select className="w-auto text-xs" value={item.estado} onChange={(event) => void updateStatus(item, event.target.value as Inversion['estado'])}>{Object.entries(statusLabel).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><button className="table-action" onClick={() => setPreview(item)} aria-label={`Vista para cliente de ${item.producto}`}><Eye size={16} /></button><button className="table-action table-action-edit" onClick={() => { setEditing(item); setOpen(true) }} aria-label={`Editar ${item.producto}`}><Pencil size={16} /></button><button className="table-action table-action-danger" onClick={() => void remove(item)} aria-label={`Eliminar ${item.producto}`}><Trash2 size={16} /></button></div></div><div className="mt-4 flex items-center justify-between gap-2"><p className="text-[10px] font-semibold uppercase tracking-wider text-accent">{item.codigo || 'SIN CÓDIGO'}</p><span className="flex flex-wrap justify-end gap-1">{porPagar(item) && <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-200">Por pagar</span>}<span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${statusTone[item.estado]}`}>{statusLabel[item.estado]}</span></span></div><strong className="mt-1 block text-lg">{item.producto}</strong><p className="mt-1 text-xs text-muted">{[item.marca, item.talla_color, `${item.cantidad} unidad${item.cantidad === 1 ? '' : 'es'}`].filter(Boolean).join(' · ')}</p><div className="mt-5 grid grid-cols-3 gap-3 border-t border-line pt-4"><Money label="Costo total" value={totalCost(item)} /><Money label="Venta posible" value={Number(item.precio_venta_estimado) * Number(item.cantidad)} accent /><Money label="Ganancia" value={Math.max(0, Number(item.precio_venta_estimado) * Number(item.cantidad) - totalCost(item))} green /></div>{extra > 0 && <p className="mt-3 text-[11px] text-muted">Incluye USD {extra.toFixed(2)} en gastos asociados (envío u otros).</p>}{item.notas && <p className="mt-3 border-l border-accent/40 pl-3 text-[11px] leading-5 text-muted">{item.notas}</p>}{item.tracking && <div className="mt-3 flex items-center justify-between rounded-xl border border-line p-2.5 text-[11px]"><span className="min-w-0 truncate"><b>{item.transportista || 'Tracking'}:</b> {item.tracking}</span>{item.url_tracking && <a className="table-action" href={item.url_tracking} target="_blank" rel="noreferrer" aria-label="Abrir enlace de tracking"><Link2 size={15} /></a>}</div>}{porPagar(item) && item.estado !== 'descartado' && <button className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300/30 bg-amber-300/[.07] p-2.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-300/[.12]" onClick={() => setPaying(item)}><Wallet size={15} /> Registrar pago al proveedor · USD {totalCost(item).toFixed(2)}</button>}{activo(item.estado) && <div className="mt-4 flex flex-col gap-2">{item.estado !== 'en_transito' && <button className="primary-button w-full justify-center" onClick={() => setSelling(item)}><Tag size={15} /> Vender ahora</button>}<button className={`${item.estado === 'en_transito' ? 'primary-button' : 'subtle-button'} w-full justify-center`} onClick={() => apartar(item)}><Bookmark size={15} /> Apartar a un cliente (pedido con 50%)</button></div>}{item.estado === 'vendido' && <div className="mt-4 flex flex-col gap-2">{item.pedido_id ? <button className="rounded-xl border border-green-400/25 bg-green-400/[.07] p-2.5 text-center text-xs font-semibold text-green-300 transition hover:bg-green-400/[.12]" onClick={() => navigate(`/pedidos/${item.pedido_id}`)}>Apartado como pedido {item.pedidos?.codigo ?? ''} · ver seguimiento →</button> : <p className="rounded-xl border border-green-400/25 bg-green-400/[.07] p-2.5 text-center text-xs font-semibold text-green-300">Vendido</p>}<button className="subtle-button w-full justify-center" onClick={() => void imprimirVendido(item)} disabled={printingId === item.id}><Printer size={15} /> {printingId === item.id ? 'Generando…' : 'Imprimir recibo'}</button></div>}</article> })}</div>
     {!items.length && <div className="mt-6 rounded-2xl border border-dashed border-line p-10 text-center text-sm text-muted">Todavía no hay compras libres. Registrá lo que compraste por tu cuenta para vender, esté pagado o no.</div>}
     {items.length > 0 && !visible.length && <div className="mt-6 rounded-2xl border border-dashed border-line p-10 text-center text-sm text-muted">Ningún producto coincide con esta búsqueda.</div>}
-    <ProductModal open={open} item={editing} products={products} onClose={() => { setOpen(false); setEditing(null) }} onSaved={(item) => { setItems((all) => editing ? all.map((current) => current.id === item.id ? item : current) : [item, ...all]); setOpen(false); setEditing(null) }} />
+    <ProductModal open={open} item={editing} inicial={inicial} products={products} onClose={() => { setOpen(false); setEditing(null); setInicial(null) }} onSaved={(item) => { setItems((all) => editing ? all.map((current) => current.id === item.id ? item : current) : [item, ...all]); setOpen(false); setEditing(null); setInicial(null) }} />
     <SellModal item={selling} onClose={() => setSelling(null)} onSold={(item) => { setItems((all) => all.map((current) => current.id === item.id ? item : current)); setSelling(null); void listarVentasStock().then(setVentas).catch(() => undefined) }} />
     <PayModal item={paying} onClose={() => setPaying(null)} onPaid={(item) => { setItems((all) => all.map((current) => current.id === item.id ? item : current)); setPaying(null) }} />
     <ClientPreview item={preview} onClose={() => setPreview(null)} />
@@ -179,13 +187,13 @@ function SellModal({ item, onClose, onSold }: { item: Inversion | null; onClose:
   </Modal>
 }
 
-function ProductModal({ open, item, products, onClose, onSaved }: { open: boolean; item: Inversion | null; products: Producto[]; onClose: () => void; onSaved: (item: Inversion) => void }) {
+function ProductModal({ open, item, inicial, products, onClose, onSaved }: { open: boolean; item: Inversion | null; inicial?: Partial<typeof empty> | null; products: Producto[]; onClose: () => void; onSaved: (item: Inversion) => void }) {
   const [form, setForm] = useState(empty)
   const [file, setFile] = useState<File | null>(null)
   const [destino, setDestino] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
   const [tipoCambio, setTipoCambio] = useState(37)
   const [saving, setSaving] = useState(false)
-  useEffect(() => { if (!open) return; setFile(null); setDestino({ cuentaId: null, montoCuenta: 0 }); void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined); setForm(item ? { fecha: item.fecha.slice(0, 10), producto_id: item.producto_id ?? '', codigo: item.codigo ?? '', producto: item.producto, marca: item.marca ?? '', talla_color: item.talla_color ?? '', cantidad: String(item.cantidad), costo_unitario: String(item.costo_unitario), gastos_adicionales: String(item.gastos_adicionales), precio_venta_estimado: String(item.precio_venta_estimado), metodo: 'Transferencia', notas: item.notas ?? '', tracking: item.tracking ?? '', transportista: item.transportista ?? '', url_tracking: item.url_tracking ?? '', pago: porPagar(item) ? 'pendiente' : 'antes', estado: item.estado } : empty) }, [item, open])
+  useEffect(() => { if (!open) return; setFile(null); setDestino({ cuentaId: null, montoCuenta: 0 }); void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined); setForm(item ? { fecha: item.fecha.slice(0, 10), producto_id: item.producto_id ?? '', codigo: item.codigo ?? '', producto: item.producto, marca: item.marca ?? '', talla_color: item.talla_color ?? '', cantidad: String(item.cantidad), costo_unitario: String(item.costo_unitario), gastos_adicionales: String(item.gastos_adicionales), precio_venta_estimado: String(item.precio_venta_estimado), metodo: 'Transferencia', notas: item.notas ?? '', tracking: item.tracking ?? '', transportista: item.transportista ?? '', url_tracking: item.url_tracking ?? '', pago: porPagar(item) ? 'pendiente' : 'antes', estado: item.estado } : { ...empty, ...(inicial ?? {}) }) }, [item, open, inicial])
 
   // Al escribir el código se completa todo solo (nombre, marca, precios y foto) si coincide con un producto del catálogo.
   const aplicarCodigo = (codigo: string) => {
@@ -273,4 +281,43 @@ function ClientPreview({ item, onClose }: { item: Inversion | null; onClose: () 
       </div>
     </section>
   </div>
+}
+
+// Productos que la TIENDA muestra como "Entrega inmediata" (ya están en Nicaragua). Se leen del
+// catálogo web (/api/catalogo): al venderse, la talla sale sola de la tienda y de esta lista.
+// Si todavía no están registrados en Compras libres (con su costo), se registran con un toque.
+type ProductoEI = { codigo: string; nombre: string; marca: string | null; imagen: string | null; precio_venta: number; precio_entrega_inmediata: number; tallas_entrega_inmediata: string[]; colores_entrega_inmediata: string[]; cantidad_disponible: number; entrega_inmediata: boolean }
+function EntregaInmediataTienda({ items, onRegistrar }: { items: Inversion[]; onRegistrar: (datos: Partial<typeof empty>) => void }) {
+  const [lista, setLista] = useState<ProductoEI[] | null>(null)
+  useEffect(() => {
+    let vivo = true
+    void fetch('/api/catalogo', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : [])).then((c: ProductoEI[]) => { if (vivo) setLista((Array.isArray(c) ? c : []).filter((p) => p.entrega_inmediata)) }).catch(() => { if (vivo) setLista([]) })
+    return () => { vivo = false }
+  }, [])
+  if (!lista?.length) return null
+  const registrado = (codigo: string) => items.find((i) => (i.codigo ?? '').trim().toUpperCase() === codigo.toUpperCase() && activo(i.estado))
+  const faltan = lista.filter((p) => !registrado(p.codigo)).length
+  return <section className="mt-6 rounded-2xl border border-accent/25 bg-accent/[.03] p-4">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <h2 className="flex items-center gap-2 font-semibold"><Zap size={17} className="text-accent" /> En la tienda como Entrega inmediata <span className="rounded-full bg-white/[.06] px-2 py-0.5 text-[11px] font-normal text-muted">{lista.length}</span></h2>
+      {faltan > 0 && <span className="text-[11px] text-amber-200">{faltan} sin registrar con su costo</span>}
+    </div>
+    <p className="mt-1 text-[11px] leading-4 text-muted">Lo que ven los clientes en "Entrega inmediata" (se edita en el admin de la tienda). Cuando se vende una talla, sale sola de la tienda y de aquí.</p>
+    <div className="mt-3 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">{lista.map((p) => {
+      const reg = registrado(p.codigo)
+      const precio = p.precio_entrega_inmediata > 0 ? p.precio_entrega_inmediata : p.precio_venta
+      const unidades = p.tallas_entrega_inmediata.length || p.cantidad_disponible || 1
+      return <article key={p.codigo} className="flex gap-3 rounded-xl border border-line bg-panel p-2.5">
+        <div className="size-16 shrink-0 overflow-hidden rounded-lg bg-white/[.04]">{p.imagen ? <img src={p.imagen} alt="" className="size-full object-cover" /> : <PackageCheck size={18} className="m-auto mt-5 text-muted" />}</div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-accent">{p.codigo}</p>
+          <strong className="block truncate text-sm">{p.nombre}</strong>
+          <p className="mt-0.5 text-[11px] text-muted">{p.tallas_entrega_inmediata.length ? `Tallas: ${p.tallas_entrega_inmediata.join(', ')}` : p.cantidad_disponible ? `${p.cantidad_disponible} disponibles` : 'Sin talla'} · USD {precio.toFixed(2)}</p>
+          {reg
+            ? <p className="mt-1.5 text-[11px] font-semibold text-green-300">✓ En Compras libres · {statusLabel[reg.estado]}</p>
+            : <button className="mt-1.5 rounded-lg border border-amber-300/30 bg-amber-300/[.08] px-2 py-1 text-[11px] font-semibold text-amber-200 transition hover:bg-amber-300/[.15]" onClick={() => onRegistrar({ codigo: p.codigo, producto: p.nombre, marca: p.marca ?? '', talla_color: [p.tallas_entrega_inmediata.join(', '), p.colores_entrega_inmediata.join(', ')].filter(Boolean).join(' · '), cantidad: String(unidades), precio_venta_estimado: String(precio), pago: 'antes', estado: 'en_inventario' })}>+ Registrar su costo</button>}
+        </div>
+      </article>
+    })}</div>
+  </section>
 }

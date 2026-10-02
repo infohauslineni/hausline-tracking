@@ -13,6 +13,18 @@ const STORE_SCRIPT_URL = `${BASE}/productos.js`
 const PANEL_URL = 'https://xgdijumnmaqfirmckugw.supabase.co'
 const PANEL_KEY = 'sb_publishable_NwpQth6G3qhpvtnRan3Xfg_8EqPM4Pw'
 
+// Entrega inmediata (lo que ya está en Nicaragua). Lo usa "Compras libres" del panel para listar
+// esos productos; no va a la tabla productos.
+function camposEntregaInmediata(p) {
+  return {
+    entrega_inmediata: p.entregaInmediata === true,
+    tallas_entrega_inmediata: Array.isArray(p.tallasEntregaInmediata) ? p.tallasEntregaInmediata.filter(Boolean).map(String) : [],
+    colores_entrega_inmediata: Array.isArray(p.coloresEntregaInmediata) ? p.coloresEntregaInmediata.filter(Boolean).map(String) : [],
+    cantidad_disponible: Number(p.cantidadDisponible) || 0,
+    precio_entrega_inmediata: Number(p.precioEntregaInmediata) || 0,
+  }
+}
+
 async function leerCatalogoPanel() {
   try {
     const response = await fetch(`${PANEL_URL}/rest/v1/catalogo_web?select=codigo,datos&activo=eq.true`, {
@@ -37,6 +49,7 @@ async function leerCatalogoPanel() {
           promocion_hasta: d.promocionHasta ?? null,
           imagen: d.imagen || null,
           descripcion: d.descripcion || null,
+          ...camposEntregaInmediata(d),
         }
       })
   } catch { return [] }
@@ -92,6 +105,7 @@ async function leerCatalogoTienda() {
       promocion_hasta: product.promocionHasta ?? product.promocion_hasta ?? null,
       imagen: product.imagen || null,
       descripcion: product.descripcion || null,
+      ...camposEntregaInmediata(product),
     })) }
 }
 
@@ -108,11 +122,19 @@ async function leerFeedJson() {
 // panel (lo último editado en el panel gana). Devuelve [] si ninguna fuente respondió.
 // El nombre final es el que ve el cliente en la web: el escrito en el panel (nombreReal)
 // o, si no, el de nombresReales de productos.js; el nombre original queda como respaldo.
+const camposDe = (p) => ({ entrega_inmediata: p.entrega_inmediata, tallas_entrega_inmediata: p.tallas_entrega_inmediata, colores_entrega_inmediata: p.colores_entrega_inmediata, cantidad_disponible: p.cantidad_disponible, precio_entrega_inmediata: p.precio_entrega_inmediata })
+
 export async function obtenerCatalogoMergeado() {
   const [feed, { productos: store, nombres }, panel] = await Promise.all([leerFeedJson(), leerCatalogoTienda(), leerCatalogoPanel()])
   const porCodigo = new Map()
   for (const item of store) porCodigo.set(String(item.codigo).trim().toUpperCase(), item)
-  for (const item of feed) { const clave = String(item.codigo || '').trim().toUpperCase(); if (clave) porCodigo.set(clave, item) }
+  for (const item of feed) {
+    const clave = String(item.codigo || '').trim().toUpperCase()
+    if (!clave) continue
+    const base = porCodigo.get(clave)
+    // El feed puede no traer los campos de entrega inmediata: se conservan los de la tienda.
+    porCodigo.set(clave, base && item.entrega_inmediata === undefined ? { ...item, ...camposDe(base) } : item)
+  }
   for (const item of panel) { const clave = String(item.codigo || '').trim().toUpperCase(); if (clave) porCodigo.set(clave, item) }
   return [...porCodigo.entries()].map(([clave, item]) => {
     const { nombre_panel: nombrePanel, ...resto } = item
