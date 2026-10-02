@@ -249,7 +249,7 @@ async function entregaInmediataDesdeCompra(response, body, authorization) {
   const r = res ? await res.json().catch(() => null) : null
   if (r === 'ok') return response.status(200).json({ ok: true })
   const MOTIVO = {
-    'ya estaba agregada': 'Esta compra ya se había puesto en Entrega inmediata.',
+    'ya estaba agregada': 'Esta compra ya está en Entrega inmediata en la tienda. Si llegaron más unidades, registralas como otra compra.',
     'sin fila en el catálogo': `El producto ${compra.codigo} no está en el admin de la tienda: abrilo en admin.html y tocá Guardar una vez, después volvé a intentar.`,
     'no autorizado': 'La clave de entrega inmediata no coincide entre el panel y la tienda.',
   }

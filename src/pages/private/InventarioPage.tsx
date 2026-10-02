@@ -137,7 +137,7 @@ export function InventarioPage() {
     <SellModal item={selling} onClose={() => setSelling(null)} onSold={(item) => { setItems((all) => all.map((current) => current.id === item.id ? item : current)); setSelling(null); void listarVentasStock().then(setVentas).catch(() => undefined) }} />
     <PayModal item={paying} onClose={() => setPaying(null)} onPaid={(item) => { setItems((all) => all.map((current) => current.id === item.id ? item : current)); setPaying(null) }} />
     <ClientPreview item={preview} onClose={() => setPreview(null)} />
-    <EntregaInmediataModal key={poniendoEI?.id ?? 'ninguna'} item={poniendoEI} onClose={() => setPoniendoEI(null)} onListo={() => { setPoniendoEI(null); setTimeout(cargarEI, 2500) }} />
+    <EntregaInmediataModal key={poniendoEI?.id ?? 'ninguna'} item={poniendoEI} enTienda={(ei ?? []).find((p) => p.codigo.toUpperCase() === (poniendoEI?.codigo ?? '').trim().toUpperCase())?.tallas_entrega_inmediata ?? null} onClose={() => setPoniendoEI(null)} onListo={() => { setPoniendoEI(null); setTimeout(cargarEI, 2500) }} />
   </div>
 }
 
@@ -351,7 +351,7 @@ function tallasDeCompra(item: Inversion): string {
   return partes.join(', ')
 }
 
-function EntregaInmediataModal({ item, onClose, onListo }: { item: Inversion | null; onClose: () => void; onListo: () => void }) {
+function EntregaInmediataModal({ item, enTienda, onClose, onListo }: { item: Inversion | null; enTienda: string[] | null; onClose: () => void; onListo: () => void }) {
   // Se monta de nuevo por cada compra (key en el padre): arranca con sus tallas.
   const [tallas, setTallas] = useState(() => (item ? tallasDeCompra(item) : ''))
   const [guardando, setGuardando] = useState(false)
@@ -370,6 +370,7 @@ function EntregaInmediataModal({ item, onClose, onListo }: { item: Inversion | n
   }
   return <Modal open={Boolean(item)} onClose={onClose} title="Poner en Entrega inmediata" description={`${item.producto} (${item.codigo || 'sin código'}) va a salir en la tienda como Entrega inmediata, con las tallas que pongas abajo.`}>
     <form className="form-grid" onSubmit={(event) => void poner(event)}>
+      {enTienda && <p className="col-span-full rounded-xl border border-amber-300/30 bg-amber-300/[.07] px-3 py-2 text-xs text-amber-200">Este producto ya está en Entrega inmediata con: <b>{enTienda.length ? enTienda.join(', ') : 'sin tallas'}</b>. Escribí abajo solo las unidades NUEVAS de esta compra (si ya están, cancelá).</p>}
       <label className="form-field sm:col-span-2"><span>Tallas disponibles (separadas por coma)</span><input value={tallas} onChange={(event) => setTallas(event.target.value)} placeholder="Ej. 42  ·  o  S, M  ·  dejá vacío si no tiene talla" autoFocus /></label>
       <p className="col-span-full -mt-1 text-[11px] leading-4 text-muted">Una talla por unidad: si tenés 2 de la 42, escribí <b className="text-white">42, 42</b>. Cuando se venda, la talla sale sola de la tienda.</p>
       <div className="col-span-full flex justify-end gap-2"><button type="button" className="subtle-button" onClick={onClose}>Cancelar</button><button className="primary-button px-5" disabled={guardando}><Zap size={15} /> {guardando ? 'Poniendo…' : 'Poner en Entrega inmediata'}</button></div>
