@@ -3,10 +3,13 @@
 -- · La clave compartida pasa a vivir en config_privada (no escrita dentro de las funciones).
 -- · Al vender se manda también el pedido (p_pedido) para que el catálogo anote qué talla quitó.
 -- · Al pasar un pedido a "cancelado" se le pide al catálogo que devuelva lo anotado de ese pedido.
--- La clave __SECRETO__ es la misma del catálogo (no se guarda en el repositorio).
+-- La clave NO se escribe aquí: se copia de la función que ya está instalada (migración 202610020003).
 
-insert into public.config_privada (clave, valor) values ('secreto_entrega_inmediata', '__SECRETO__')
-on conflict (clave) do update set valor = excluded.valor;
+insert into public.config_privada (clave, valor)
+select 'secreto_entrega_inmediata', m[1]
+from regexp_match(pg_get_functiondef('public.avisar_venta_entrega_inmediata()'::regprocedure), '''p_secreto'',\s*''([0-9a-f]{20,})''') as m
+where m is not null
+on conflict (clave) do nothing;
 
 create or replace function public.avisar_venta_entrega_inmediata()
 returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
