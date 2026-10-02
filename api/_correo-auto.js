@@ -96,6 +96,34 @@ export async function enviarCorreoBajaPrecio({ correo, nombre, items }) {
   })
 }
 
+// NOVEDADES (suscriptores que aceptaron promociones): "Lo nuevo de la semana" cuando entraron
+// productos nuevos, o "Lo más pedido" como mínimo una vez al mes. Pie con enlace para darse de baja.
+export async function enviarCorreoNovedades({ correo, nombre, tipo, productos, urlBaja }) {
+  const base = baseTienda()
+  const lista = (Array.isArray(productos) ? productos : []).slice(0, 6)
+  const tarjeta = (p) => {
+    const url = `${base}/p/${encodeURIComponent(p.codigo)}/`
+    const img = absolutizarImagen(p.imagen)
+    return `<td width="50%" style="padding:6px;vertical-align:top"><a href="${esc(url)}" style="text-decoration:none;color:#0b0f19;display:block">`
+      + (img ? `<img src="${esc(img)}" width="260" alt="" style="display:block;width:100%;max-width:260px;height:auto;aspect-ratio:1/1;object-fit:cover;border-radius:10px;border:1px solid #eef0f2;background:#f6f7f9">` : '')
+      + `<div class="t-primary" style="margin-top:8px;font-size:13px;font-weight:600;line-height:1.35;color:#0b0f19">${esc(p.nombre)}</div>`
+      + `<div class="t-primary" style="margin-top:3px;font-size:14px;font-weight:800;color:#0b0f19">${Number(p.precio) > 0 ? montoUSDcorto(p.precio) : 'Consultar precio'}</div></a></td>`
+  }
+  let filas = ''
+  for (let i = 0; i < lista.length; i += 2) filas += `<tr>${tarjeta(lista[i])}${lista[i + 1] ? tarjeta(lista[i + 1]) : '<td width="50%"></td>'}</tr>`
+  const nuevos = tipo === 'nuevos'
+  const nota = (nuevos ? 'Esta semana entraron productos nuevos a la tienda. Mirá lo que llegó:' : 'Te dejamos lo que más están pidiendo nuestros clientes. ¡Las tallas vuelan!')
+    + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px">${filas}</table>`
+    + `<p style="margin:14px 0 0;font-size:11px;line-height:1.5;color:#9aa0ab">Recibís este correo porque aceptaste novedades de HAUSLINE. <a href="${esc(urlBaja)}" style="color:#9aa0ab">Darme de baja</a></p>`
+  const n = primerNombre(nombre)
+  await transporteSmtp().sendMail({
+    from: remitente(), to: correo,
+    subject: nuevos ? `🆕 ${n ? `${n}, m` : 'M'}irá lo nuevo en HAUSLINE esta semana` : `🔥 ${n ? `${n}, l` : 'L'}o más pedido en HAUSLINE`,
+    headers: { 'List-Unsubscribe': `<${urlBaja}>` },
+    html: plantillaCorreo({ nombre, codigo: null, estado: null, estadoLabel: nuevos ? 'Lo nuevo de la semana' : 'Lo más pedido del mes', nota, urlSeguimiento: base, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Ver la tienda', ctaUrl: base, pedirResena: false }),
+  })
+}
+
 // (3) REPORTE DIARIO al dueño (7 a. m. Nicaragua): lo de ayer + lo que hay que atender hoy.
 export async function enviarCorreoReporteDiario({ to, r }) {
   const appUrl = (process.env.APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')

@@ -11,9 +11,10 @@
 // A los CLIENTES solo se les escribe de 9 a. m. a 8 p. m. (hora de Nicaragua).
 import { createClient } from '@supabase/supabase-js'
 import { ESTADO_LABEL } from './_correo.js'
-import { enviarCorreoBajaPrecio, enviarCorreoCarritoAbandonado, enviarCorreoRecompra, enviarCorreoRecordatorioResena, enviarCorreoRecordatorioSaldo, enviarCorreoReporteDiario } from './_correo-auto.js'
+import { enviarCorreoBajaPrecio, enviarCorreoCarritoAbandonado, enviarCorreoNovedades, enviarCorreoRecompra, enviarCorreoRecordatorioResena, enviarCorreoRecordatorioSaldo, enviarCorreoReporteDiario } from './_correo-auto.js'
 import { cerrarEmail, reservarEmail } from './_email-eventos.js'
 import { hacerRespaldo } from './_respaldo.js'
+import { obtenerCatalogoMergeado } from './_catalogo.js'
 
 const HORA = 3_600_000
 const DIA = 24 * HORA
@@ -199,6 +200,67 @@ async function bajaPrecioFavoritos(db) {
   return n
 }
 
+// ---------- Novedades a suscriptores ----------
+// Los JUEVES desde las 10 a. m. se arma una "edición": si entraron 3+ productos nuevos a la tienda
+// desde la anterior → "Lo nuevo de la semana"; si no, y ya pasó casi un mes → "Lo más pedido".
+// Se manda en tandas de 25 por vuelta (cada 15 min) hasta completar la lista. Solo a suscriptores
+// que aceptaron promociones (tabla suscriptores), con enlace para darse de baja.
+const NOV_POR_VUELTA = 25
+async function novedades(db) {
+  if (!horarioCliente() || horaNic() < 10) return 0
+  const { data: cfg } = await db.from('configuracion').select('valor_json').eq('clave', 'novedades').maybeSingle()
+  let ed = cfg?.valor_json?.id ? cfg.valor_json : null
+  const ahora = Date.now()
+  if ((!ed || ed.completa) && ahoraNic().getUTCDay() === 4 && (!ed || ahora - Date.parse(ed.creada) > 6 * DIA)) {
+    const enWeb = new Set((await obtenerCatalogoMergeado())
+      .filter((c) => !c.ventaLibre && !/^LIB\d/i.test(String(c.codigo || ''))).map((c) => String(c.codigo || '').toUpperCase()))
+    const desde = ed?.creada ?? new Date(ahora - 7 * DIA).toISOString()
+    const { data: recientes } = await db.from('productos').select('codigo, nombre, precio_venta, imagen')
+      .eq('activo', true).gt('precio_venta', 0).not('imagen', 'is', null).gt('created_at', desde).order('created_at', { ascending: false }).limit(80)
+    let lista = (recientes ?? []).filter((p) => enWeb.has(String(p.codigo).toUpperCase()))
+    let tipo = lista.length >= 3 ? 'nuevos' : null
+    if (!tipo && (!ed || ahora - Date.parse(ed.creada) >= 27 * DIA)) {
+      tipo = 'destacados'
+      const { data: items } = await db.from('pedido_items').select('codigo_producto').gte('created_at', new Date(ahora - 60 * DIA).toISOString()).limit(5000)
+      const veces = new Map()
+      for (const it of items ?? []) { const c = String(it.codigo_producto || '').toUpperCase(); if (c && enWeb.has(c)) veces.set(c, (veces.get(c) ?? 0) + 1) }
+      const top = [...veces.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([c]) => c)
+      const { data: prods } = top.length ? await db.from('productos').select('codigo, nombre, precio_venta, imagen').in('codigo', top).eq('activo', true).gt('precio_venta', 0) : { data: [] }
+      const orden = new Map(top.map((c, i) => [c, i]))
+      lista = [...(prods ?? []).filter((p) => p.imagen).sort((a, b) => orden.get(String(a.codigo).toUpperCase()) - orden.get(String(b.codigo).toUpperCase())), ...lista]
+    }
+    if (!tipo || !lista.length) return 0 // esta semana no hay nada que mandar
+    const vistos = new Set()
+    ed = {
+      id: fechaNic(), tipo, creada: new Date().toISOString(), completa: false,
+      productos: lista.filter((p) => !vistos.has(p.codigo) && vistos.add(p.codigo)).slice(0, 6).map((p) => ({ codigo: p.codigo, nombre: p.nombre, precio: Number(p.precio_venta), imagen: p.imagen })),
+    }
+    const { error } = await db.from('configuracion').upsert({ clave: 'novedades', valor_json: ed }, { onConflict: 'clave' })
+    if (error) throw new Error(error.message)
+  }
+  if (!ed || ed.completa) return 0
+
+  const { data: subs, error } = await db.from('suscriptores').select('correo, nombre').eq('activo', true).eq('consentimiento', true).limit(5000)
+  if (error) throw new Error(error.message)
+  const base = (process.env.CATALOGO_BASE_URL ?? 'https://hauslineshopni.es/').replace(/\/$/, '')
+  let enviados = 0, quedan = false
+  for (const s of subs ?? []) {
+    const correo = String(s.correo ?? '').trim().toLowerCase()
+    if (!correo) continue
+    if (enviados >= NOV_POR_VUELTA) { quedan = true; break }
+    const reserva = await reservarEmail({ clave: `novedades:${ed.id}:${correo}`, tipo: 'novedades', destinatario: correo })
+    if (reserva.duplicado) continue
+    try {
+      const { data: tok, error: eTok } = await db.rpc('token_baja_suscriptor', { p_correo: correo })
+      if (eTok || !tok) throw new Error(eTok?.message || 'sin código de baja') // sin enlace de baja no se manda
+      await enviarCorreoNovedades({ correo, nombre: s.nombre, tipo: ed.tipo, productos: ed.productos, urlBaja: `${base}/baja/?e=${encodeURIComponent(correo)}&t=${tok}` })
+      await cerrarEmail(reserva.id); enviados++
+    } catch (e) { await cerrarEmail(reserva.id, e?.message || 'error'); console.error('auto novedades: falló', correo, e?.message); quedan = true; break }
+  }
+  if (!quedan) await db.from('configuracion').upsert({ clave: 'novedades', valor_json: { ...ed, completa: true, completada: new Date().toISOString() } }, { onConflict: 'clave' })
+  return enviados
+}
+
 // ---------- 3. Reporte diario ----------
 async function reporteDiario(db) {
   if (horaNic() !== 7) return false
@@ -215,7 +277,7 @@ async function reporteDiario(db) {
     rango(db.from('solicitudes').select('estado')),
     db.from('pedidos').select('codigo, estado, saldo, updated_at, clientes(nombre), historial_pedidos(estado_nuevo, created_at)').not('estado', 'in', '(entregado,cancelado)').neq('activo', false).limit(1000),
     db.from('cuentas_bancarias').select('nombre, moneda, saldo').eq('activo', true).order('orden'),
-    rango(db.from('email_eventos').select('tipo').in('tipo', ['recordatorio_saldo', 'recompra', 'recordatorio_resena', 'carrito_abandonado', 'baja_precio', 'respaldo']).not('enviado_at', 'is', null)),
+    rango(db.from('email_eventos').select('tipo').in('tipo', ['recordatorio_saldo', 'recompra', 'recordatorio_resena', 'carrito_abandonado', 'baja_precio', 'respaldo', 'novedades']).not('enviado_at', 'is', null)),
   ])
   const signo = (p) => (p.tipo === 'reembolso' ? -1 : 1) * Number(p.monto || 0)
   const ped = (nuevos.data ?? []).filter((p) => p.estado !== 'cancelado')
@@ -226,7 +288,7 @@ async function reporteDiario(db) {
   const nombreCli = (p) => uno(p.clientes)?.nombre ?? 'Cliente'
   const conteo = {}
   for (const e of eventos.data ?? []) conteo[e.tipo] = (conteo[e.tipo] ?? 0) + 1
-  const NOMBRE = { recordatorio_saldo: 'saldo', recompra: 'volver a comprar', recordatorio_resena: 'reseña', carrito_abandonado: 'carrito abandonado', baja_precio: 'bajó de precio', respaldo: 'respaldo semanal guardado' }
+  const NOMBRE = { recordatorio_saldo: 'saldo', recompra: 'volver a comprar', recordatorio_resena: 'reseña', carrito_abandonado: 'carrito abandonado', baja_precio: 'bajó de precio', respaldo: 'respaldo semanal guardado', novedades: 'novedades a suscriptores' }
 
   const r = {
     fechaTxt: new Intl.DateTimeFormat('es-NI', { dateStyle: 'full', timeZone: 'UTC' }).format(new Date(iniAyer.getTime() + 12 * HORA)),
@@ -261,5 +323,6 @@ export async function automatizaciones() {
   await paso('post_entrega', postEntrega)
   await paso('baja_precio', bajaPrecioFavoritos)
   await paso('respaldo', respaldoSemanal)
+  await paso('novedades', novedades)
   return res
 }
