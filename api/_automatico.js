@@ -261,6 +261,19 @@ async function novedades(db) {
   return enviados
 }
 
+// Productos de la tienda que se ven mal: sin foto, o de ropa/calzado sin tallas. Para el reporte.
+async function productosIncompletos() {
+  try {
+    const lista = (await obtenerCatalogoMergeado()).filter((p) => !/^LIB\d/i.test(String(p.codigo || '')))
+    return lista.map((p) => {
+      const faltas = []
+      if (!String(p.imagen || '').trim()) faltas.push('sin foto')
+      if (!(p.tallas ?? []).length && !/accesor|decora/i.test(String(p.categoria || ''))) faltas.push('sin tallas')
+      return faltas.length ? { codigo: p.codigo, nombre: p.nombre, faltas: faltas.join(' y ') } : null
+    }).filter(Boolean)
+  } catch { return [] }
+}
+
 // ---------- 3. Reporte diario ----------
 async function reporteDiario(db) {
   if (horaNic() !== 7) return false
@@ -308,6 +321,7 @@ async function reporteDiario(db) {
       .filter((p) => p.dias >= 7).sort((a, b) => b.dias - a.dias).slice(0, 15),
     cuentas: cuentas.data ?? [],
     automatico: Object.entries(conteo).map(([k, v]) => `${v} de ${NOMBRE[k] ?? k}`).join(' · '),
+    incompletos: await productosIncompletos(),
   }
   return unaVez(`reporte:${hoy}`, 'reporte_diario', { destinatario: to }, () => enviarCorreoReporteDiario({ to, r }))
 }

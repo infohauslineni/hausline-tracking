@@ -148,6 +148,7 @@ export async function enviarCorreoReporteDiario({ to, r }) {
         ${seccion('💰 Disponibles con saldo pendiente', r.disponibles.map((p) => fila(`${esc(p.codigo)} · ${esc(p.cliente)}`, m(p.saldo), `${p.dias} ${p.dias === 1 ? 'día' : 'días'} disponible${p.dias > 2 ? ' · ya cobra bodega' : ''}`)), 'Ninguno: todos los disponibles están pagados.')}
         ${seccion('⏳ Pedidos sin movimiento (7+ días)', r.trabados.map((p) => fila(`${esc(p.codigo)} · ${esc(p.cliente)}`, `${p.dias} días`, esc(p.estado))), 'Ninguno: todo se está moviendo.')}
         ${seccion('🏦 Saldo de tus cuentas', r.cuentas.map((c) => fila(esc(c.nombre), `${c.moneda === 'USD' ? 'US$' : 'C$'} ${num(c.saldo)}`)), 'Sin cuentas registradas.')}
+        ${(r.incompletos ?? []).length ? seccion(`🧩 Productos incompletos en la tienda (${r.incompletos.length})`, r.incompletos.slice(0, 12).map((p) => fila(`${esc(p.codigo)} · ${esc(p.nombre)}`, esc(p.faltas))).concat(r.incompletos.length > 12 ? [fila(`y ${r.incompletos.length - 12} más…`, '')] : []), '') : ''}
         ${r.automatico ? `<p style="margin:18px 0 0;font-size:12px;color:#8b93a7">Correos automáticos de ayer: ${esc(r.automatico)}</p>` : ''}
         <a href="${appUrl}/dashboard" style="display:block;margin-top:22px;background:#050505;color:#fff;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:2px;text-transform:uppercase;text-align:center;padding:15px;border-radius:6px">Abrir el panel</a>
       </td></tr>

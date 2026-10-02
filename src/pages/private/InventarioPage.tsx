@@ -8,6 +8,7 @@ import { subirImagenCatalogo } from '../../services/catalogoImagenes.service'
 import { actualizarInversion, cambiarEstadoInversion, eliminarInversion, listarInversiones, listarProductos, listarVentasStock, obtenerTipoCambio, pagarInversion, registrarInversion, venderStockInmediato, type VentaStock } from '../../services/comercial.service'
 import type { Inversion, Producto } from '../../types/domain'
 import { imprimirReciboStock } from '../../utils/reciboStock'
+import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 
 // pago: 'ahora' = se descuenta de la cuenta al registrar; 'antes' = ya estaba pagado/descontado;
 // 'pendiente' = todavía no se le pagó al proveedor (queda "por pagar" en la tarjeta).
@@ -308,7 +309,7 @@ function EntregaInmediataTienda({ items, onRegistrar }: { items: Inversion[]; on
       const precio = p.precio_entrega_inmediata > 0 ? p.precio_entrega_inmediata : p.precio_venta
       const unidades = p.tallas_entrega_inmediata.length || p.cantidad_disponible || 1
       return <article key={p.codigo} className="flex gap-3 rounded-xl border border-line bg-panel p-2.5">
-        <div className="size-16 shrink-0 overflow-hidden rounded-lg bg-white/[.04]">{p.imagen ? <img src={p.imagen} alt="" className="size-full object-cover" /> : <PackageCheck size={18} className="m-auto mt-5 text-muted" />}</div>
+        <div className="size-16 shrink-0 overflow-hidden rounded-lg bg-white/[.04]">{p.imagen ? <img src={resolverImagenCatalogo(p.imagen)} alt="" className="size-full object-cover" /> : <PackageCheck size={18} className="m-auto mt-5 text-muted" />}</div>
         <div className="min-w-0 flex-1">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-accent">{p.codigo}</p>
           <strong className="block truncate text-sm">{p.nombre}</strong>
