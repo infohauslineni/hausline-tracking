@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { registrarEnTrack17, pollGuiasActivas } from './_track17.js'
-import { obtenerCatalogoMergeado, mapearCatalogoAProductos } from './_catalogo.js'
+import { sincronizarProductos } from './_catalogo.js'
 import { enviarCorreoBodega, enviarCorreoAbandono, enviarCorreoRetraso, enviarCorreoSaludClientesAdmin } from './_correo.js'
 
 const GRACIA_BODEGA = 2
@@ -167,16 +167,7 @@ async function enviarResumenSaludClientes(client) {
   return data.length
 }
 
-async function sincronizarCatalogoServidor(client) {
-  const merged = await obtenerCatalogoMergeado()
-  const records = mapearCatalogoAProductos(merged)
-  if (!records.length) return 0
-  for (let i = 0; i < records.length; i += 100) {
-    const { error } = await client.from('productos').upsert(records.slice(i, i + 100), { onConflict: 'codigo', ignoreDuplicates: false })
-    if (error) throw new Error(error.message)
-  }
-  return records.length
-}
+const sincronizarCatalogoServidor = (client) => sincronizarProductos(client)
 
 // Registra en 17TRACK las guías que aún no se han registrado (track17_registrado_at
 // nulo). Corre una vez al día junto con las estimaciones. Como el envío tarda días,

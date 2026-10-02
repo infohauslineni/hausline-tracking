@@ -150,3 +150,16 @@ export function mapearCatalogoAProductos(merged) {
     }))
   return [...new Map(records.map((item) => [item.codigo, item])).values()]
 }
+
+// Sincroniza el catálogo web (tienda + feed + panel) → tabla `productos` del tracking. La usan el
+// cron diario y el aviso INSTANTÁNEO que manda Supabase (proyecto catálogo) cada vez que se guarda
+// un producto en admin.html (POST /api/catalogo). `client` = cliente de Supabase con llave de servicio.
+export async function sincronizarProductos(client) {
+  const records = mapearCatalogoAProductos(await obtenerCatalogoMergeado())
+  if (!records.length) return 0
+  for (let i = 0; i < records.length; i += 100) {
+    const { error } = await client.from('productos').upsert(records.slice(i, i + 100), { onConflict: 'codigo', ignoreDuplicates: false })
+    if (error) throw new Error(error.message)
+  }
+  return records.length
+}
