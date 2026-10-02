@@ -249,3 +249,15 @@ export async function hacerRespaldoAhora(): Promise<{ filename: string; carpeta:
   if (!res.ok || !j.ok) throw new Error(j.error || 'No se pudo hacer el respaldo (HTTP ' + res.status + ').')
   return { filename: j.filename ?? '', carpeta: j.carpeta ?? '', filas: j.filas ?? 0, kb: j.kb ?? 0 }
 }
+
+// "Poner en Entrega inmediata" (Compras libres): el servidor agrega las tallas de esta compra a
+// "Tallas disponibles ahora" del producto en la tienda. Lanza con el motivo si no se pudo.
+export async function ponerEntregaInmediataCompra(inversionId: string, tallas: string[]): Promise<void> {
+  const client = requireSupabase()
+  const { data: sessionData } = await client.auth.getSession()
+  const token = sessionData.session?.access_token
+  if (!token) throw new Error('Sesión no disponible.')
+  const res = await fetch('/api/notificar-estado', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token }, body: JSON.stringify({ entregaInmediataCompra: true, inversionId, tallas }) })
+  const j = await res.json().catch(() => ({})) as { ok?: boolean; error?: string }
+  if (!res.ok || !j.ok) throw new Error(j.error || 'No se pudo poner en Entrega inmediata (HTTP ' + res.status + ').')
+}

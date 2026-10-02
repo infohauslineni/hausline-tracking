@@ -203,6 +203,44 @@ async function obtenerFactura(codigo, esNuevo, modo) {
 }
 
 // Respaldo MANUAL (el automático corre los lunes 5 a. m.). Solo administrador.
+// Pone una compra de "Compras libres" como Entrega inmediata en la tienda: el catálogo (otro
+// proyecto Supabase) agrega sus tallas a "Tallas disponibles ahora". La clave compartida vive en
+// config_privada (solo la lee el servidor). Solo administrador.
+async function entregaInmediataDesdeCompra(response, body, authorization) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(500).json({ ok: false, error: 'Falta configuración del servidor.' })
+  const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  const token = String(authorization).replace(/^Bearer\s+/i, '').trim()
+  if (!token) return response.status(401).json({ ok: false })
+  const { data: userData } = await admin.auth.getUser(token).catch(() => ({ data: { user: null } }))
+  if (!userData?.user) return response.status(401).json({ ok: false })
+  const { data: perfil } = await admin.from('perfiles').select('rol, activo').eq('id', userData.user.id).maybeSingle()
+  if (!perfil || !perfil.activo || perfil.rol !== 'admin') return response.status(403).json({ ok: false, error: 'Solo el administrador puede hacerlo.' })
+
+  const id = String(body.inversionId ?? '').trim()
+  const tallas = (Array.isArray(body.tallas) ? body.tallas : []).map((t) => String(t ?? '').trim()).filter(Boolean).slice(0, 20)
+  if (!id) return response.status(400).json({ ok: false, error: 'Falta la compra.' })
+  const { data: compra } = await admin.from('inversiones').select('id, codigo, estado').eq('id', id).maybeSingle()
+  if (!compra) return response.status(404).json({ ok: false, error: 'No se encontró la compra.' })
+  if (!String(compra.codigo ?? '').trim()) return response.status(200).json({ ok: false, error: 'Esta compra no tiene código de producto: ponele el código de la tienda (Editar) y volvé a intentar.' })
+  const { data: secreto } = await admin.from('config_privada').select('valor').eq('clave', 'secreto_entrega_inmediata').maybeSingle()
+  if (!secreto?.valor) return response.status(200).json({ ok: false, error: 'Falta la clave de entrega inmediata en el sistema (SQL 202610020004).' })
+
+  const res = await fetch('https://xgdijumnmaqfirmckugw.supabase.co/rest/v1/rpc/marcar_entrega_inmediata', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', apikey: CATALOGO_KEY, authorization: `Bearer ${CATALOGO_KEY}` },
+    body: JSON.stringify({ p_secreto: secreto.valor, p_codigo: compra.codigo, p_tallas: tallas, p_ref: compra.id }),
+  }).catch(() => null)
+  const r = res ? await res.json().catch(() => null) : null
+  if (r === 'ok') return response.status(200).json({ ok: true })
+  const MOTIVO = {
+    'ya estaba agregada': 'Esta compra ya se había puesto en Entrega inmediata.',
+    'sin fila en el catálogo': `El producto ${compra.codigo} no está en el admin de la tienda: abrilo en admin.html y tocá Guardar una vez, después volvé a intentar.`,
+    'no autorizado': 'La clave de entrega inmediata no coincide entre el panel y la tienda.',
+  }
+  return response.status(200).json({ ok: false, error: MOTIVO[r] || (res && !res.ok ? 'Falta aplicar el SQL del catálogo (marcar_entrega_inmediata).' : 'No se pudo conectar con la tienda.') })
+}
+const CATALOGO_KEY = 'sb_publishable_NwpQth6G3qhpvtnRan3Xfg_8EqPM4Pw' // clave PÚBLICA del catálogo (la protección es la clave secreta)
+
 async function respaldoManual(response, authorization) {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(500).json({ ok: false, error: 'Falta configuración del servidor.' })
   const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
@@ -592,6 +630,8 @@ export default async function handler(request, response) {
   if (body.archivarDrive) return archivarDriveManual(response, body, authorization)
   // "Hacer respaldo ahora" desde Configuración (JWT del admin): Excel completo a Drive.
   if (body.respaldoAhora) return respaldoManual(response, authorization)
+  // "Poner en Entrega inmediata" desde Compras libres (JWT del admin).
+  if (body.entregaInmediataCompra) return entregaInmediataDesdeCompra(response, body, authorization)
   // Correo de cancelación desde el panel (también con JWT del usuario).
   if (body.cancelacion) return enviarCancelacion(request, response, body, authorization)
   // Solicitud de cancelación / reembolso (cliente → aviso al admin; admin → rechazo al cliente).
