@@ -20,7 +20,7 @@ async function enviarADrive(url, body) {
   let json = null
   try { json = JSON.parse(texto) } catch { /* no es JSON */ }
   if (!res.ok || !json || typeof json !== 'object' || json.ok === false) {
-    const detalle = json ? JSON.stringify(json) : texto.replace(/<[^>]+>/g, ' ').replace(/s+/g, ' ').trim()
+    const detalle = json ? JSON.stringify(json) : texto.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
     throw new Error(`Drive HTTP ${res.status}: ${detalle.slice(0, 200) || 'respuesta vacía'}`)
   }
   console.log(`drive: archivado ${body.mes} / ${body.codigo} / ${body.filename}`)
