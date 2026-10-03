@@ -275,7 +275,7 @@ export function PedidoDetailPage() {
   const envioCliente = envioClientePasaLargo(pedido)
   const gananciaEstimada = pedido.total - costoReal - envioCliente
   const cargoBodega = calcularCargoBodega(disponibleDesde)
-  const cordobasBodega = cargoBodega ? Math.round((cargoBodega.cargo * (tipoCambio > 0 ? tipoCambio : 37)) / 5) * 5 : 0
+  const cordobasBodega = cargoBodega ? Math.ceil((cargoBodega.cargo * (tipoCambio > 0 ? tipoCambio : 37)) / 10) * 10 : 0
   const recordatorioBodega = cargoBodega?.activo
     ? `Hola${pedido.clientes?.nombre ? `, ${pedido.clientes.nombre}` : ''}. Te recordamos que tu pedido ${pedido.codigo} está *disponible para entrega* desde hace ${cargoBodega.dias} días. Como superó los ${DIAS_GRACIA_BODEGA} días de gracia, se acumula un cargo por bodega de *US$ ${cargoBodega.cargo.toFixed(2)} (≈ C$ ${cordobasBodega})* — US$ ${CARGO_BODEGA_DIARIO} por cada día extra que sigue en bodega. Coordinemos tu entrega y pago para que no siga subiendo. Rastrea tu pedido aquí: ${publicUrl}`
     : ''

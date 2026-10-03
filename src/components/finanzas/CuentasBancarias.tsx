@@ -158,7 +158,7 @@ function convertir(monto: number, de: Moneda, a: Moneda, tc: number): number {
   if (de === a) return Math.round(n * 100) / 100
   const tasa = tc > 0 ? tc : 37
   // USD → NIO: redondea a la decena (como en el resto de la app). NIO → USD: 2 decimales.
-  return a === 'NIO' ? Math.round((n * tasa) / 10) * 10 : Math.round((n / tasa) * 100) / 100
+  return a === 'NIO' ? Math.ceil((n * tasa) / 10) * 10 : Math.round((n / tasa) * 100) / 100
 }
 
 function TransferModal({ open, cuentas, tipoCambio, onClose, onSaved }: { open: boolean; cuentas: CuentaBancaria[]; tipoCambio: number; onClose: () => void; onSaved: () => void }) {

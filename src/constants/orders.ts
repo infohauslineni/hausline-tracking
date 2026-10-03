@@ -86,7 +86,7 @@ export function mensajeWhatsAppEstado(estado: EstadoPedido, data: { nombre?: str
   const tc = data.tipoCambio && data.tipoCambio > 0 ? data.tipoCambio : 37
   // Redondeamos el equivalente en córdobas a la decena más cercana para que nunca
   // quede un número raro (ej. 2928 → 2930).
-  const cordobas = Math.round((saldoUsd * tc) / 10) * 10
+  const cordobas = Math.ceil((saldoUsd * tc) / 10) * 10
   const saldoLinea = `US$ ${saldoUsd.toFixed(2)} (≈ C$ ${cordobas})`
   // Si el pedido ya está pagado por completo (saldo 0), NO mandamos números de cuenta:
   // lo único pendiente es el envío, así que solo pedimos que nos digan a dónde lo quieren.

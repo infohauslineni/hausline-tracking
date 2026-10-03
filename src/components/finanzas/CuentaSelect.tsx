@@ -34,7 +34,7 @@ export function CuentaSelect({ montoUsd, tipoCambio, value, onChange, modo = 'su
     const usd = Math.max(0, Number(montoUsd || 0))
     if (c.moneda === 'USD') return Math.round(usd * 100) / 100
     const tc = tipoCambio > 0 ? tipoCambio : 37
-    return Math.round((usd * tc) / 10) * 10
+    return Math.ceil((usd * tc) / 10) * 10
   }
 
   // Mientras el monto no se haya tocado a mano, mantiene el sugerido al día con el monto del pago.

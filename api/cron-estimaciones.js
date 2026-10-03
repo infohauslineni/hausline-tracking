@@ -48,7 +48,7 @@ async function enviarRecordatoriosBodega(client) {
     // No reenviar si ya se avisó en las últimas ~20 h.
     if (p.bodega_aviso_at && (ahora - new Date(p.bodega_aviso_at).getTime()) < 20 * 3_600_000) continue
     const cargo = diasCobrados * CARGO_BODEGA_DIARIO
-    const cordobas = Math.round((cargo * tc) / 10) * 10
+    const cordobas = Math.ceil((cargo * tc) / 10) * 10
     try {
       await enviarCorreoBodega({ correo, nombre: p.clientes?.nombre ?? null, codigo: p.codigo, dias, diasCobrados, cargo, cordobas })
       await client.from('pedidos').update({ bodega_aviso_at: new Date().toISOString() }).eq('id', p.id)

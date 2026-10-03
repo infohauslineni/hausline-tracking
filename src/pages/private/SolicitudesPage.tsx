@@ -27,7 +27,7 @@ const nio = (n: number | null) => (n != null ? `≈ C$${Number(n).toLocaleString
 // de la app) para los recordatorios de WhatsApp: "USD 80.00 (≈ C$2,960)".
 const usdNio = (monto: number, tipoCambio: number | null) => {
   const tc = tipoCambio && tipoCambio > 0 ? tipoCambio : 37
-  const cordobas = Math.round((Number(monto) * tc) / 10) * 10
+  const cordobas = Math.ceil((Number(monto) * tc) / 10) * 10
   return `USD ${Number(monto).toFixed(2)} (≈ C$${cordobas.toLocaleString('es-NI')})`
 }
 const fechaCorta = (iso: string) => new Intl.DateTimeFormat('es-NI', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(iso))
