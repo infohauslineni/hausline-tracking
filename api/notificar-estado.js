@@ -234,6 +234,7 @@ async function entregaInmediataDesdeCompra(response, body, authorization) {
 
   const id = String(body.inversionId ?? '').trim()
   const tallas = (Array.isArray(body.tallas) ? body.tallas : []).map((t) => String(t ?? '').trim()).filter(Boolean).slice(0, 20)
+  const colores = (Array.isArray(body.colores) ? body.colores : []).map((t) => String(t ?? '').trim()).filter(Boolean).slice(0, 10)
   if (!id) return response.status(400).json({ ok: false, error: 'Falta la compra.' })
   const { data: compra } = await admin.from('inversiones').select('id, codigo, estado').eq('id', id).maybeSingle()
   if (!compra) return response.status(404).json({ ok: false, error: 'No se encontró la compra.' })
@@ -244,10 +245,11 @@ async function entregaInmediataDesdeCompra(response, body, authorization) {
   const res = await fetch('https://xgdijumnmaqfirmckugw.supabase.co/rest/v1/rpc/marcar_entrega_inmediata', {
     method: 'POST',
     headers: { 'content-type': 'application/json', apikey: CATALOGO_KEY, authorization: `Bearer ${CATALOGO_KEY}` },
-    body: JSON.stringify({ p_secreto: secreto.valor, p_codigo: compra.codigo, p_tallas: tallas, p_ref: compra.id }),
+    body: JSON.stringify({ p_secreto: secreto.valor, p_codigo: compra.codigo, p_tallas: tallas, p_ref: compra.id, p_colores: colores }),
   }).catch(() => null)
   const r = res ? await res.json().catch(() => null) : null
   if (r === 'ok') return response.status(200).json({ ok: true })
+  if (r === 'colores actualizados') return response.status(200).json({ ok: true, soloColores: true })
   const MOTIVO = {
     'ya estaba agregada': 'Esta compra ya está en Entrega inmediata en la tienda. Si llegaron más unidades, registralas como otra compra.',
     'sin fila en el catálogo': `El producto ${compra.codigo} no está en el admin de la tienda: abrilo en admin.html y tocá Guardar una vez, después volvé a intentar.`,

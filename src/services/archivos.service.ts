@@ -252,14 +252,15 @@ export async function hacerRespaldoAhora(): Promise<{ filename: string; carpeta:
 
 // "Poner en Entrega inmediata" (Compras libres): el servidor agrega las tallas de esta compra a
 // "Tallas disponibles ahora" del producto en la tienda. Lanza con el motivo si no se pudo.
-export async function ponerEntregaInmediataCompra(inversionId: string, tallas: string[]): Promise<void> {
+export async function ponerEntregaInmediataCompra(inversionId: string, tallas: string[], colores: string[] = []): Promise<{ soloColores: boolean }> {
   const client = requireSupabase()
   const { data: sessionData } = await client.auth.getSession()
   const token = sessionData.session?.access_token
   if (!token) throw new Error('Sesión no disponible.')
-  const res = await fetch('/api/notificar-estado', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token }, body: JSON.stringify({ entregaInmediataCompra: true, inversionId, tallas }) })
-  const j = await res.json().catch(() => ({})) as { ok?: boolean; error?: string }
+  const res = await fetch('/api/notificar-estado', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token }, body: JSON.stringify({ entregaInmediataCompra: true, inversionId, tallas, colores }) })
+  const j = await res.json().catch(() => ({})) as { ok?: boolean; error?: string; soloColores?: boolean }
   if (!res.ok || !j.ok) throw new Error(j.error || 'No se pudo poner en Entrega inmediata (HTTP ' + res.status + ').')
+  return { soloColores: !!j.soloColores }
 }
 
 // "Quitar de Entrega inmediata": el producto deja de salir en esa sección (sigue por encargo).

@@ -22,6 +22,9 @@ function camposEntregaInmediata(p) {
     colores_entrega_inmediata: Array.isArray(p.coloresEntregaInmediata) ? p.coloresEntregaInmediata.filter(Boolean).map(String) : [],
     cantidad_disponible: Number(p.cantidadDisponible) || 0,
     precio_entrega_inmediata: Number(p.precioEntregaInmediata) || 0,
+    colores: Array.isArray(p.colores) ? p.colores.filter(Boolean).map(String) : [],
+    en_camino: p.enCamino === true,
+    tallas_en_camino: Array.isArray(p.tallasEnCamino) ? p.tallasEnCamino.filter(Boolean).map(String) : [],
   }
 }
 
@@ -122,7 +125,7 @@ async function leerFeedJson() {
 // panel (lo último editado en el panel gana). Devuelve [] si ninguna fuente respondió.
 // El nombre final es el que ve el cliente en la web: el escrito en el panel (nombreReal)
 // o, si no, el de nombresReales de productos.js; el nombre original queda como respaldo.
-const camposDe = (p) => ({ entrega_inmediata: p.entrega_inmediata, tallas_entrega_inmediata: p.tallas_entrega_inmediata, colores_entrega_inmediata: p.colores_entrega_inmediata, cantidad_disponible: p.cantidad_disponible, precio_entrega_inmediata: p.precio_entrega_inmediata })
+const camposDe = (p) => ({ entrega_inmediata: p.entrega_inmediata, tallas_entrega_inmediata: p.tallas_entrega_inmediata, colores_entrega_inmediata: p.colores_entrega_inmediata, cantidad_disponible: p.cantidad_disponible, precio_entrega_inmediata: p.precio_entrega_inmediata, en_camino: p.en_camino, tallas_en_camino: p.tallas_en_camino })
 
 export async function obtenerCatalogoMergeado() {
   const [feed, { productos: store, nombres }, panel] = await Promise.all([leerFeedJson(), leerCatalogoTienda(), leerCatalogoPanel()])
