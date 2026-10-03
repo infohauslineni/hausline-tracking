@@ -201,24 +201,34 @@ async function bajaPrecioFavoritos(db) {
 }
 
 // ---------- Novedades a suscriptores ----------
-// Los JUEVES desde las 10 a. m. se arma una "edición": si entraron 3+ productos nuevos a la tienda
-// desde la anterior → "Lo nuevo de la semana"; si no, y ya pasó casi un mes → "Lo más pedido".
-// Se manda en tandas de 25 por vuelta (cada 15 min) hasta completar la lista. Solo a suscriptores
-// que aceptaron promociones (tabla suscriptores), con enlace para darse de baja.
+// LUNES y VIERNES desde las 9 a. m. se arma una "edición" con los PRIMEROS 4 productos nuevos que
+// todavía no se anunciaron (una cola por fecha de subida: los más viejos primero). Lo que se suba
+// después queda para el próximo lunes o viernes (no tiene que salir la misma semana). Hacen falta
+// al menos 2 en la cola; si en casi un mes no hubo novedades → "Lo más pedido". Se manda en tandas de
+// 25 por vuelta (cada 15 min) hasta completar la lista. Solo a suscriptores que aceptaron
+// promociones (tabla suscriptores), con enlace para darse de baja.
 const NOV_POR_VUELTA = 25
+const NOV_POR_EDICION = 4
+const NOV_MINIMO = 2
 async function novedades(db) {
-  if (!horarioCliente() || horaNic() < 10) return 0
+  if (!horarioCliente()) return 0
   const { data: cfg } = await db.from('configuracion').select('valor_json').eq('clave', 'novedades').maybeSingle()
-  let ed = cfg?.valor_json?.id ? cfg.valor_json : null
+  const guardado = cfg?.valor_json ?? {}
+  let ed = guardado.id ? guardado : null
   const ahora = Date.now()
-  if ((!ed || ed.completa) && ahoraNic().getUTCDay() === 4 && (!ed || ahora - Date.parse(ed.creada) > 6 * DIA)) {
+  const dia = ahoraNic().getUTCDay()
+  if ((!ed || ed.completa) && (dia === 1 || dia === 5) && (!ed || ed.id !== fechaNic())) {
     const enWeb = new Set((await obtenerCatalogoMergeado())
       .filter((c) => !c.ventaLibre && !/^LIB\d/i.test(String(c.codigo || ''))).map((c) => String(c.codigo || '').toUpperCase()))
-    const desde = ed?.creada ?? new Date(ahora - 7 * DIA).toISOString()
+    // Cola: productos subidos desde que empezó este sistema (o las últimas 2 semanas) que todavía
+    // no salieron en ninguna edición.
+    const anunciados = new Set((Array.isArray(guardado.anunciados) ? guardado.anunciados : []).map((c) => String(c).toUpperCase()))
+    const colaDesde = guardado.cola_desde ?? new Date(ahora - 14 * DIA).toISOString()
     const { data: recientes } = await db.from('productos').select('codigo, nombre, precio_venta, imagen')
-      .eq('activo', true).gt('precio_venta', 0).not('imagen', 'is', null).gt('created_at', desde).order('created_at', { ascending: false }).limit(80)
-    let lista = (recientes ?? []).filter((p) => enWeb.has(String(p.codigo).toUpperCase()))
-    let tipo = lista.length >= 3 ? 'nuevos' : null
+      .eq('activo', true).gt('precio_venta', 0).not('imagen', 'is', null).gt('created_at', colaDesde).order('created_at', { ascending: true }).limit(300)
+    const cola = (recientes ?? []).filter((p) => enWeb.has(String(p.codigo).toUpperCase()) && !anunciados.has(String(p.codigo).toUpperCase()))
+    let tipo = cola.length >= NOV_MINIMO ? 'nuevos' : null
+    let lista = cola.slice(0, NOV_POR_EDICION)
     if (!tipo && (!ed || ahora - Date.parse(ed.creada) >= 27 * DIA)) {
       tipo = 'destacados'
       const { data: items } = await db.from('pedido_items').select('codigo_producto').gte('created_at', new Date(ahora - 60 * DIA).toISOString()).limit(5000)
@@ -229,11 +239,16 @@ async function novedades(db) {
       const orden = new Map(top.map((c, i) => [c, i]))
       lista = [...(prods ?? []).filter((p) => p.imagen).sort((a, b) => orden.get(String(a.codigo).toUpperCase()) - orden.get(String(b.codigo).toUpperCase())), ...lista]
     }
-    if (!tipo || !lista.length) return 0 // esta semana no hay nada que mandar
+    if (!tipo || !lista.length) return 0 // hoy no hay nada que mandar
     const vistos = new Set()
+    const elegidos = lista.filter((p) => !vistos.has(p.codigo) && vistos.add(p.codigo)).slice(0, NOV_POR_EDICION)
     ed = {
       id: fechaNic(), tipo, creada: new Date().toISOString(), completa: false,
-      productos: lista.filter((p) => !vistos.has(p.codigo) && vistos.add(p.codigo)).slice(0, 6).map((p) => ({ codigo: p.codigo, nombre: p.nombre, precio: Number(p.precio_venta), imagen: p.imagen })),
+      productos: elegidos.map((p) => ({ codigo: p.codigo, nombre: p.nombre, precio: Number(p.precio_venta), imagen: p.imagen })),
+      // Los anunciados ya no vuelven a la cola (se guardan los últimos 3000).
+      anunciados: [...anunciados, ...(tipo === 'nuevos' ? elegidos.map((p) => String(p.codigo).toUpperCase()) : [])].slice(-3000),
+      cola_desde: colaDesde,
+      en_cola: Math.max(0, cola.length - (tipo === 'nuevos' ? elegidos.length : 0)),
     }
     const { error } = await db.from('configuracion').upsert({ clave: 'novedades', valor_json: ed }, { onConflict: 'clave' })
     if (error) throw new Error(error.message)

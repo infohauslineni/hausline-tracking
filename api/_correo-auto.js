@@ -112,15 +112,15 @@ export async function enviarCorreoNovedades({ correo, nombre, tipo, productos, u
   let filas = ''
   for (let i = 0; i < lista.length; i += 2) filas += `<tr>${tarjeta(lista[i])}${lista[i + 1] ? tarjeta(lista[i + 1]) : '<td width="50%"></td>'}</tr>`
   const nuevos = tipo === 'nuevos'
-  const nota = (nuevos ? 'Esta semana entraron productos nuevos a la tienda. Mirá lo que llegó:' : 'Te dejamos lo que más están pidiendo nuestros clientes. ¡Las tallas vuelan!')
+  const nota = (nuevos ? 'Acaban de entrar productos nuevos a la tienda. Mirá lo que llegó:' : 'Te dejamos lo que más están pidiendo nuestros clientes. ¡Las tallas vuelan!')
     + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px">${filas}</table>`
     + `<p style="margin:14px 0 0;font-size:11px;line-height:1.5;color:#9aa0ab">Recibís este correo porque aceptaste novedades de HAUSLINE. <a href="${esc(urlBaja)}" style="color:#9aa0ab">Darme de baja</a></p>`
   const n = primerNombre(nombre)
   await transporteSmtp().sendMail({
     from: remitente(), to: correo,
-    subject: nuevos ? `🆕 ${n ? `${n}, m` : 'M'}irá lo nuevo en HAUSLINE esta semana` : `🔥 ${n ? `${n}, l` : 'L'}o más pedido en HAUSLINE`,
+    subject: nuevos ? `🆕 Recién llegados: ${n ? `${n}, m` : 'm'}irá lo nuevo en HAUSLINE` : `🔥 ${n ? `${n}, l` : 'L'}o más pedido en HAUSLINE`,
     headers: { 'List-Unsubscribe': `<${urlBaja}>` },
-    html: plantillaCorreo({ nombre, codigo: null, estado: null, estadoLabel: nuevos ? 'Lo nuevo de la semana' : 'Lo más pedido del mes', nota, urlSeguimiento: base, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Ver la tienda', ctaUrl: base, pedirResena: false }),
+    html: plantillaCorreo({ nombre, codigo: null, estado: null, estadoLabel: nuevos ? 'Recién llegados a HAUSLINE' : 'Lo más pedido del mes', nota, urlSeguimiento: base, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Ver la tienda', ctaUrl: base, pedirResena: false }),
   })
 }
 
