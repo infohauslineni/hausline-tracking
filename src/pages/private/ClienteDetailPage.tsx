@@ -13,6 +13,7 @@ import { whatsappUrl } from '../../utils/whatsapp'
 import { ClienteModal } from './ClientesPage'
 import { CuentaWebCard } from '../../components/clientes/CuentaWebCard'
 import { DireccionesClienteCard } from '../../components/clientes/DireccionesClienteCard'
+import { EnvioClienteCard } from '../../components/clientes/EnvioClienteCard'
 import { estadoLabel, estadoTone } from '../../constants/orders'
 import { formatDate, PagoModal } from './PagosPage'
 
@@ -79,6 +80,7 @@ export function ClienteDetailPage() {
     </header>
 
     {isSupabaseConfigured && <CuentaWebCard clienteId={cliente.id} correoCliente={cliente.correo} />}
+    {isSupabaseConfigured && <EnvioClienteCard key={cliente.id + String(cliente.costo_envio ?? "")} cliente={cliente} />}
     {isSupabaseConfigured && <DireccionesClienteCard clienteId={cliente.id} />}
 
     <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

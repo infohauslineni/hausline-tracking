@@ -710,6 +710,37 @@ async function disponiblesProgramados() {
   return enviados
 }
 
+// Bloque de ENTREGA del correo "Disponible para entrega": la dirección que tenemos del cliente, su
+// envío predeterminado, el total a pagar con envío y el enlace para confirmar/corregir la dirección
+// (hauslineshopni.es/entrega/). Datos vía RPC pública entrega_pedido_publico (migración 202610020006).
+async function datosEntregaCorreo(codigo, factura) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return null
+  const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  const { data: token } = await admin.rpc('token_entrega_pedido', { p_codigo: codigo })
+  if (!token) return null
+  const { data: d } = await admin.rpc('entrega_pedido_publico', { p_codigo: codigo, p_token: token })
+  if (!d?.ok) return null
+  const base = (process.env.CATALOGO_BASE_URL ?? 'https://hauslineshopni.es/').replace(/\/$/, '')
+  const url = `${base}/entrega/?c=${encodeURIComponent(codigo)}&t=${token}`
+  const tc = Number(d.tipo_cambio) > 0 ? Number(d.tipo_cambio) : 37
+  const cs = (usd) => `C$ ${(Math.ceil((Number(usd) * tc) / 10) * 10).toLocaleString('es-NI')}`
+  const us = (usd) => `US$${Number(usd).toFixed(2)}`
+  const envio = d.costo_envio != null ? Number(d.costo_envio) : null
+  const saldo = factura?.variante === 'saldo' ? Number(factura.saldo) || 0 : Number(d.saldo) || 0
+  const lugar = [d.direccion, d.departamento].filter(Boolean).join(', ')
+  const filas = [
+    lugar ? `📍 <strong>Entrega en:</strong> ${esc(lugar)}${d.referencia ? ` (${esc(d.referencia)})` : ''}` : '📍 <strong>Todavía no tenemos tu dirección de entrega.</strong>',
+    envio != null ? `🚚 <strong>Envío:</strong> ${us(envio)} (${cs(envio)})` : '🚚 <strong>Envío:</strong> a cotizar',
+    envio != null ? `💵 <strong>Total a pagar con envío:</strong> ${us(saldo + envio)} (${cs(saldo + envio)})` : null,
+  ].filter(Boolean)
+  return {
+    html: `<br><br>${filas.join('<br>')}<br><br>${lugar ? '¿Te lo enviamos a esta dirección? Confirmala (o corregila) con el botón de abajo y coordinamos la entrega.' : 'Dejanos tu dirección con el botón de abajo y te confirmamos el envío.'}`,
+    ctaTexto: lugar ? 'Confirmar dirección de entrega' : 'Dejar mi dirección de entrega',
+    ctaUrl: url,
+  }
+}
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+
 async function procesarAvisoPedido(body, response) {
   const record = body.record ?? {}
   const oldRecord = body.old_record ?? {}
@@ -773,7 +804,9 @@ async function procesarAvisoPedido(body, response) {
   const pedirResena = estado === 'entregado'
 
   try {
-    await enviarCorreoPedido({ correo, nombre, codigo: record.codigo, estado, esNuevo, factura, fotos, pedirResena })
+    // Disponible: dirección guardada + envío predeterminado + total con envío y botón para confirmar.
+    const entrega = estado === 'disponible_entrega' ? await datosEntregaCorreo(record.codigo, factura).catch((e) => { console.error('entrega correo:', e?.message); return null }) : null
+    await enviarCorreoPedido({ correo, nombre, codigo: record.codigo, estado, esNuevo, factura, fotos, pedirResena, entrega })
   } catch (sendError) {
     await cerrarEmail(reserva.id, sendError?.message || 'error de envío')
     return response.status(502).json({ ok: false, error: 'No se pudo enviar el correo' })

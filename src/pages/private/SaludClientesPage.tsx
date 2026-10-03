@@ -1,5 +1,5 @@
-import { AlertTriangle, Check, CheckCircle2, ChevronDown, Eye, HeartPulse, MapPin, MessageCircle, RefreshCw, X } from 'lucide-react'
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, Eye, HeartPulse, LogIn, MailCheck, MapPin, MessageCircle, RefreshCw, Search, ShoppingBag, Users, X } from 'lucide-react'
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { listarCuentasClientes, listarCuentasRevisadas, listarEventosClientes, marcarCuentaRevisada, marcarEventosRevisados, type CuentaCliente, type CuentaRevisada, type EventoCliente, type MotivoAyuda } from '../../services/saludClientes.service'
@@ -29,6 +29,18 @@ const NOMBRE_ERROR: Record<string, string> = {
   fotos_error: 'No cargaron las fotos del seguimiento',
   pantalla_error: 'Vio la pantalla "Algo salió mal"',
   cupon_error: 'No se pudo validar el cupón',
+}
+// Qué suele significar cada error y si hay que hacer algo (para no tener que adivinar).
+const AYUDA_ERROR: Record<string, string> = {
+  js_error: 'Un archivo de la página no cargó o falló, casi siempre por mala señal del cliente. La tienda ya se recupera sola; si se repite mucho, avisá.',
+  promesa_error: 'Una acción de la página falló, casi siempre por mala señal. Si se repite mucho, avisá.',
+  rpc_error: 'Sus datos no llegaron (señal o sesión vencida). Se reintenta solo.',
+  supabase_no_cargo: 'El sistema de cuentas no cargó en ese teléfono (señal o bloqueador).',
+  enlace_invalido: 'Abrió un enlace viejo o ya usado. Puede pedir uno nuevo.',
+  checkout_error: 'Algo falló al hacer el encargo. Revisá si te escribió o si el encargo quedó a medias.',
+  comprobante_error: 'No pudo subir la foto del comprobante: pedíselo por WhatsApp.',
+  cupon_error: 'El cupón no se pudo validar (señal o código mal escrito).',
+  seguimiento_error: 'No le cargó su pedido: revisá que el código exista.',
 }
 const ORIGEN: Record<EventoCliente['origen'], string> = { tienda: 'Tienda', cuenta: 'Mi cuenta', checkout: 'Checkout', seguimiento: 'Seguimiento' }
 const MOTIVO_LOGIN: Record<string, string> = {
@@ -136,105 +148,116 @@ export function SaludClientesPage() {
   const sinPedidos = cuentas.filter((c) => c.confirmada_at && c.pedidos === 0 && !esRevisada(c.user_id, 'sin_pedidos'))
   const pendientes = errores.filter((e) => !e.revisado_at)
   const visitasConError = visitasDe(pendientes)
-  const tablaCuentas = verTodas ? cuentas : cuentas.slice(0, 15)
+  const [busca, setBusca] = useState('')
+  const filtradas = useMemo(() => {
+    const t = busca.trim().toLowerCase()
+    return t ? cuentas.filter((c) => [c.nombre, c.correo, c.telefono].some((v) => String(v ?? '').toLowerCase().includes(t))) : cuentas
+  }, [cuentas, busca])
+  const tablaCuentasVista = busca.trim() ? filtradas : (verTodas ? cuentas : cuentas.slice(0, 15))
+  const pctConfirmadas = cuentas.length ? Math.round((confirmadas / cuentas.length) * 100) : 0
 
   return (
-    <div>
+    <div className="mx-auto max-w-6xl">
       {!isSupabaseConfigured && <div className="preview-banner"><strong>Vista previa local:</strong> esta pantalla necesita conexión a Supabase.</div>}
-      <p className="eyebrow">Clientes y productos</p>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <h1 className="page-title">Salud de clientes</h1>
-        <button className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white/[0.02] px-3 py-2 text-xs font-semibold text-muted transition hover:text-white" onClick={() => { setLoading(true); void cargar() }} disabled={loading}><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Actualizar</button>
-      </div>
-      <p className="page-subtitle">La tienda, el checkout, Mi cuenta y el seguimiento anotan solos cada error que ve un cliente. Aquí te enterás aunque nadie te lo diga.</p>
 
-      <div className="mt-5 flex flex-wrap gap-2">
-        {RANGOS.map(([v, t]) => (
-          <button key={v} className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${rango === v ? 'border-accent/50 bg-accent/10 text-accent' : 'border-line text-muted hover:text-white'}`} onClick={() => setRango(v)}>{t}</button>
-        ))}
-      </div>
+      {/* Encabezado */}
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="eyebrow">Clientes y productos</p>
+          <h1 className="page-title">Salud de clientes</h1>
+          <p className="page-subtitle max-w-2xl">Errores que ven los clientes en la tienda, el checkout, Mi cuenta y el seguimiento — anotados solos, aunque nadie te lo diga.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-xl border border-line bg-white/[0.02] p-1">
+            {RANGOS.map(([v, t]) => (
+              <button key={v} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${rango === v ? 'bg-accent text-black' : 'text-muted hover:text-white'}`} onClick={() => setRango(v)}>{t}</button>
+            ))}
+          </div>
+          <button className="grid size-9 place-items-center rounded-xl border border-line bg-white/[0.02] text-muted transition hover:text-white" title="Actualizar" aria-label="Actualizar" onClick={() => { setLoading(true); void cargar() }} disabled={loading}><RefreshCw size={15} className={loading ? 'animate-spin' : ''} /></button>
+        </div>
+      </header>
 
-      {loading ? <div className="mt-5 h-64 animate-pulse rounded-2xl border border-line bg-panel" /> : <>
+      {loading ? <div className="mt-6 grid gap-3"><div className="h-20 animate-pulse rounded-2xl border border-line bg-panel" /><div className="h-28 animate-pulse rounded-2xl border border-line bg-panel" /><div className="h-64 animate-pulse rounded-2xl border border-line bg-panel" /></div> : <>
         {/* Estado general */}
-        {pendientes.length === 0 ? (
-          <div className="mt-5 flex items-start gap-3 rounded-2xl border border-emerald-400/25 bg-emerald-400/[0.06] p-4">
-            <CheckCircle2 size={22} className="mt-0.5 shrink-0 text-emerald-300" />
-            <div><p className="font-semibold text-emerald-200">Todo en orden</p><p className="mt-0.5 text-sm text-muted">{revisadosEnRango ? 'No hay errores sin revisar' : 'Ningún cliente vio un error'} en {rango === 1 ? 'las últimas 24 h' : `los últimos ${rango} días`}.</p></div>
+        <div className={`mt-6 flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center ${pendientes.length ? 'border-red-400/25 bg-gradient-to-r from-red-500/[0.08] to-transparent' : 'border-emerald-400/20 bg-gradient-to-r from-emerald-500/[0.08] to-transparent'}`}>
+          <span className={`grid size-11 shrink-0 place-items-center rounded-xl ${pendientes.length ? 'bg-red-400/15 text-red-300' : 'bg-emerald-400/15 text-emerald-300'}`}>{pendientes.length ? <AlertTriangle size={20} /> : <CheckCircle2 size={20} />}</span>
+          <div className="min-w-0 flex-1">
+            <p className={`font-semibold ${pendientes.length ? 'text-red-100' : 'text-emerald-100'}`}>{pendientes.length ? `${visitasConError === 1 ? '1 cliente tuvo' : `${visitasConError} clientes tuvieron`} problemas` : 'Todo en orden'}</p>
+            <p className="mt-0.5 text-sm text-muted">{pendientes.length ? `${pendientes.length} ${pendientes.length === 1 ? 'error sin revisar' : 'errores sin revisar'} en ${rango === 1 ? 'las últimas 24 h' : `los últimos ${rango} días`}.` : `${revisadosEnRango ? 'No hay errores sin revisar' : 'Ningún cliente vio un error'} en ${rango === 1 ? 'las últimas 24 h' : `los últimos ${rango} días`}.`}</p>
           </div>
-        ) : (
-          <div className="mt-5 flex items-start gap-3 rounded-2xl border border-red-400/30 bg-red-400/[0.06] p-4">
-            <AlertTriangle size={22} className="mt-0.5 shrink-0 text-red-300" />
-            <div><p className="font-semibold text-red-200">{visitasConError === 1 ? '1 cliente tuvo' : `${visitasConError} clientes tuvieron`} problemas</p><p className="mt-0.5 text-sm text-muted">{pendientes.length} {pendientes.length === 1 ? 'error' : 'errores'} sin revisar. Abajo ves cuál, dónde y en qué teléfono; marcalos como revisados cuando los atiendas.</p></div>
-          </div>
-        )}
+          {pendientes.length > 0 && <a href="#errores" className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl border border-red-400/30 px-3 py-2 text-xs font-semibold text-red-200 transition hover:bg-red-400/10">Ver errores <ChevronDown size={14} /></a>}
+        </div>
 
-        {/* Cuentas */}
-        <section className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Kpi titulo="Cuentas creadas" valor={cuentas.length} nota="en Mi cuenta" />
-          <Kpi titulo="Confirmaron el correo" valor={confirmadas} nota={cuentas.length ? `${Math.round((confirmadas / cuentas.length) * 100)}% del total` : '—'} />
-          <Kpi titulo="Entraron esta semana" valor={activas7} nota="últimos 7 días" />
-          <Kpi titulo="Con pedidos vinculados" valor={conPedidos} nota={`${cuentas.length - conPedidos} sin pedidos`} />
+        {/* Métricas de cuentas */}
+        <section className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Kpi icono={<Users size={16} />} titulo="Cuentas creadas" valor={cuentas.length} nota="en Mi cuenta" />
+          <Kpi icono={<MailCheck size={16} />} titulo="Correo confirmado" valor={confirmadas} nota={cuentas.length ? `${pctConfirmadas}% del total` : '—'} barra={pctConfirmadas} />
+          <Kpi icono={<LogIn size={16} />} titulo="Activas esta semana" valor={activas7} nota="entraron en 7 días" />
+          <Kpi icono={<ShoppingBag size={16} />} titulo="Con pedidos" valor={conPedidos} nota={`${cuentas.length - conPedidos} todavía sin comprar`} />
         </section>
 
         {/* Uso */}
         <section className="mt-3 grid gap-3 lg:grid-cols-2">
-          <div className="rounded-2xl border border-line bg-panel p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Cómo ven sus pedidos · {RANGOS.find((r) => r[0] === rango)?.[1].toLowerCase()}</p>
+          <div className="rounded-2xl border border-line bg-panel p-5">
+            <div className="flex items-center justify-between gap-2"><h2 className="text-sm font-semibold">Cómo siguen sus pedidos</h2><span className="rounded-full bg-white/[0.05] px-2 py-0.5 text-[10px] text-muted">{RANGOS.find((r) => r[0] === rango)?.[1]}</span></div>
             <Barra etiqueta="Con el link del correo (sin cuenta)" valor={vistasLink} total={vistasLink + vistasCuenta} />
             <Barra etiqueta="Entrando a Mi cuenta" valor={vistasCuenta} total={vistasLink + vistasCuenta} />
-            <p className="mt-3 text-[11px] text-muted">Cuenta visitas distintas. Se registra desde hoy en adelante.</p>
+            <p className="mt-4 text-[11px] text-muted">Visitas distintas que abrieron su pedido.</p>
           </div>
-          <div className="rounded-2xl border border-line bg-panel p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Ingresos a Mi cuenta</p>
-            <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm">
-              <span>Registros: <b>{de('registro_ok').length}</b></span>
-              <span>Confirmaron correo: <b>{de('correo_verificado').length}</b></span>
-              <span>Entraron: <b className="text-emerald-300">{loginOk}</b></span>
-              <span>Intentos fallidos: <b className={loginFallidos.length ? 'text-amber-300' : ''}>{loginFallidos.length}</b></span>
+          <div className="rounded-2xl border border-line bg-panel p-5">
+            <h2 className="text-sm font-semibold">Ingresos a Mi cuenta</h2>
+            <div className="mt-3 grid grid-cols-4 gap-2">
+              <MiniStat etiqueta="Registros" valor={de('registro_ok').length} />
+              <MiniStat etiqueta="Confirmaron" valor={de('correo_verificado').length} />
+              <MiniStat etiqueta="Entraron" valor={loginOk} tono="ok" />
+              <MiniStat etiqueta="Fallidos" valor={loginFallidos.length} tono={loginFallidos.length ? 'alerta' : undefined} />
             </div>
-            {motivos.length > 0 && <ul className="mt-2 space-y-0.5 text-[12px] text-muted">{motivos.map(([k, n]) => <li key={k}>· {MOTIVO_LOGIN[k] ?? k}: <b className="text-white/80">{n}</b></li>)}</ul>}
-            {sinPoderEntrar > 0 && <p className="mt-2 text-[12px] text-amber-200/90">{sinPoderEntrar === 1 ? '1 visita intentó entrar y no lo logró' : `${sinPoderEntrar} visitas intentaron entrar y no lo lograron`}. Si son muchas, puede que no les llegue el correo o que olviden la contraseña.</p>}
+            {motivos.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{motivos.map(([k, n]) => <span key={k} className="rounded-full border border-line px-2.5 py-1 text-[11px] text-muted">{MOTIVO_LOGIN[k] ?? k} · <b className="text-white/85">{n}</b></span>)}</div>}
+            {sinPoderEntrar > 0 && <p className="mt-3 rounded-xl border border-amber-400/20 bg-amber-400/[0.05] px-3 py-2 text-[12px] text-amber-200/90">{sinPoderEntrar === 1 ? '1 visita intentó entrar y no lo logró' : `${sinPoderEntrar} visitas intentaron entrar y no lo lograron`}. Si se repite, puede que no les llegue el correo o que olviden la contraseña.</p>}
           </div>
         </section>
 
         {/* Errores */}
-        <section className="mt-6">
+        <section className="mt-8" id="errores">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-bold">Errores que vieron los clientes</h2>
+            <h2 className="flex items-center gap-2 text-base font-semibold">Errores que vieron los clientes {pendientes.length > 0 && <span className="rounded-full bg-red-400/15 px-2 py-0.5 text-[11px] font-bold text-red-300">{pendientes.length}</span>}</h2>
             <div className="flex flex-wrap gap-2">
-              {pendientes.length > 1 && <button className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-[11px] font-semibold text-muted hover:text-white" onClick={() => void revisar(pendientes.map((e) => e.id))}><Check size={13} /> Marcar todos como revisados</button>}
-              {revisadosEnRango > 0 && <button className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold ${verRevisados ? 'border-accent/50 text-accent' : 'border-line text-muted hover:text-white'}`} onClick={() => setVerRevisados((v) => !v)}><Eye size={13} /> {verRevisados ? 'Ocultar revisados' : `Ver revisados (${revisadosEnRango})`}</button>}
+              {pendientes.length > 1 && <button className="inline-flex items-center gap-1.5 rounded-xl border border-line px-3 py-1.5 text-xs font-semibold text-muted transition hover:border-emerald-400/40 hover:text-emerald-300" onClick={() => void revisar(pendientes.map((e) => e.id))}><Check size={13} /> Marcar todos como revisados</button>}
+              {revisadosEnRango > 0 && <button className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${verRevisados ? 'border-accent/50 text-accent' : 'border-line text-muted hover:text-white'}`} onClick={() => setVerRevisados((v) => !v)}><Eye size={13} /> {verRevisados ? 'Ocultar revisados' : `Revisados (${revisadosEnRango})`}</button>}
             </div>
           </div>
-          {grupos.length === 0 ? <p className="mt-2 text-sm text-muted">{revisadosEnRango ? 'Todos los errores de este período ya están revisados.' : 'Ninguno en este período.'}</p> : (
-            <div className="mt-3 space-y-2">
+          {grupos.length === 0 ? <div className="mt-3 rounded-2xl border border-dashed border-line px-6 py-10 text-center text-sm text-muted"><CheckCircle2 size={22} className="mx-auto mb-2 text-emerald-300/80" />{revisadosEnRango ? 'Todos los errores de este período ya están revisados.' : 'Ningún error en este período.'}</div> : (
+            <div className="mt-3 overflow-hidden rounded-2xl border border-line bg-panel">
               {grupos.map((g) => {
                 const open = abierto === g.clave
                 const sinRevisar = g.eventos.filter((e) => !e.revisado_at)
                 return (
-                  <article key={g.clave} className={`rounded-2xl border border-line bg-panel ${sinRevisar.length ? '' : 'opacity-60'}`}>
-                    <button className="flex w-full items-start gap-3 p-4 text-left" onClick={() => setAbierto(open ? null : g.clave)}>
-                      <span className="mt-0.5 grid min-w-9 place-items-center rounded-lg bg-red-400/12 px-2 py-1 text-sm font-bold text-red-300">{g.eventos.length}</span>
-                      <span className="min-w-0 flex-1">
+                  <article key={g.clave} className={`border-b border-line last:border-0 ${sinRevisar.length ? '' : 'opacity-55'}`}>
+                    <div className="flex items-start gap-3 p-4">
+                      <span className={`mt-0.5 grid min-w-9 place-items-center rounded-lg px-2 py-1 text-sm font-bold ${sinRevisar.length ? 'bg-red-400/12 text-red-300' : 'bg-white/[0.05] text-muted'}`}>{g.eventos.length}</span>
+                      <button className="min-w-0 flex-1 text-left" onClick={() => setAbierto(open ? null : g.clave)}>
                         <span className="block text-sm font-semibold">{NOMBRE_ERROR[g.nombre] ?? g.nombre}</span>
-                        {g.mensaje && <span className="mt-0.5 block break-words text-[12px] text-muted">{g.mensaje}</span>}
-                        <span className="mt-1 block text-[11px] text-muted">{ORIGEN[g.origen]} · {g.visitas === 1 ? '1 cliente' : `${g.visitas} clientes`} · último: {hace(g.eventos[0].created_at)}</span>
-                      </span>
-                      <ChevronDown size={16} className={`mt-1 shrink-0 text-muted transition ${open ? 'rotate-180' : ''}`} />
-                    </button>
-                    <div className="flex flex-wrap gap-2 px-4 pb-3">
-                      {sinRevisar.length
-                        ? <button className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white/[0.02] px-3 py-1.5 text-xs font-semibold text-muted transition hover:border-emerald-400/40 hover:text-emerald-300" onClick={() => void revisar(sinRevisar.map((e) => e.id))}><Check size={14} /> Marcar como revisado</button>
-                        : <button className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-muted hover:text-white" onClick={() => void revisar(g.eventos.map((e) => e.id), false)}>Volver a mostrar</button>}
+                        {AYUDA_ERROR[g.nombre] && <span className="mt-0.5 block text-[12px] text-white/60">{AYUDA_ERROR[g.nombre]}</span>}
+                        {g.mensaje && <span className="mt-1 block truncate font-mono text-[11px] text-muted" title={g.mensaje}>{g.mensaje}</span>}
+                        <span className="mt-2 flex flex-wrap gap-1.5 text-[10.5px]">
+                          <span className="rounded-full bg-white/[0.05] px-2 py-0.5 text-muted">{ORIGEN[g.origen]}</span>
+                          <span className="rounded-full bg-white/[0.05] px-2 py-0.5 text-muted">{g.visitas === 1 ? '1 cliente' : `${g.visitas} clientes`}</span>
+                          <span className="rounded-full bg-white/[0.05] px-2 py-0.5 text-muted">{hace(g.eventos[0].created_at)}</span>
+                        </span>
+                      </button>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {sinRevisar.length
+                          ? <button className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-[11px] font-semibold text-muted transition hover:border-emerald-400/40 hover:text-emerald-300" onClick={() => void revisar(sinRevisar.map((e) => e.id))}><Check size={13} /> Revisado</button>
+                          : <button className="rounded-lg border border-line px-2.5 py-1.5 text-[11px] font-semibold text-muted hover:text-white" onClick={() => void revisar(g.eventos.map((e) => e.id), false)}>Mostrar</button>}
+                        <button className="grid size-8 place-items-center rounded-lg text-muted hover:bg-white/[0.05] hover:text-white" aria-label="Ver detalle" onClick={() => setAbierto(open ? null : g.clave)}><ChevronDown size={16} className={`transition ${open ? 'rotate-180' : ''}`} /></button>
+                      </div>
                     </div>
                     {open && (
-                      <ul className="border-t border-line px-4 py-2 text-[12px]">
+                      <ul className="mx-4 mb-4 overflow-hidden rounded-xl border border-line text-[12px]">
                         {g.eventos.slice(0, 30).map((e) => (
-                          <li key={e.id} className="flex flex-wrap gap-x-3 gap-y-0.5 border-b border-line/60 py-1.5 last:border-0">
+                          <li key={e.id} className="grid gap-x-3 gap-y-0.5 border-b border-line/60 bg-black/20 px-3 py-2 last:border-0 sm:grid-cols-[130px_1fr]">
                             <span className="text-white/80">{fechaHora(e.created_at)}</span>
-                            <span className="text-muted">{e.dispositivo ?? '—'}</span>
-                            <span className="break-all font-mono text-[11px] text-muted">{e.pagina}</span>
-                            {e.user_id && correoDe.get(e.user_id) && <span className="text-accent">{correoDe.get(e.user_id)}</span>}
+                            <span className="min-w-0"><span className="text-muted">{e.dispositivo ?? '—'}</span> <span className="break-all font-mono text-[11px] text-muted">· {e.pagina}</span>{e.user_id && correoDe.get(e.user_id) && <span className="ml-1 text-accent">· {correoDe.get(e.user_id)}</span>}</span>
                           </li>
                         ))}
                       </ul>
@@ -247,55 +270,58 @@ export function SaludClientesPage() {
         </section>
 
         {codigosPerdidos.length > 0 && (
-          <section className="mt-6 rounded-2xl border border-line bg-panel p-4">
-            <h2 className="text-sm font-bold">Códigos que buscaron y no aparecieron</h2>
-            <p className="mt-0.5 text-[12px] text-muted">Si un código parece correcto (HS + 6 números), revisá si ese pedido existe o si le diste otro código al cliente.</p>
-            <div className="mt-2 flex flex-wrap gap-2">{codigosPerdidos.map(([c, n]) => <span key={c} className="inline-flex items-center gap-1 rounded-full border border-line py-1 pl-2.5 pr-1 font-mono text-[12px]">{c}{n > 1 ? <b className="ml-1 text-amber-300">×{n}</b> : null}<button className="grid size-5 place-items-center rounded-full text-muted hover:bg-white/10 hover:text-white" title="Quitar (queda guardado)" aria-label={`Quitar ${c}`} onClick={() => void revisar(eventosCodigo.filter((e) => e.mensaje === c).map((e) => e.id))}><X size={12} /></button></span>)}</div>
+          <section className="mt-6 rounded-2xl border border-line bg-panel p-5">
+            <h2 className="text-sm font-semibold">Códigos que buscaron y no aparecieron</h2>
+            <p className="mt-0.5 text-[12px] text-muted">Si parece un código correcto (HS + 6 números), revisá si ese pedido existe o si al cliente le diste otro código.</p>
+            <div className="mt-3 flex flex-wrap gap-2">{codigosPerdidos.map(([c, n]) => <span key={c} className="inline-flex items-center gap-1 rounded-full border border-line py-1 pl-2.5 pr-1 font-mono text-[12px]">{c}{n > 1 ? <b className="ml-1 text-amber-300">×{n}</b> : null}<button className="grid size-5 place-items-center rounded-full text-muted hover:bg-white/10 hover:text-white" title="Quitar (queda guardado)" aria-label={`Quitar ${c}`} onClick={() => void revisar(eventosCodigo.filter((e) => e.mensaje === c).map((e) => e.id))}><X size={12} /></button></span>)}</div>
           </section>
         )}
 
         {/* Cuentas que necesitan ayuda */}
         {(sinConfirmar.length > 0 || sinPedidos.length > 0) && (
           <section className="mt-6 grid gap-3 lg:grid-cols-2">
-            {sinConfirmar.length > 0 && <ListaAyuda titulo="Se registraron y no confirmaron el correo" nota="Puede que el correo les haya caído en spam o no les llegó."
+            {sinConfirmar.length > 0 && <ListaAyuda titulo="No confirmaron su correo" nota="Puede que el correo les haya caído en spam o no les llegó."
               cuentas={sinConfirmar} onListo={(c) => void contactado(c.user_id, 'sin_confirmar')} mensaje={(c) => `Hola${primerNombre(c.nombre) ? ` ${primerNombre(c.nombre)}` : ''}, te saludamos del equipo de HAUSLINE 👋 Vimos que creaste tu cuenta en nuestra tienda, pero todavía falta confirmar tu correo. ¿Te llegó el mensaje? Revisá también la carpeta de spam; si no aparece, te ayudamos por aquí.`} />}
-            {sinPedidos.length > 0 && <ListaAyuda titulo="Cuentas que todavía no compran" nota="Invitalos a su primera compra. Si ya te compraron con otro correo, vinculá el pedido desde la ficha del cliente (Cuenta web)."
+            {sinPedidos.length > 0 && <ListaAyuda titulo="Todavía no compran" nota="Invitalos a su primera compra. Si ya te compraron con otro correo, vinculá el pedido desde la ficha del cliente."
               cuentas={sinPedidos} onListo={(c) => void contactado(c.user_id, 'sin_pedidos')} mensaje={(c) => `Hola${primerNombre(c.nombre) ? ` ${primerNombre(c.nombre)}` : ''}, te saludamos del equipo de HAUSLINE 👋 ¡Gracias por crear tu cuenta en nuestra tienda! Cuando quieras hacer tu primer pedido, estamos para ayudarte: mirá lo nuevo en hauslineshopni.es o escribinos por aquí si buscás algún modelo o talla en especial.`} />}
           </section>
         )}
 
         {/* Todas las cuentas */}
-        <section className="mt-6">
-          <h2 className="text-sm font-bold">Cuentas de clientes ({cuentas.length})</h2>
-          <p className="mt-0.5 text-[12px] text-muted">Tocá "Ver" en Direcciones para ver dónde vive el cliente (con su ubicación en el mapa), aunque todavía no haya comprado.</p>
-          {cuentas.length === 0 ? <div className="mt-3 rounded-2xl border border-line bg-panel px-6 py-12 text-center"><HeartPulse size={28} className="mx-auto text-muted" /><p className="mt-3 text-sm text-muted">Todavía nadie creó una cuenta en la tienda.</p></div> : (
+        <section className="mt-8">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold">Cuentas de clientes <span className="text-muted">({cuentas.length})</span></h2>
+              <p className="mt-0.5 text-[12px] text-muted">Tocá las direcciones para ver dónde vive cada cliente (con mapa), aunque todavía no haya comprado.</p>
+            </div>
+            {cuentas.length > 5 && <div className="relative sm:w-72"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" /><input className="w-full rounded-xl border border-line bg-white/[0.02] py-2 pl-9 pr-3 text-sm outline-none focus:border-accent/50" placeholder="Buscar por nombre, correo o teléfono" value={busca} onChange={(e) => setBusca(e.target.value)} /></div>}
+          </div>
+          {cuentas.length === 0 ? <div className="mt-3 rounded-2xl border border-dashed border-line px-6 py-12 text-center"><HeartPulse size={28} className="mx-auto text-muted" /><p className="mt-3 text-sm text-muted">Todavía nadie creó una cuenta en la tienda.</p></div> : (
             <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-panel">
-              <table className="w-full min-w-[640px] text-left text-sm">
-                <thead className="text-[10px] uppercase tracking-wide text-muted"><tr className="border-b border-line">
-                  <th className="px-4 py-2.5 font-bold">Cliente</th><th className="px-3 py-2.5 font-bold">Creada</th><th className="px-3 py-2.5 font-bold">Correo</th><th className="px-3 py-2.5 font-bold">Último ingreso</th><th className="px-3 py-2.5 font-bold">Direcciones</th><th className="px-3 py-2.5 text-right font-bold">Pedidos</th>
+              <table className="w-full min-w-[720px] text-left text-sm">
+                <thead className="bg-white/[0.02] text-[10.5px] uppercase tracking-wider text-muted"><tr className="border-b border-line">
+                  <th className="px-4 py-3 font-semibold">Cliente</th><th className="px-3 py-3 font-semibold">Correo</th><th className="px-3 py-3 font-semibold">Creada</th><th className="px-3 py-3 font-semibold">Último ingreso</th><th className="px-3 py-3 font-semibold">Direcciones</th><th className="px-4 py-3 text-right font-semibold">Pedidos</th>
                 </tr></thead>
                 <tbody>
-                  {tablaCuentas.map((c) => {
+                  {tablaCuentasVista.map((c) => {
                     const nDir = numDirecciones.get(c.user_id) ?? 0
                     const abiertaCuenta = cuentaAbierta === c.user_id
                     return <Fragment key={c.user_id}>
-                    <tr className="border-b border-line/60 last:border-0">
-                      <td className="px-4 py-2.5"><p className="font-semibold">{c.nombre || 'Sin nombre'}</p><p className="text-[11px] text-muted">{c.correo}</p></td>
-                      <td className="px-3 py-2.5 text-[12px] text-muted">{fechaHora(c.creada_at)}</td>
-                      <td className="px-3 py-2.5 text-[12px]">{c.confirmada_at ? <span className="text-emerald-300">Confirmado</span> : <span className="text-amber-300">Sin confirmar</span>}</td>
-                      <td className="px-3 py-2.5 text-[12px] text-muted">{hace(c.ultimo_ingreso_at)}</td>
-                      <td className="px-3 py-2.5 text-[12px]">{nDir ? <button className="inline-flex items-center gap-1 font-semibold text-accent hover:underline" onClick={() => setCuentaAbierta(abiertaCuenta ? null : c.user_id)}><MapPin size={13} /> {nDir} · {abiertaCuenta ? 'Ocultar' : 'Ver'}</button> : <span className="text-muted">—</span>}</td>
-                      <td className="px-3 py-2.5 text-right font-semibold">{c.pedidos}</td>
+                    <tr className="border-b border-line/60 transition last:border-0 hover:bg-white/[0.015]">
+                      <td className="px-4 py-3"><div className="flex items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-full bg-accent/12 text-xs font-bold text-accent">{(c.nombre || c.correo || '?').trim().charAt(0).toUpperCase()}</span><div className="min-w-0"><p className="truncate font-semibold">{c.nombre || 'Sin nombre'}</p><p className="truncate text-[11px] text-muted">{c.correo}</p></div>{c.telefono && <a className="ml-auto grid size-7 shrink-0 place-items-center rounded-lg text-muted hover:bg-white/[0.05] hover:text-accent" href={whatsappUrl(c.telefono)} target="_blank" rel="noreferrer" title={`WhatsApp ${c.telefono}`}><MessageCircle size={14} /></a>}</div></td>
+                      <td className="px-3 py-3 text-[12px]">{c.confirmada_at ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/10 px-2 py-0.5 font-semibold text-emerald-300"><Check size={11} /> Confirmado</span> : <span className="rounded-full bg-amber-400/10 px-2 py-0.5 font-semibold text-amber-300">Sin confirmar</span>}</td>
+                      <td className="px-3 py-3 text-[12px] text-muted">{fechaHora(c.creada_at)}</td>
+                      <td className="px-3 py-3 text-[12px] text-muted">{hace(c.ultimo_ingreso_at)}</td>
+                      <td className="px-3 py-3 text-[12px]">{nDir ? <button className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-semibold transition ${abiertaCuenta ? 'bg-accent text-black' : 'bg-accent/10 text-accent hover:bg-accent/20'}`} onClick={() => setCuentaAbierta(abiertaCuenta ? null : c.user_id)}><MapPin size={12} /> {nDir} {abiertaCuenta ? '· ocultar' : nDir === 1 ? 'dirección' : 'direcciones'}</button> : <span className="text-muted">—</span>}</td>
+                      <td className="px-4 py-3 text-right"><span className={`inline-grid min-w-8 place-items-center rounded-lg px-2 py-1 text-xs font-bold ${c.pedidos ? 'bg-white/[0.06] text-white' : 'text-muted'}`}>{c.pedidos}</span></td>
                     </tr>
-                    {abiertaCuenta && <tr className="border-b border-line/60"><td colSpan={6} className="px-4 pb-4">
-                      {c.telefono && <a className="mt-2 inline-flex items-center gap-1 text-xs text-accent hover:underline" href={whatsappUrl(c.telefono)} target="_blank" rel="noreferrer"><MessageCircle size={13} /> WhatsApp {c.telefono}</a>}
-                      <DireccionesClienteCard userId={c.user_id} />
-                    </td></tr>}
+                    {abiertaCuenta && <tr className="border-b border-line/60 bg-black/20"><td colSpan={6} className="px-4 pb-4"><DireccionesClienteCard userId={c.user_id} /></td></tr>}
                     </Fragment>
                   })}
+                  {tablaCuentasVista.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-muted">Ninguna cuenta coincide con “{busca}”.</td></tr>}
                 </tbody>
               </table>
-              {cuentas.length > 15 && <button className="w-full border-t border-line py-2.5 text-xs font-semibold text-accent" onClick={() => setVerTodas((v) => !v)}>{verTodas ? 'Ver menos' : `Ver las ${cuentas.length}`}</button>}
+              {!busca.trim() && cuentas.length > 15 && <button className="w-full border-t border-line py-3 text-xs font-semibold text-accent hover:bg-white/[0.02]" onClick={() => setVerTodas((v) => !v)}>{verTodas ? 'Ver menos' : `Ver las ${cuentas.length} cuentas`}</button>}
             </div>
           )}
         </section>
@@ -304,26 +330,39 @@ export function SaludClientesPage() {
   )
 }
 
-function Kpi({ titulo, valor, nota }: { titulo: string; valor: number; nota: string }) {
-  return <div className="rounded-2xl border border-line bg-panel p-4"><p className="text-[10px] font-bold uppercase tracking-wide text-muted">{titulo}</p><p className="mt-1 text-2xl font-bold">{valor}</p><p className="text-[11px] text-muted">{nota}</p></div>
+function Kpi({ icono, titulo, valor, nota, barra }: { icono: ReactNode; titulo: string; valor: number; nota: string; barra?: number }) {
+  return <div className="rounded-2xl border border-line bg-panel p-4">
+    <div className="flex items-center justify-between gap-2"><p className="text-[11px] font-semibold text-muted">{titulo}</p><span className="grid size-8 place-items-center rounded-lg bg-accent/10 text-accent">{icono}</span></div>
+    <p className="mt-2 text-3xl font-bold tracking-tight">{valor}</p>
+    {barra != null ? <div className="mt-2 h-1.5 rounded-full bg-white/[0.06]"><div className="h-1.5 rounded-full bg-accent" style={{ width: `${barra}%` }} /></div> : null}
+    <p className="mt-1.5 text-[11px] text-muted">{nota}</p>
+  </div>
+}
+
+function MiniStat({ etiqueta, valor, tono }: { etiqueta: string; valor: number; tono?: 'ok' | 'alerta' }) {
+  return <div className="rounded-xl border border-line bg-white/[0.02] px-3 py-2.5 text-center">
+    <p className={`text-xl font-bold ${tono === 'ok' ? 'text-emerald-300' : tono === 'alerta' ? 'text-amber-300' : ''}`}>{valor}</p>
+    <p className="text-[10.5px] text-muted">{etiqueta}</p>
+  </div>
 }
 
 function Barra({ etiqueta, valor, total }: { etiqueta: string; valor: number; total: number }) {
   const pct = total ? Math.round((valor / total) * 100) : 0
-  return <div className="mt-3"><div className="flex justify-between text-sm"><span>{etiqueta}</span><b>{valor}{total ? <span className="ml-1 text-[11px] font-normal text-muted">({pct}%)</span> : null}</b></div><div className="mt-1 h-2 rounded-full bg-white/[0.06]"><div className="h-2 rounded-full bg-accent" style={{ width: `${pct}%` }} /></div></div>
+  return <div className="mt-4"><div className="flex justify-between text-sm"><span className="text-white/85">{etiqueta}</span><b>{valor}{total ? <span className="ml-1 text-[11px] font-normal text-muted">{pct}%</span> : null}</b></div><div className="mt-1.5 h-2 rounded-full bg-white/[0.06]"><div className="h-2 rounded-full bg-accent transition-all" style={{ width: `${pct}%` }} /></div></div>
 }
 
 function ListaAyuda({ titulo, nota, cuentas, mensaje, onListo }: { titulo: string; nota: string; cuentas: CuentaCliente[]; mensaje: (c: CuentaCliente) => string; onListo: (c: CuentaCliente) => void }) {
   return (
-    <div className="rounded-2xl border border-amber-400/25 bg-amber-400/[0.04] p-4">
-      <p className="text-sm font-semibold text-amber-200">{titulo} ({cuentas.length})</p>
+    <div className="rounded-2xl border border-line bg-panel p-5">
+      <div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold">{titulo}</p><span className="rounded-full bg-amber-400/12 px-2 py-0.5 text-[11px] font-bold text-amber-300">{cuentas.length}</span></div>
       <p className="mt-0.5 text-[12px] text-muted">{nota}</p>
-      <ul className="mt-2 space-y-1.5">
+      <ul className="mt-3 divide-y divide-line/60">
         {cuentas.slice(0, 10).map((c) => (
-          <li key={c.user_id} className="flex items-center gap-2 text-sm">
+          <li key={c.user_id} className="flex items-center gap-2 py-2 text-sm">
+            <span className="grid size-7 shrink-0 place-items-center rounded-full bg-white/[0.06] text-[11px] font-bold">{(c.nombre || c.correo || '?').trim().charAt(0).toUpperCase()}</span>
             <span className="min-w-0 flex-1 truncate">{c.nombre || c.correo} <span className="text-[11px] text-muted">· {hace(c.creada_at)}</span></span>
-            {c.telefono && <a className="inline-flex shrink-0 items-center gap-1 text-xs text-accent hover:underline" href={whatsappUrl(c.telefono, mensaje(c))} target="_blank" rel="noreferrer"><MessageCircle size={13} /> WhatsApp</a>}
-            <button className="inline-flex shrink-0 items-center gap-1 text-xs text-muted hover:text-white" title="Sale de la lista (queda guardado)" onClick={() => onListo(c)}><Check size={13} /> Ya lo contacté</button>
+            {c.telefono && <a className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-accent hover:bg-accent/10" href={whatsappUrl(c.telefono, mensaje(c))} target="_blank" rel="noreferrer"><MessageCircle size={13} /> Escribir</a>}
+            <button className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted hover:bg-white/[0.05] hover:text-white" title="Sale de la lista (queda guardado)" onClick={() => onListo(c)}><Check size={13} /> Listo</button>
           </li>
         ))}
       </ul>

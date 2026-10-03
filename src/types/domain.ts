@@ -8,6 +8,7 @@ export type Cliente = {
   direccion: string | null
   referencia: string | null
   notas: string | null
+  costo_envio?: number | null
   created_at: string
   updated_at?: string
 }

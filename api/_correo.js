@@ -839,12 +839,14 @@ export async function enviarCorreoCancelacion({ correo, nombre, codigo, motivo, 
 // Envía el correo del pedido (creación o cambio de estado). Lanza si el SMTP falla.
 // `factura` es opcional: cuando llega, el correo incluye la tabla de la compra
 // (al crear el pedido) o del pago (al entregarlo).
-export async function enviarCorreoPedido({ correo, nombre, codigo, estado, esNuevo, factura, fotos, pedirResena }) {
+export async function enviarCorreoPedido({ correo, nombre, codigo, estado, esNuevo, factura, fotos, pedirResena, entrega }) {
   const estadoLabel = ESTADO_LABEL[estado]
   let nota = ESTADO_NOTA[estado] ?? 'Tu pedido fue actualizado.'
   // Disponible con saldo: se le dice cuánto falta y cómo pagarlo (la factura va abajo con el detalle).
   if (estado === 'disponible_entrega' && factura?.variante === 'saldo') nota = `Tu pedido ya está disponible para entrega. Tenés un saldo pendiente de US${Number(factura.saldo).toFixed(2)}: podés pagarlo por transferencia y enviarnos el comprobante por WhatsApp, o al recibirlo. Escríbenos para coordinar el envío o retiro.`
   else if (estado === 'disponible_entrega' && factura?.variante === 'pago') nota = 'Tu pedido ya está disponible para entrega y está completamente pagado. Escríbenos para coordinar el envío o retiro.'
+  // Disponible: dirección + envío + total con envío; el botón lleva a confirmar la dirección.
+  if (entrega?.html) nota += entrega.html
   const urlSeguimiento = urlPedidoCuenta(codigo)
 
   const transporter = transporteSmtp()
@@ -883,7 +885,7 @@ export async function enviarCorreoPedido({ correo, nombre, codigo, estado, esNue
     to: correo,
     ...(bccArchivo ? { bcc: bccArchivo } : {}),
     subject: esNuevo ? `Pedido ${codigo}: Orden confirmada` : `Pedido ${codigo}: ${estadoLabel}`,
-    html: plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, urlSeguimiento, esNuevo, factura, fotos, pedirResena }),
+    html: plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, urlSeguimiento, esNuevo, factura, fotos, pedirResena, ctaTexto: entrega?.ctaTexto, ctaUrl: entrega?.ctaUrl }),
     attachments,
   })
 }
