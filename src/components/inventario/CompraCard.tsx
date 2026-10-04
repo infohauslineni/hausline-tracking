@@ -157,7 +157,7 @@ export function CompraFila({ item, costo, enEI, enCaminoPublicado, fotos, onDeta
   const cerrado = item.estado === 'vendido' || item.estado === 'descartado'
   const porPagar = item.pagado === false && item.estado !== 'descartado'
   const img = item.imagen ? resolverImagenCatalogo(item.imagen) : ''
-  return <article onClick={onDetalles} className={`group grid cursor-pointer grid-cols-[56px_1fr_auto] items-center gap-3 rounded-2xl border border-line bg-panel p-3 transition hover:border-white/20 hover:bg-white/[.025] md:grid-cols-[56px_minmax(0,2.2fr)_130px_minmax(0,1.4fr)_minmax(0,1.6fr)_auto] md:gap-4 ${cerrado ? 'opacity-60' : ''}`}>
+  return <article onClick={onDetalles} className={`group grid min-w-0 cursor-pointer grid-cols-[56px_1fr_auto] items-center gap-3 rounded-2xl border border-line bg-panel p-3 transition hover:border-white/20 hover:bg-white/[.025] md:grid-cols-[56px_minmax(0,2.2fr)_130px_minmax(0,1.4fr)_minmax(0,1.6fr)_auto] md:gap-4 ${cerrado ? 'opacity-60' : ''}`}>
     <span className="grid size-14 place-items-center overflow-hidden rounded-xl bg-white">{img ? <ProductoImg src={img} className="size-full" /> : <PackageCheck size={18} className="text-black/40" />}</span>
     <div className="min-w-0">
       <p className="truncate font-mono text-[10.5px] font-semibold tracking-wider text-accent">{(item.codigo ?? '').trim() || 'SIN CÓDIGO'}</p>

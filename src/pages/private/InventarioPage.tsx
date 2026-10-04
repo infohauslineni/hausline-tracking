@@ -361,7 +361,7 @@ function EntregaInmediataTienda({ lista, items, quitando, onQuitar, onRegistrar 
       const reg = registrado(p.codigo)
       const precio = p.precio_entrega_inmediata > 0 ? p.precio_entrega_inmediata : p.precio_venta
       const unidades = p.tallas_entrega_inmediata.length || p.cantidad_disponible || 1
-      return <article key={p.codigo} className="flex items-center gap-3 rounded-xl border border-line bg-white/[.02] p-2.5 transition hover:border-white/15">
+      return <article key={p.codigo} className="flex min-w-0 items-center gap-3 rounded-xl border border-line bg-white/[.02] p-2.5 transition hover:border-white/15">
         <span className="size-12 shrink-0 overflow-hidden rounded-lg bg-white">{p.imagen ? <ProductoImg src={resolverImagenCatalogo(p.imagen)} className="size-full" /> : <PackageCheck size={16} className="m-auto mt-4 text-black/40" />}</span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-[13px] font-semibold"><span className="mr-1.5 font-mono text-[10.5px] tracking-wider text-accent">{p.codigo}</span>{p.nombre}</p>
