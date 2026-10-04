@@ -1,4 +1,4 @@
-import { Bookmark, Boxes, Camera, CircleDollarSign, Eye, Zap, ImagePlus, Link2, PackageCheck, Pencil, Plus, Printer, Search, ShoppingBag, Tag, Trash2, TrendingUp, Wallet, X } from 'lucide-react'
+import { Boxes, CircleDollarSign, Zap, ImagePlus, PackageCheck, Plus, Printer, Search, ShoppingBag, TrendingUp, Wallet, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -11,13 +11,13 @@ import { enviarReciboStockCorreo, imprimirReciboStock } from '../../utils/recibo
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { contarFotosInversiones, ponerEntregaInmediataCompra, quitarEntregaInmediata } from '../../services/archivos.service'
 import { FotosCompraModal } from '../../components/inventario/FotosCompraModal'
+import { CompraCard, CompraFila } from '../../components/inventario/CompraCard'
 
 // pago: 'ahora' = se descuenta de la cuenta al registrar; 'antes' = ya estaba pagado/descontado;
 // 'pendiente' = todavía no se le pagó al proveedor (queda "por pagar" en la tarjeta).
 type Pago = 'ahora' | 'antes' | 'pendiente'
 const empty = { fecha: new Date().toISOString().slice(0, 10), producto_id: '', codigo: '', producto: '', marca: '', talla_color: '', cantidad: '1', costo_unitario: '', gastos_adicionales: '', precio_venta_estimado: '', metodo: 'Transferencia', notas: '', tracking: '', transportista: '', url_tracking: '', pago: 'ahora' as Pago, estado: 'en_inventario' as Inversion['estado'] }
 const statusLabel: Record<Inversion['estado'], string> = { en_transito: 'En camino', en_inventario: 'Disponible', reservado: 'Apartado', vendido: 'Vendido', descartado: 'Descartado' }
-const statusTone: Record<Inversion['estado'], string> = { en_transito: 'border-amber-300/30 bg-amber-300/10 text-amber-200', en_inventario: 'border-accent/30 bg-accent/10 text-accent', reservado: 'border-sky-400/30 bg-sky-400/10 text-sky-300', vendido: 'border-green-400/25 bg-green-400/10 text-green-300', descartado: 'border-white/15 bg-white/5 text-muted' }
 // Lo disponible se muestra primero; lo vendido o descartado se va al fondo.
 const statusOrder: Record<Inversion['estado'], number> = { en_inventario: 0, en_transito: 1, reservado: 2, vendido: 3, descartado: 4 }
 const activo = (estado: Inversion['estado']) => estado === 'en_inventario' || estado === 'en_transito' || estado === 'reservado'
@@ -41,6 +41,8 @@ export function InventarioPage() {
   // Fotos de control de calidad por compra (cuántas tiene cada una) y la compra abierta.
   const [fotosCount, setFotosCount] = useState<Record<string, number>>({})
   const [fotosDe, setFotosDe] = useState<Inversion | null>(null)
+  // Ficha "Ver detalles" de una compra (se lee de la lista para que refleje los cambios).
+  const [detalleId, setDetalleId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'todos' | Inversion['estado']>('todos')
   // Datos para "Registrar costo" de un producto de entrega inmediata (abre el formulario ya lleno).
@@ -94,6 +96,7 @@ export function InventarioPage() {
       .filter((item) => (filter === 'todos' || item.estado === filter) && (!term || [item.producto, item.codigo, item.marca, item.talla_color, item.tracking].some((v) => v?.toLowerCase().includes(term))))
       .sort((a, b) => statusOrder[a.estado] - statusOrder[b.estado])
   }, [items, search, filter])
+  const detalle = detalleId ? items.find((i) => i.id === detalleId) ?? null : null
   const updateStatus = async (item: Inversion, estado: Inversion['estado']) => { try { const updated = await cambiarEstadoInversion(item.id, estado); setItems((all) => all.map((current) => current.id === updated.id ? updated : current)); toast.success('Estado actualizado.') } catch { toast.error('No se pudo actualizar.') } }
   const remove = async (item: Inversion) => {
     if (!window.confirm(`¿Eliminar "${item.producto}" de Compras libres? Si ya se había pagado, ese monto vuelve a Mi cuenta. Esta acción no se puede deshacer.`)) return
@@ -129,23 +132,30 @@ export function InventarioPage() {
       setOpen(true)
     }} />
     <div className="mt-6 grid gap-3 sm:grid-cols-[1fr_240px]"><div className="relative"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" size={18} /><input className="search-input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Producto, código, marca o tracking" /></div><select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}><option value="todos">Todos los estados ({items.length})</option>{(Object.keys(statusLabel) as Inversion['estado'][]).map((estado) => <option value={estado} key={estado}>{statusLabel[estado]} ({counts[estado] ?? 0})</option>)}</select></div>
-    <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{visible.map((item) => { const cerrado = item.estado === 'vendido' || item.estado === 'descartado'; const extra = linkedExpenses(item); return <article className={`panel-card transition ${cerrado ? 'opacity-70' : ''}`} key={item.id}><div className="flex items-start justify-between gap-3"><button className="grid size-20 shrink-0 place-items-center overflow-hidden rounded-xl bg-accent/10 text-accent" onClick={() => setPreview(item)} aria-label={`Vista para cliente de ${item.producto}`}>{item.imagen ? <img src={item.imagen} alt={item.producto} className="size-full object-cover" /> : <PackageCheck size={22} />}</button><div className="flex items-start gap-2"><select className="w-auto text-xs" value={item.estado} onChange={(event) => void updateStatus(item, event.target.value as Inversion['estado'])}>{Object.entries(statusLabel).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><button className="table-action" onClick={() => setPreview(item)} aria-label={`Vista para cliente de ${item.producto}`}><Eye size={16} /></button><button className="table-action table-action-edit" onClick={() => { setEditing(item); setOpen(true) }} aria-label={`Editar ${item.producto}`}><Pencil size={16} /></button><button className="table-action table-action-danger" onClick={() => void remove(item)} aria-label={`Eliminar ${item.producto}`}><Trash2 size={16} /></button></div></div><div className="mt-4 flex items-center justify-between gap-2"><p className="text-[10px] font-semibold uppercase tracking-wider text-accent">{item.codigo || 'SIN CÓDIGO'}</p><span className="flex flex-wrap justify-end gap-1">{porPagar(item) && <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-200">Por pagar</span>}<span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${statusTone[item.estado]}`}>{statusLabel[item.estado]}</span></span></div><strong className="mt-1 block text-lg">{item.producto}</strong><p className="mt-1 text-xs text-muted">{[item.marca, item.talla_color, `${item.cantidad} unidad${item.cantidad === 1 ? '' : 'es'}`].filter(Boolean).join(' · ')}</p><div className="mt-5 grid grid-cols-3 gap-3 border-t border-line pt-4"><Money label="Costo total" value={totalCost(item)} /><Money label="Venta posible" value={Number(item.precio_venta_estimado) * Number(item.cantidad)} accent /><Money label="Ganancia" value={Math.max(0, Number(item.precio_venta_estimado) * Number(item.cantidad) - totalCost(item))} green /></div>{extra > 0 && <p className="mt-3 text-[11px] text-muted">Incluye USD {extra.toFixed(2)} en gastos asociados (envío u otros).</p>}{item.notas && <p className="mt-3 border-l border-accent/40 pl-3 text-[11px] leading-5 text-muted">{item.notas}</p>}{item.tracking && <div className="mt-3 flex items-center justify-between rounded-xl border border-line p-2.5 text-[11px]"><span className="min-w-0 truncate"><b>{item.transportista || 'Tracking'}:</b> {item.tracking}</span>{item.url_tracking && <a className="table-action" href={item.url_tracking} target="_blank" rel="noreferrer" aria-label="Abrir enlace de tracking"><Link2 size={15} /></a>}</div>}{porPagar(item) && item.estado !== 'descartado' && <button className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300/30 bg-amber-300/[.07] p-2.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-300/[.12]" onClick={() => setPaying(item)}><Wallet size={15} /> Registrar pago al proveedor · USD {totalCost(item).toFixed(2)}</button>}{item.estado === 'en_transito' && (() => {
-  const codigoItem = (item.codigo ?? '').trim()
-  const publicado = codigoItem && enCaminoTienda.has(codigoItem.toUpperCase())
-  return <div className="mt-4 space-y-2">
-    <p className={`rounded-xl border px-3 py-2 text-[11px] leading-4 ${publicado ? 'border-amber-300/30 bg-amber-300/[.07] text-amber-200' : 'border-line bg-white/[.02] text-muted'}`}>{publicado ? '🚚 En la tienda como "En camino · Apartalo ya". Cuando la pases a Disponible, entra sola a Entrega inmediata.' : codigoItem ? '🚚 Se publica sola como "En camino" en unos segundos (el producto tiene que estar guardado en el admin de la tienda).' : '🚚 Ponele el código de la tienda (Editar) para que salga como "En camino".'}</p>
-    {publicado && <a className="flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300/30 bg-amber-300/[.06] p-2.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-300/[.12]" href={`https://hauslineshopni.es/admin.html?ig=${encodeURIComponent(codigoItem)}&modo=encamino`} target="_blank" rel="noopener noreferrer">📸 Post e historia "En camino · Apartalo ya"</a>}
-  </div>
-})()}{item.estado !== 'descartado' && <button className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl border p-2.5 text-xs font-semibold transition ${fotosCount[item.id] ? 'border-sky-400/30 bg-sky-400/[.07] text-sky-300 hover:bg-sky-400/[.13]' : 'border-line bg-white/[.02] text-white/80 hover:border-white/25'}`} onClick={() => setFotosDe(item)}><Camera size={15} /> {fotosCount[item.id] ? `Control de calidad · ${fotosCount[item.id]} ${fotosCount[item.id] === 1 ? 'foto' : 'fotos'}` : 'Subir control de calidad'}</button>}{activo(item.estado) && <div className="mt-4 flex flex-col gap-2">{item.estado === 'en_inventario' && (() => {
-  const codigoItem = (item.codigo ?? '').trim()
-  const enEI = (ei ?? []).some((p) => p.codigo.toUpperCase() === codigoItem.toUpperCase())
-  const btn = 'flex items-center justify-center gap-2 rounded-xl border p-2.5 text-xs font-semibold transition'
-  if (!enEI) return <button className={`${btn} w-full border-accent/35 bg-accent/[.07] text-accent hover:bg-accent/[.14]`} onClick={() => setPoniendoEI(item)}><Zap size={15} /> Poner en Entrega inmediata</button>
-  return <div className="grid grid-cols-[1fr_auto] gap-2">
-    <button className={`${btn} border-accent/35 bg-accent/[.07] text-accent hover:bg-accent/[.14]`} onClick={() => setPoniendoEI(item)}><Zap size={15} /> En Entrega inmediata · agregar tallas</button>
-    <button className={`${btn} border-red-400/30 bg-red-400/[.06] px-3 text-red-300 hover:bg-red-400/[.12]`} disabled={quitandoEI === codigoItem} onClick={() => void quitarEI(codigoItem, item.producto)} title="Quitar de Entrega inmediata"><X size={15} /> {quitandoEI === codigoItem ? 'Quitando…' : 'Quitar'}</button>
-  </div>
-})()}{item.estado !== 'en_transito' && <button className="primary-button w-full justify-center" onClick={() => setSelling(item)}><Tag size={15} /> Vender ahora</button>}<button className={`${item.estado === 'en_transito' ? 'primary-button' : 'subtle-button'} w-full justify-center`} onClick={() => apartar(item)}><Bookmark size={15} /> Apartar a un cliente (pedido con 50%)</button></div>}{item.estado === 'vendido' && <div className="mt-4 flex flex-col gap-2">{item.pedido_id ? <button className="rounded-xl border border-green-400/25 bg-green-400/[.07] p-2.5 text-center text-xs font-semibold text-green-300 transition hover:bg-green-400/[.12]" onClick={() => navigate(`/pedidos/${item.pedido_id}`)}>Apartado como pedido {item.pedidos?.codigo ?? ''} · ver seguimiento →</button> : <p className="rounded-xl border border-green-400/25 bg-green-400/[.07] p-2.5 text-center text-xs font-semibold text-green-300">Vendido</p>}<button className="subtle-button w-full justify-center" onClick={() => void imprimirVendido(item)} disabled={printingId === item.id}><Printer size={15} /> {printingId === item.id ? 'Generando…' : 'Imprimir recibo'}</button></div>}</article> })}</div>
+    <div className="mt-6 space-y-2">
+      <div className="hidden grid-cols-[56px_minmax(0,2.2fr)_130px_minmax(0,1.4fr)_minmax(0,1.6fr)_auto] gap-4 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted md:grid"><span /><span>Producto</span><span>Estado</span><span>Etiquetas</span><span className="text-right">Costo · Venta · Ganancia</span><span className="w-[110px]" /></div>
+      {visible.map((item) => {
+        const cod = (item.codigo ?? '').trim().toUpperCase()
+        return <CompraFila key={item.id} item={item} costo={totalCost(item)} fotos={fotosCount[item.id] ?? 0}
+          enEI={!!cod && (ei ?? []).some((p) => p.codigo.toUpperCase() === cod)} enCaminoPublicado={!!cod && enCaminoTienda.has(cod)}
+          onDetalles={() => setDetalleId(item.id)} />
+      })}
+    </div>
+    {detalle && (() => {
+      const item = detalle
+      const cod = (item.codigo ?? '').trim().toUpperCase()
+      // Las acciones que abren otra ventana cierran primero la ficha.
+      const luego = (fn: () => void) => () => { setDetalleId(null); fn() }
+      return <Modal open onClose={() => setDetalleId(null)} title="Detalles de la compra" description={`${item.codigo ? `${item.codigo} · ` : ''}comprada el ${new Date(item.fecha + 'T12:00:00').toLocaleDateString('es-NI', { day: 'numeric', month: 'short', year: 'numeric' })}`}>
+        <CompraCard enModal item={item} costo={totalCost(item)} gastosAsociados={linkedExpenses(item)}
+          enEI={!!cod && (ei ?? []).some((p) => p.codigo.toUpperCase() === cod)} enCaminoPublicado={!!cod && enCaminoTienda.has(cod)}
+          fotos={fotosCount[item.id] ?? 0} quitandoEI={quitandoEI === (item.codigo ?? '').trim()} imprimiendo={printingId === item.id}
+          onEstado={(estado) => void updateStatus(item, estado)} onVer={luego(() => setPreview(item))} onEditar={luego(() => { setEditing(item); setOpen(true) })}
+          onEliminar={luego(() => void remove(item))} onPagar={luego(() => setPaying(item))} onFotos={luego(() => setFotosDe(item))} onEntregaInmediata={luego(() => setPoniendoEI(item))}
+          onQuitarEI={() => void quitarEI((item.codigo ?? '').trim(), item.producto)} onVender={luego(() => setSelling(item))} onApartar={luego(() => apartar(item))}
+          onVerPedido={luego(() => navigate(`/pedidos/${item.pedido_id}`))} onImprimir={() => void imprimirVendido(item)} />
+      </Modal>
+    })()}
     {!items.length && <div className="mt-6 rounded-2xl border border-dashed border-line p-10 text-center text-sm text-muted">Todavía no hay compras libres. Registrá lo que compraste por tu cuenta para vender, esté pagado o no.</div>}
     {items.length > 0 && !visible.length && <div className="mt-6 rounded-2xl border border-dashed border-line p-10 text-center text-sm text-muted">Ningún producto coincide con esta búsqueda.</div>}
     <ProductModal open={open} item={editing} inicial={inicial} products={products} onClose={() => { setOpen(false); setEditing(null); setInicial(null) }} onSaved={(item) => { setItems((all) => editing ? all.map((current) => current.id === item.id ? item : current) : [item, ...all]); setOpen(false); setEditing(null); setInicial(null) }} />
@@ -306,7 +316,6 @@ function Metric({ icon: Icon, label, value, accent, warn }: { icon: typeof Boxes
 function Opciones({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: [string, string, string][] }) {
   return <fieldset className="col-span-full"><legend className="mb-2 text-xs font-semibold text-muted">{label}</legend><div className={`grid gap-2 ${options.length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>{options.map(([valor, titulo, ayuda]) => <label key={valor} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm transition ${value === valor ? 'border-accent/50 bg-accent/[.07]' : 'border-line hover:border-white/25'}`}><input type="radio" className="mt-0.5 size-4 accent-[#b7ff00]" checked={value === valor} onChange={() => onChange(valor)} /><span><strong className="block">{titulo}</strong><small className="mt-0.5 block text-muted">{ayuda}</small></span></label>)}</div></fieldset>
 }
-function Money({ label, value, accent, green }: { label: string; value: number; accent?: boolean; green?: boolean }) { return <div><span className="text-[10px] uppercase text-muted">{label}</span><strong className={`mt-1 block text-sm ${accent ? 'text-accent' : green ? 'text-green-300' : ''}`}>USD {Number(value).toFixed(2)}</strong></div> }
 
 function ClientPreview({ item, onClose }: { item: Inversion | null; onClose: () => void }) {
   useEffect(() => {
