@@ -7,7 +7,7 @@ import { CuentaSelect, type DestinoPago } from '../../components/finanzas/Cuenta
 import { subirImagenCatalogo } from '../../services/catalogoImagenes.service'
 import { actualizarInversion, cambiarEstadoInversion, eliminarInversion, listarInversiones, listarProductos, listarVentasStock, obtenerTipoCambio, pagarInversion, registrarInversion, venderStockInmediato, type VentaStock } from '../../services/comercial.service'
 import type { Inversion, Producto } from '../../types/domain'
-import { imprimirReciboStock } from '../../utils/reciboStock'
+import { enviarReciboStockCorreo, imprimirReciboStock } from '../../utils/reciboStock'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { contarFotosInversiones, ponerEntregaInmediataCompra, quitarEntregaInmediata } from '../../services/archivos.service'
 import { FotosCompraModal } from '../../components/inventario/FotosCompraModal'
@@ -184,12 +184,12 @@ function PayModal({ item, onClose, onPaid }: { item: Inversion | null; onClose: 
 }
 
 function SellModal({ item, onClose, onSold }: { item: Inversion | null; onClose: () => void; onSold: (item: Inversion) => void }) {
-  const [form, setForm] = useState({ fecha: new Date().toISOString().slice(0, 10), cliente: '', precio_venta: '', monto_recibido: '', metodo: 'Transferencia', observaciones: '' })
+  const [form, setForm] = useState({ fecha: new Date().toISOString().slice(0, 10), cliente: '', correo: '', precio_venta: '', monto_recibido: '', metodo: 'Transferencia', observaciones: '' })
   const [destino, setDestino] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
   const [tipoCambio, setTipoCambio] = useState(37)
   const [saving, setSaving] = useState(false)
   const [printing, setPrinting] = useState(false)
-  useEffect(() => { if (item) { const precio = (Number(item.precio_venta_estimado) * Number(item.cantidad)).toFixed(2); setForm({ fecha: new Date().toISOString().slice(0, 10), cliente: '', precio_venta: precio, monto_recibido: precio, metodo: 'Transferencia', observaciones: '' }); setDestino({ cuentaId: null, montoCuenta: 0 }); void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined) } }, [item])
+  useEffect(() => { if (item) { const precio = (Number(item.precio_venta_estimado) * Number(item.cantidad)).toFixed(2); setForm({ fecha: new Date().toISOString().slice(0, 10), cliente: '', correo: '', precio_venta: precio, monto_recibido: precio, metodo: 'Transferencia', observaciones: '' }); setDestino({ cuentaId: null, montoCuenta: 0 }); void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined) } }, [item])
   if (!item) return null
   const precio = Number(form.precio_venta), recibido = Number(form.monto_recibido), costo = totalCost(item)
   // Imprime el recibo con lo que hay en el formulario, sin registrar la venta todavía.
@@ -201,21 +201,29 @@ function SellModal({ item, onClose, onSold }: { item: Inversion | null; onClose:
       toast.success('Recibo generado. Ábrelo para imprimir.')
     } catch { toast.error('No se pudo generar el recibo.') } finally { setPrinting(false) }
   }
+  const correo = form.correo.trim().toLowerCase()
+  const correoValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     if (precio <= 0) return toast.error('Indica el precio de venta.')
+    if (correo && !correoValido) return toast.error('Revisá el correo del cliente (ej. nombre@gmail.com).')
     if (recibido > 0 && !destino.cuentaId) return toast.error('Elegí a qué cuenta entra la venta.')
     setSaving(true)
     try {
       const sold = await venderStockInmediato(item, { fecha: form.fecha, precio_venta: precio / Number(item.cantidad), monto_recibido: Math.max(0, recibido), metodo: form.metodo, cliente: form.cliente, observaciones: form.observaciones }, destino)
       onSold(sold)
       toast.success('Venta registrada. El producto salió del inventario.')
+      // Factura al correo del cliente (si lo dio). La venta ya quedó guardada aunque el correo falle.
+      if (correoValido) void enviarReciboStockCorreo(item, { cliente: form.cliente, precioTotal: precio, montoRecibido: Math.max(0, recibido), fecha: form.fecha, metodo: form.metodo }, correo)
+        .then(() => toast.success(`Factura enviada a ${correo}.`))
+        .catch((e) => toast.error(`La venta quedó guardada, pero no se pudo enviar la factura: ${e instanceof Error ? e.message : 'error'}`, { duration: 10000 }))
     } catch { toast.error('No se pudo registrar la venta.') } finally { setSaving(false) }
   }
   return <Modal open={Boolean(item)} onClose={onClose} title={`Vender · ${item.producto}`} description="Registra la venta directa. No crea un pedido de importación.">
     <form className="form-grid" onSubmit={(event) => void submit(event)}>
       <Field label="Fecha de venta"><input type="date" value={form.fecha} onChange={(event) => setForm({ ...form, fecha: event.target.value })} /></Field>
       <Field label="Cliente (opcional)"><input value={form.cliente} onChange={(event) => setForm({ ...form, cliente: event.target.value })} placeholder="Nombre del cliente" /></Field>
+      <Field label="Correo del cliente (para enviarle la factura)"><input type="email" inputMode="email" autoComplete="off" value={form.correo} onChange={(event) => setForm({ ...form, correo: event.target.value })} placeholder="cliente@gmail.com" /></Field>
       <Field label="Precio de venta (total)"><input type="number" min="0" step=".01" value={form.precio_venta} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setForm({ ...form, precio_venta: event.target.value })} /></Field>
       <Field label="Monto recibido"><input type="number" min="0" step=".01" value={form.monto_recibido} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setForm({ ...form, monto_recibido: event.target.value })} /></Field>
       <Field label="Método de pago"><input value={form.metodo} onChange={(event) => setForm({ ...form, metodo: event.target.value })} /></Field>

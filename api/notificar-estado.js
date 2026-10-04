@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { ESTADO_LABEL, enviarCorreoPedido, enviarCorreoCancelacion, enviarCorreoBienvenida, enviarCorreoReembolsoAdmin, enviarCorreoReembolsoRechazado, enviarCorreoReembolsoRecibido, enviarCorreoReembolsoAprobado, enviarCorreoReembolsoDecisionAdmin, enviarCorreoEncargoPorVencer } from './_correo.js'
+import { ESTADO_LABEL, enviarCorreoPedido, enviarCorreoCancelacion, enviarCorreoBienvenida, enviarCorreoReembolsoAdmin, enviarCorreoReembolsoRechazado, enviarCorreoReembolsoRecibido, enviarCorreoReembolsoAprobado, enviarCorreoReembolsoDecisionAdmin, enviarCorreoEncargoPorVencer, enviarCorreoVentaInmediata } from './_correo.js'
 import { facturaPdfBuffer } from './_factura-pdf.js'
 import { subirFacturaDrive, subirArchivoDrive, mesCarpeta } from './_drive.js'
 import { cerrarEmail, reservarEmail } from './_email-eventos.js'
@@ -280,6 +280,37 @@ async function respaldoManual(response, authorization) {
 // "Orden confirmada" y, si el pedido ya está pagado/entregado, "Comprobante pagado", a
 // HAUSLINE Facturas / <mes del pedido> / <código>. A diferencia del archivado automático
 // (best-effort, solo log), aquí se devuelve el error REAL para mostrarlo en el panel.
+// "Vender ahora" (Entrega inmediata, Compras libres): manda al correo del cliente el
+// comprobante / factura de la venta. Solo personal del panel (JWT).
+async function facturaVentaInmediata(response, body, authorization) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(500).json({ ok: false, error: 'Falta configuración del servidor.' })
+  const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  const token = String(authorization).replace(/^Bearer\s+/i, '').trim()
+  if (!token) return response.status(401).json({ ok: false })
+  const { data: userData } = await admin.auth.getUser(token).catch(() => ({ data: { user: null } }))
+  if (!userData?.user) return response.status(401).json({ ok: false })
+  const { data: perfil } = await admin.from('perfiles').select('rol, activo').eq('id', userData.user.id).maybeSingle()
+  if (!perfil || !perfil.activo || (perfil.rol !== 'admin' && perfil.rol !== 'operador')) return response.status(403).json({ ok: false, error: 'No autorizado.' })
+
+  const correo = String(body.correo || '').trim().toLowerCase()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) return response.status(400).json({ ok: false, error: 'Correo inválido.' })
+  const f = body.factura || {}
+  const items = (Array.isArray(f.items) ? f.items : []).slice(0, 20).map((it) => ({
+    producto: String(it.producto || 'Producto').slice(0, 200), detalle: it.detalle ? String(it.detalle).slice(0, 200) : null,
+    codigo: it.codigo ? String(it.codigo).slice(0, 40) : null, imagen: it.imagen ? String(it.imagen).slice(0, 500) : null,
+    cantidad: Math.max(1, Number(it.cantidad) || 1), precioUnitario: Math.max(0, Number(it.precioUnitario) || 0), subtotal: Math.max(0, Number(it.subtotal) || 0),
+  }))
+  if (!items.length) return response.status(400).json({ ok: false, error: 'Factura vacía.' })
+  const total = Math.max(0, Number(f.total) || 0), abono = Math.min(total, Math.max(0, Number(f.abono) || 0))
+  const factura = { items, total, abono, saldo: Math.max(0, Math.round((total - abono) * 100) / 100), variante: total - abono <= 0.01 ? 'pago' : 'saldo', fecha: String(f.fecha || new Date().toISOString().slice(0, 10)).slice(0, 10) }
+  try {
+    await enviarCorreoVentaInmediata({ correo, nombre: String(body.nombre || '').trim().slice(0, 120) || 'Cliente', codigo: String(body.codigo || '').trim().slice(0, 40), factura })
+    return response.status(200).json({ ok: true })
+  } catch (error) {
+    return response.status(200).json({ ok: false, error: error instanceof Error ? error.message : 'No se pudo enviar el correo.' })
+  }
+}
+
 async function archivarDriveManual(response, body, authorization) {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return response.status(500).json({ ok: false, error: 'Falta configuración del servidor.' })
@@ -646,6 +677,8 @@ export default async function handler(request, response) {
   if (body.resend) return reenviarFotosEtapa(request, response, body, authorization)
   // "Archivar en Drive" desde el pedido (JWT del usuario): vuelve a subir las facturas.
   if (body.archivarDrive) return archivarDriveManual(response, body, authorization)
+  // Factura por correo de una venta de Entrega inmediata (JWT del personal).
+  if (body.facturaVentaInmediata) return facturaVentaInmediata(response, body, authorization)
   // "Hacer respaldo ahora" desde Configuración (JWT del admin): Excel completo a Drive.
   if (body.respaldoAhora) return respaldoManual(response, authorization)
   // "Poner en Entrega inmediata" desde Compras libres (JWT del admin).

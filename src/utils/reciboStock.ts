@@ -1,3 +1,4 @@
+import { supabase } from '../lib/supabase'
 import { descargarFacturaPdf, enviarFacturaWhatsApp, type FacturaData } from '../services/factura.service'
 
 // Recibo para una venta de stock inmediato. Reutiliza el generador de facturas del
@@ -37,4 +38,24 @@ export function imprimirReciboStock(item: ProductoRecibo, venta: VentaRecibo) {
 // Envía el recibo por WhatsApp (imagen a color); en escritorio descarga y abre el chat.
 export function enviarReciboStockWhatsApp(item: ProductoRecibo, venta: VentaRecibo) {
   return enviarFacturaWhatsApp(facturaStockData(item, venta))
+}
+
+// Manda el comprobante / factura de la venta al CORREO del cliente (PDF adjunto). Lo arma el
+// servidor (/api/notificar-estado, facturaVentaInmediata) con la misma factura de los pedidos.
+export async function enviarReciboStockCorreo(item: ProductoRecibo, venta: VentaRecibo, correo: string) {
+  if (!supabase) throw new Error('Supabase no está configurado.')
+  const { data: sesion } = await supabase.auth.getSession()
+  const token = sesion.session?.access_token
+  if (!token) throw new Error('Sesión no disponible.')
+  const d = facturaStockData(item, venta)
+  const res = await fetch('/api/notificar-estado', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      facturaVentaInmediata: true, correo, nombre: d.cliente, codigo: item.codigo?.trim() || '',
+      factura: { fecha: d.fecha, total: d.total, abono: d.abono, items: d.items.map((it) => ({ producto: it.producto, detalle: it.detalle ?? null, codigo: it.codigo ?? null, imagen: it.imagen ?? null, cantidad: it.cantidad, precioUnitario: it.precio, subtotal: it.precio * it.cantidad })) },
+    }),
+  })
+  const j = await res.json().catch(() => ({})) as { ok?: boolean; error?: string }
+  if (!res.ok || !j.ok) throw new Error(j.error || `No se pudo enviar el correo (HTTP ${res.status}).`)
 }

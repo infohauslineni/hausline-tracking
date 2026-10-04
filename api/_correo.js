@@ -1154,3 +1154,30 @@ export async function enviarCorreoSaludClientesAdmin({ to, grupos, total, client
     html,
   })
 }
+
+// ── Venta de ENTREGA INMEDIATA (Compras libres → Vender ahora) ──────────────────────────
+// No hay pedido con seguimiento: el cliente se lleva el producto en el momento. Le llega su
+// comprobante (o factura, si quedó saldo) con el detalle en el cuerpo y el PDF adjunto.
+export async function enviarCorreoVentaInmediata({ correo, nombre, codigo, factura }) {
+  const esPago = factura?.variante === 'pago'
+  const saldo = Number(factura?.saldo) || 0
+  const nota = esPago
+    ? '¡Gracias por su compra en HAUSLINE! Le enviamos el comprobante de su compra de <strong>entrega inmediata</strong>. Lo tiene abajo y también adjunto en PDF.'
+    : `¡Gracias por su compra en HAUSLINE! Le enviamos la factura de su compra de <strong>entrega inmediata</strong>. Queda un saldo pendiente de <strong>US$${saldo.toFixed(2)}</strong>. Lo tiene abajo y también adjunto en PDF.`
+  const attachments = []
+  try {
+    const pdf = await facturaPdfBuffer({ codigo, nombre, fecha: factura.fecha, factura })
+    attachments.push({ filename: `Hausline-${codigo}-${esPago ? 'comprobante' : 'factura'}.pdf`, content: pdf, contentType: 'application/pdf' })
+  } catch {
+    // Sin PDF adjunto: el cuerpo del correo ya lleva el detalle.
+  }
+  const bccArchivo = process.env.ARCHIVO_BCC ?? 'alerta@hauslineshopni.es'
+  await transporteSmtp().sendMail({
+    from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
+    to: correo,
+    ...(bccArchivo ? { bcc: bccArchivo } : {}),
+    subject: `HAUSLINE: ${esPago ? 'comprobante' : 'factura'} de su compra${codigo ? ` (${codigo})` : ''}`,
+    html: plantillaCorreo({ nombre, codigo, estado: null, estadoLabel: 'Gracias por su compra', nota, urlSeguimiento: 'https://hauslineshopni.es/', esNuevo: false, factura, fotos: [], ctaTexto: 'Ver la tienda', ctaUrl: 'https://hauslineshopni.es/', pedirResena: false }),
+    attachments,
+  })
+}
