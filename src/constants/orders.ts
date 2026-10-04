@@ -62,26 +62,26 @@ export const estadoLabel = (estado: EstadoPedido) => {
 export const estadoLabelPublico = (estado: EstadoPedido) => estadoLabel(estado)
 
 export const notaPublicaEstado = (estado: EstadoPedido) => ({
-  pedido_confirmado: 'Recibimos y confirmamos tu orden.',
-  en_preparacion: 'Estamos preparando tu pedido.',
-  control_calidad: 'Tu pedido está pasando por control de calidad.',
-  etiqueta_creada: 'Tu pedido fue despachado y va en camino.',
-  despachado: 'Tu pedido fue despachado y va en camino.',
-  transito_internacional: 'Tu pedido está en tránsito internacional.',
-  recibido_estados_unidos: 'Tu pedido está en tránsito internacional.',
-  transito_nicaragua: 'Tu pedido está en tránsito internacional.',
-  llego_nicaragua: 'Tu pedido llegó al país de destino.',
-  disponible_entrega: 'Tu pedido está disponible para entrega.',
-  pagado: 'Confirmamos el pago de tu pedido.',
-  empaquetado: 'Tu pedido está empaquetado y listo para envío.',
-  entregado: 'Tu pedido fue entregado.',
+  pedido_confirmado: 'Recibimos y confirmamos su orden.',
+  en_preparacion: 'Estamos preparando su pedido.',
+  control_calidad: 'Su pedido está pasando por control de calidad.',
+  etiqueta_creada: 'Su pedido fue despachado y va en camino.',
+  despachado: 'Su pedido fue despachado y va en camino.',
+  transito_internacional: 'Su pedido está en tránsito internacional.',
+  recibido_estados_unidos: 'Su pedido está en tránsito internacional.',
+  transito_nicaragua: 'Su pedido está en tránsito internacional.',
+  llego_nicaragua: 'Su pedido llegó al país de destino.',
+  disponible_entrega: 'Su pedido está disponible para entrega.',
+  pagado: 'Confirmamos el pago de su pedido.',
+  empaquetado: 'Su pedido está empaquetado y listo para envío.',
+  entregado: 'Su pedido fue entregado.',
   cancelado: 'El pedido fue cancelado.',
-  incidencia: 'Estamos gestionando una incidencia con tu pedido.',
+  incidencia: 'Estamos gestionando una incidencia con su pedido.',
 }[estado])
 
 export function mensajeWhatsAppEstado(estado: EstadoPedido, data: { nombre?: string | null; codigo: string; url: string; saldo: number; fotosCalidad?: boolean; tipoCambio?: number; departamento?: string | null; ciudad?: string | null }) {
   const saludo = `Hola${data.nombre ? `, ${data.nombre}` : ''}.`
-  const seguimiento = `Consulta tu seguimiento aquí: ${data.url}`
+  const seguimiento = `Puede consultar el seguimiento aquí: ${data.url}`
   const saldoUsd = Math.max(0, data.saldo)
   const tc = data.tipoCambio && data.tipoCambio > 0 ? data.tipoCambio : 37
   // Redondeamos el equivalente en córdobas a la decena más cercana para que nunca
@@ -95,28 +95,28 @@ export function mensajeWhatsAppEstado(estado: EstadoPedido, data: { nombre?: str
   // delivery a domicilio; fuera de Managua, bus o Cargotrans; si no sabemos dónde
   // está, mostramos todas las opciones como antes.
   const envioTexto = esManagua(data.departamento, data.ciudad)
-    ? 'Como estás en *Managua*, podemos llevártelo con *delivery a domicilio* (el costo depende de la zona). Compartinos tu dirección y coordinamos la entrega.'
+    ? 'Como usted está en *Managua*, podemos llevárselo con *delivery a domicilio* (el costo depende de la zona). Compártanos su dirección y coordinamos la entrega.'
     : tieneUbicacion(data.departamento, data.ciudad)
-      ? 'Para tu departamento el envío es por *bus* (C$160) o por *Cargotrans* (C$100 + la tarifa según el peso y tu departamento). Decinos cuál preferís y compartinos tu dirección.'
-      : 'Opciones de envío:\n• Bus / departamento: C$160.\n• Cargotrans: C$100 + la tarifa según el peso y tu departamento.\n• Managua: delivery a domicilio con costo adicional.\nDecinos a dónde querés el envío y compartinos tu dirección para calcularlo.'
+      ? 'Para su departamento el envío es por *bus* (C$160) o por *Cargotrans* (C$100 + la tarifa según el peso y su departamento). Indíquenos cuál prefiere y compártanos su dirección.'
+      : 'Opciones de envío:\n• Bus / departamento: C$160.\n• Cargotrans: C$100 + la tarifa según el peso y su departamento.\n• Managua: delivery a domicilio con costo adicional.\nIndíquenos a dónde desea el envío y compártanos su dirección para calcularlo.'
   const mensajes: Record<EstadoPedido, string> = {
-    pedido_confirmado: `${saludo} Confirmamos tu orden ${data.codigo}. Ya quedó registrada y te avisaremos cada avance. ${seguimiento}`,
-    en_preparacion: `${saludo} Tu pedido ${data.codigo} está en preparación. Estamos coordinando el producto antes de enviarlo. ${seguimiento}`,
-    control_calidad: `${saludo} Tu pedido ${data.codigo} está en control de calidad.${data.fotosCalidad ? ' Ya puedes ver las fotos de revisión: tenés 24 horas para revisarlas y avisarnos si algo no coincide con lo que pediste.' : ' Te avisaremos cuando estén listas.'} ${seguimiento}`,
-    etiqueta_creada: `${saludo} Tu pedido ${data.codigo} ya fue despachado y va en camino. ${seguimiento}`,
-    despachado: `${saludo} Tu pedido ${data.codigo} ya fue despachado y va en camino. ${seguimiento}`,
-    transito_internacional: `${saludo} Tu pedido ${data.codigo} está en tránsito internacional. ${seguimiento}`,
-    recibido_estados_unidos: `${saludo} Tu pedido ${data.codigo} está en tránsito internacional. ${seguimiento}`,
-    transito_nicaragua: `${saludo} Tu pedido ${data.codigo} está en tránsito internacional. ${seguimiento}`,
-    llego_nicaragua: `${saludo} Tu pedido ${data.codigo} ya llegó al país de destino y está siendo procesado. ${seguimiento}`,
+    pedido_confirmado: `${saludo} Confirmamos su orden ${data.codigo}. Ya quedó registrada y le avisaremos cada avance. ${seguimiento}`,
+    en_preparacion: `${saludo} Su pedido ${data.codigo} está en preparación. Estamos coordinando el producto antes de enviarlo. ${seguimiento}`,
+    control_calidad: `${saludo} Su pedido ${data.codigo} está en control de calidad.${data.fotosCalidad ? ' Ya puede ver las fotos de revisión: tiene 24 horas para revisarlas y avisarnos si algo no coincide con lo que pidió.' : ' Le avisaremos cuando estén listas.'} ${seguimiento}`,
+    etiqueta_creada: `${saludo} Su pedido ${data.codigo} ya fue despachado y va en camino. ${seguimiento}`,
+    despachado: `${saludo} Su pedido ${data.codigo} ya fue despachado y va en camino. ${seguimiento}`,
+    transito_internacional: `${saludo} Su pedido ${data.codigo} está en tránsito internacional. ${seguimiento}`,
+    recibido_estados_unidos: `${saludo} Su pedido ${data.codigo} está en tránsito internacional. ${seguimiento}`,
+    transito_nicaragua: `${saludo} Su pedido ${data.codigo} está en tránsito internacional. ${seguimiento}`,
+    llego_nicaragua: `${saludo} Su pedido ${data.codigo} ya llegó al país de destino y está siendo procesado. ${seguimiento}`,
     disponible_entrega: pagado
-      ? `${saludo} Tu pedido ${data.codigo} ya está *disponible para entrega*.\n\nTu pedido *ya está pagado por completo* ✅. Lo único que faltaría es el *costo del envío*; decinos a dónde lo querés y coordinamos la entrega.\n\n${envioTexto}`
-      : `${saludo} Tu pedido ${data.codigo} ya está *disponible para entrega*.\n\n*Saldo pendiente: ${saldoLinea}*\n\n*Tienes 2 días* para confirmar o cancelar tu pedido sin costo. Después de esos 2 días se cobra *US$ 5 por cada día* que el pedido permanezca en bodega.\n\n${envioTexto}\n\nCuentas para el pago:\n\n${cuentasTexto()}\n\nCuando deposités, mandanos el comprobante por aquí.`,
-    pagado: `${saludo} Confirmamos el pago de tu pedido ${data.codigo}. ✅ Ya no se acumula ningún cargo por bodega. Coordinamos la entrega y te avisamos. ${seguimiento}`,
-    empaquetado: `${saludo} ¡Buenas noticias! Tu pedido ${data.codigo} ya está *empaquetado y listo para envío*. ${esManagua(data.departamento, data.ciudad) ? 'Sale con nuestro delivery a domicilio.' : 'Ya va en camino a tu departamento.'} Te enviamos una foto de tu paquete para que lo tengas presente. ${seguimiento}`,
-    entregado: `${saludo} Tu pedido ${data.codigo} fue entregado. Gracias por comprar en Hausline.`,
-    cancelado: `${saludo} El pedido ${data.codigo} fue cancelado. Escríbenos si necesitas ayuda.`,
-    incidencia: `${saludo} Estamos revisando una novedad con tu pedido ${data.codigo}. Te avisaremos pronto. ${seguimiento}`,
+      ? `${saludo} Su pedido ${data.codigo} ya está *disponible para entrega*.\n\nSu pedido *ya está pagado por completo* ✅. Lo único que faltaría es el *costo del envío*; indíquenos a dónde lo desea y coordinamos la entrega.\n\n${envioTexto}`
+      : `${saludo} Su pedido ${data.codigo} ya está *disponible para entrega*.\n\n*Saldo pendiente: ${saldoLinea}*\n\n*Tiene 2 días* para confirmar o cancelar su pedido sin costo. Después de esos 2 días se cobra *US$ 5 por cada día* que el pedido permanezca en bodega.\n\n${envioTexto}\n\nCuentas para el pago:\n\n${cuentasTexto()}\n\nCuando realice el depósito, envíenos el comprobante por aquí.`,
+    pagado: `${saludo} Confirmamos el pago de su pedido ${data.codigo}. ✅ Ya no se acumula ningún cargo por bodega. Coordinamos la entrega y le avisamos. ${seguimiento}`,
+    empaquetado: `${saludo} ¡Buenas noticias! Su pedido ${data.codigo} ya está *empaquetado y listo para envío*. ${esManagua(data.departamento, data.ciudad) ? 'Sale con nuestro delivery a domicilio.' : 'Ya va en camino a su departamento.'} Le enviamos una foto de su paquete para que lo tenga presente. ${seguimiento}`,
+    entregado: `${saludo} Su pedido ${data.codigo} fue entregado. Gracias por comprar en Hausline.`,
+    cancelado: `${saludo} El pedido ${data.codigo} fue cancelado. Escríbanos si necesita ayuda.`,
+    incidencia: `${saludo} Estamos revisando una novedad con su pedido ${data.codigo}. Le avisaremos pronto. ${seguimiento}`,
   }
   return mensajes[estado]
 }
@@ -138,21 +138,21 @@ export const motivoCancelacionLabel = (motivo?: string | null) =>
 // Frase (dirigida al cliente) que explica por qué se canceló, según el motivo. Se usa tanto
 // en el WhatsApp como en el correo de cancelación para que el mensaje diga el motivo real.
 export const MOTIVO_CANCELACION_RAZON: Record<MotivoCancelacion, string> = {
-  no_disponible: 'el producto que elegiste ya no está disponible con el proveedor',
-  sin_venta: 'el producto que elegiste ya no lo tenemos a la venta',
-  no_entregado: 'tu paquete no pudo entregarse',
-  cliente_cancelo: 'nos pediste cancelarlo',
+  no_disponible: 'el producto que eligió ya no está disponible con el proveedor',
+  sin_venta: 'el producto que eligió ya no lo tenemos a la venta',
+  no_entregado: 'su paquete no pudo entregarse',
+  cliente_cancelo: 'usted nos pidió cancelarlo',
   otro: 'no pudimos completarlo',
 }
 
 // Política de devolución que se le comunica al cliente: 1 a 3 días hábiles y a la misma
 // cuenta desde la que pagó. Igual texto en el panel, el WhatsApp y el correo.
-export const POLITICA_DEVOLUCION = 'El reembolso se procesa en un plazo de 1 a 3 días hábiles y se devuelve a la misma cuenta desde la que realizaste el pago.'
+export const POLITICA_DEVOLUCION = 'El reembolso se procesa en un plazo de 1 a 3 días hábiles y se devuelve a la misma cuenta desde la que realizó el pago.'
 
 // Mensaje para avisar al cliente que su paquete (que se daba por no entregado) apareció,
 // y preguntarle si todavía le interesa.
 export function mensajeWhatsAppReaparicion(data: { nombre?: string | null; codigo: string }) {
-  return `Hola${data.nombre ? `, ${data.nombre}` : ''}. ¡Buenas noticias! Tu paquete del pedido ${data.codigo} apareció y ya lo tenemos. ¿Todavía te interesa recibirlo? Si nos confirmás, coordinamos la entrega; si preferís, no hay problema y queda cerrado.`
+  return `Hola${data.nombre ? `, ${data.nombre}` : ''}. ¡Buenas noticias! Su paquete del pedido ${data.codigo} apareció y ya lo tenemos. ¿Todavía le interesa recibirlo? Si nos confirma, coordinamos la entrega; si prefiere no, no hay problema y queda cerrado.`
 }
 
 // Mensaje para avisarle al cliente que su orden se canceló. Explica el motivo y, si hubo
@@ -160,9 +160,9 @@ export function mensajeWhatsAppReaparicion(data: { nombre?: string | null; codig
 export function mensajeWhatsAppCancelacion(data: { nombre?: string | null; codigo: string; motivo: MotivoCancelacion; monto?: number }) {
   const razon = MOTIVO_CANCELACION_RAZON[data.motivo] ?? MOTIVO_CANCELACION_RAZON.otro
   const monto = Math.max(0, Number(data.monto || 0))
-  const partes = [`Hola${data.nombre ? `, ${data.nombre}` : ''}. Lamentamos informarte que tu pedido ${data.codigo} fue cancelado porque ${razon}.`]
-  if (monto > 0) partes.push(`Ya iniciamos la *devolución de US$ ${monto.toFixed(2)}* que habías pagado. ${POLITICA_DEVOLUCION}`)
-  partes.push('Cualquier duda quedamos a la orden y gracias por tu comprensión.')
+  const partes = [`Hola${data.nombre ? `, ${data.nombre}` : ''}. Lamentamos informarle que su pedido ${data.codigo} fue cancelado porque ${razon}.`]
+  if (monto > 0) partes.push(`Ya iniciamos la *devolución de US$ ${monto.toFixed(2)}* que había pagado. ${POLITICA_DEVOLUCION}`)
+  partes.push('Cualquier duda quedamos a la orden. Gracias por su comprensión.')
   return partes.join('\n\n')
 }
 

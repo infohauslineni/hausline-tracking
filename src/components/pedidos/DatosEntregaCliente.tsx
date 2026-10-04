@@ -67,7 +67,7 @@ export function DatosEntregaCliente({ pedido, mostrarSaldo = true }: { pedido: P
     principal?.mapa && `Ubicación: ${principal.mapa}`,
     mostrarSaldo && saldo > 0.01 && `Cobrar: US$ ${saldo.toFixed(2)}`,
   ].filter(Boolean).join('\n')
-  const pedirDireccion = `Hola ${nombre.split(' ')[0]}, tu pedido ${pedido.codigo} ya está disponible para entrega. ¿Nos confirmás la dirección completa (con referencia) y el departamento para coordinar el envío? Gracias. — El equipo de HAUSLINE`
+  const pedirDireccion = `Hola ${nombre.split(' ')[0]}, su pedido ${pedido.codigo} ya está disponible para entrega. ¿Nos confirma la dirección completa (con referencia) y el departamento para coordinar el envío? Gracias. — El equipo de HAUSLINE`
 
   if (cargando) return <div className="h-32 animate-pulse rounded-xl border border-line bg-white/[.02]" />
 

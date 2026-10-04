@@ -277,7 +277,7 @@ export function PedidoDetailPage() {
   const cargoBodega = calcularCargoBodega(disponibleDesde)
   const cordobasBodega = cargoBodega ? Math.ceil((cargoBodega.cargo * (tipoCambio > 0 ? tipoCambio : 37)) / 10) * 10 : 0
   const recordatorioBodega = cargoBodega?.activo
-    ? `Hola${pedido.clientes?.nombre ? `, ${pedido.clientes.nombre}` : ''}. Te recordamos que tu pedido ${pedido.codigo} está *disponible para entrega* desde hace ${cargoBodega.dias} días. Como superó los ${DIAS_GRACIA_BODEGA} días de gracia, se acumula un cargo por bodega de *US$ ${cargoBodega.cargo.toFixed(2)} (≈ C$ ${cordobasBodega})* — US$ ${CARGO_BODEGA_DIARIO} por cada día extra que sigue en bodega. Coordinemos tu entrega y pago para que no siga subiendo. Rastrea tu pedido aquí: ${publicUrl}`
+    ? `Hola${pedido.clientes?.nombre ? `, ${pedido.clientes.nombre}` : ''}. Le recordamos que su pedido ${pedido.codigo} está *disponible para entrega* desde hace ${cargoBodega.dias} días. Como superó los ${DIAS_GRACIA_BODEGA} días de gracia, se acumula un cargo por bodega de *US$ ${cargoBodega.cargo.toFixed(2)} (≈ C$ ${cordobasBodega})* — US$ ${CARGO_BODEGA_DIARIO} por cada día extra que sigue en bodega. Coordinemos su entrega y pago para que no siga subiendo. Puede rastrear su pedido aquí: ${publicUrl}`
     : ''
   // Productos "de verdad" para el seguimiento por producto: se excluyen las líneas de
   // envío/delivery (son un cargo, no algo que se rastree por etapa). El selector y la barra

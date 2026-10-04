@@ -36,19 +36,19 @@ const PROGRESO = [
 
 // Nota pública que ve el cliente (espejo de src/constants/orders.ts notaPublicaEstado).
 const NOTA_PUBLICA = {
-  pedido_confirmado: 'Recibimos y confirmamos tu orden.',
-  en_preparacion: 'Estamos preparando tu pedido.',
-  control_calidad: 'Tu pedido está pasando por control de calidad.',
-  etiqueta_creada: 'Tu pedido fue despachado y va en camino.',
-  despachado: 'Tu pedido fue despachado y va en camino.',
-  transito_internacional: 'Tu pedido está en tránsito internacional.',
-  recibido_estados_unidos: 'Tu pedido está en tránsito internacional.',
-  transito_nicaragua: 'Tu pedido está en tránsito internacional.',
-  llego_nicaragua: 'Tu pedido llegó al país de destino.',
-  disponible_entrega: 'Tu pedido está disponible para entrega.',
-  entregado: 'Tu pedido fue entregado.',
+  pedido_confirmado: 'Recibimos y confirmamos su orden.',
+  en_preparacion: 'Estamos preparando su pedido.',
+  control_calidad: 'Su pedido está pasando por control de calidad.',
+  etiqueta_creada: 'Su pedido fue despachado y va en camino.',
+  despachado: 'Su pedido fue despachado y va en camino.',
+  transito_internacional: 'Su pedido está en tránsito internacional.',
+  recibido_estados_unidos: 'Su pedido está en tránsito internacional.',
+  transito_nicaragua: 'Su pedido está en tránsito internacional.',
+  llego_nicaragua: 'Su pedido llegó al país de destino.',
+  disponible_entrega: 'Su pedido está disponible para entrega.',
+  entregado: 'Su pedido fue entregado.',
   cancelado: 'El pedido fue cancelado.',
-  incidencia: 'Estamos gestionando una incidencia con tu pedido.',
+  incidencia: 'Estamos gestionando una incidencia con su pedido.',
 }
 
 const DIACRITICOS = new RegExp('[\\u0300-\\u036f]', 'g')

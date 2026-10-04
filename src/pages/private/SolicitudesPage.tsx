@@ -444,7 +444,7 @@ function ResultadoModal({ codigo, grupo, onClose }: { codigo: string; grupo: Sol
   const c = grupo[0]
   const msgProv = mensajeProveedor(codigo, grupo)
   const link = urlSeguimientoCliente(codigo)
-  const msgCliente = `¡Hola ${c.cliente_nombre}! Confirmamos tu pago ✅. Tu pedido ya está en proceso.\n\nCódigo de pedido: ${codigo}\nSeguí tu pedido aquí: ${link}\n\n¡Gracias por comprar en HAUSLINE!`
+  const msgCliente = `¡Hola ${c.cliente_nombre}! Confirmamos su pago ✅. Su pedido ya está en proceso.\n\nCódigo de pedido: ${codigo}\nPuede seguir su pedido aquí: ${link}\n\n¡Gracias por comprar en HAUSLINE!`
   const [prov, setProv] = useState(() => { try { return localStorage.getItem('hausline_proveedor_wa') || '' } catch { return '' } })
   const guardar = (v: string) => { setProv(v); try { localStorage.setItem('hausline_proveedor_wa', v) } catch { /* */ } }
   const copiar = () => { navigator.clipboard?.writeText(msgProv).catch(() => {}); toast.success('Mensaje del proveedor copiado.') }

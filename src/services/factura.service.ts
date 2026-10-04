@@ -200,9 +200,9 @@ async function renderFactura(data: FacturaData, visibles: FacturaLinea[], fotos:
     }
     context.fillStyle = pieBg; context.beginPath(); context.roundRect(100, pieY, 1040, 90, 18); context.fill()
     context.fillStyle = pieTxt; context.font = '600 24px Arial'; context.textAlign = 'center'
-    context.fillText(esPago ? `Pago recibido · Pedido ${data.codigo} entregado` : `Rastrea tu pedido con el código ${data.codigo}`, 620, pieY + 46)
+    context.fillText(esPago ? `Pago recibido · Pedido ${data.codigo} entregado` : `Rastree su pedido con el código ${data.codigo}`, 620, pieY + 46)
     context.fillStyle = '#7a807a'; context.font = '500 20px Arial'
-    context.fillText(esPago ? '¡Muchas gracias por tu compra en Hausline! Esperamos verte pronto.' : 'Gracias por comprar en Hausline · Los tiempos pueden variar por logística internacional.', 620, pieY + 140)
+    context.fillText(esPago ? '¡Muchas gracias por su compra en Hausline! Esperamos verle pronto.' : 'Gracias por comprar en Hausline · Los tiempos pueden variar por logística internacional.', 620, pieY + 140)
     context.textAlign = 'left'
   }
 
@@ -269,8 +269,8 @@ export async function descargarFacturaPdf(data: FacturaData) {
 export async function enviarFacturaWhatsApp(data: FacturaData) {
   const files = await crearFacturaImagenFiles(data)
   const mensaje = (data.variante === 'pago'
-    ? `Hola ${data.cliente}, confirmamos que recibimos el pago de tu pedido ${data.codigo} en Hausline. Aquí tienes tu comprobante. ¡Muchas gracias por tu compra!`
-    : `Hola ${data.cliente}, ¡tu pedido quedó registrado en Hausline! Aquí tienes tu factura${files.length > 1 ? ` (${files.length} páginas)` : ''}. Tu código de seguimiento es ${data.codigo}; puedes rastrearlo cuando quieras. ¡Gracias por tu compra!`
+    ? `Hola ${data.cliente}, confirmamos que recibimos el pago de su pedido ${data.codigo} en Hausline. Aquí tiene su comprobante. ¡Muchas gracias por su compra!`
+    : `Hola ${data.cliente}, ¡su pedido quedó registrado en Hausline! Aquí tiene su factura${files.length > 1 ? ` (${files.length} páginas)` : ''}. Su código de seguimiento es ${data.codigo}; puede rastrearlo cuando desee. ¡Gracias por su compra!`
   ).replace(/\s+/g, ' ').trim()
   if (navigator.canShare?.({ files })) {
     try {

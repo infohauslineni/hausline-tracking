@@ -41,7 +41,7 @@ export type VentaLibre = { id: string; codigo: string; activo: boolean; datos: D
 export const linkVentaLibre = (codigo: string) => `${SITIO_TIENDA}/p/${encodeURIComponent(codigo)}/`
 export function mensajeVentaLibre(d: Pick<DatosVentaLibre, 'codigo' | 'nombre' | 'precio'>) {
   const precio = Number(d.precio) > 0 ? ` — $${Number(d.precio)}` : ''
-  return `Hola 👋 Te dejo el link de tu pedido en HAUSLINE: ${d.nombre}${precio}.\nAhí elegís tu talla y lo encargás directo:\n${linkVentaLibre(d.codigo)}`
+  return `Hola 👋 Le compartimos el link de su pedido en HAUSLINE: ${d.nombre}${precio}.\nAhí puede elegir su talla y encargarlo directo:\n${linkVentaLibre(d.codigo)}`
 }
 
 function lanzar(error: { message: string } | null, que: string) {

@@ -82,17 +82,17 @@ export function CompraDirectaModal({ open, onClose, cliente: clienteInicial, onC
   const armarMensaje = (cod: string) => {
     const detalle = [talla.trim() && `Talla ${talla.trim()}`, color.trim(), cantidad > 1 && `x${cantidad}`].filter(Boolean).join(' · ')
     return [
-      `Hola ${primerNombre(datosCliente.nombre)} 👋 Te dejamos listo tu pedido en HAUSLINE:`,
+      `Hola ${primerNombre(datosCliente.nombre)} 👋 Le saluda el equipo de HAUSLINE. Le dejamos listo su pedido:`,
       '',
       `🛍️ ${nombreProducto}${detalle ? ` — ${detalle}` : ''}`,
       `🚚 Envío ${ENVIOS[envio].etiqueta.toLowerCase()} (${ENVIOS[envio].dias})`,
       `💵 Total: ${usd(total)} (${cs(total)})`,
       '',
-      `Para confirmarlo solo transferí ${pago === '50' ? 'el 50%' : 'el total'}: *${usd(ahora)}* (${cs(ahora)})${pago === '50' ? `. El resto (${usd(Math.round((total - ahora) * 100) / 100)}) lo pagás al recibir.` : ''}`,
-      '👉 Acá ves las cuentas y subís tu comprobante:',
+      `Para confirmarlo solo debe transferir ${pago === '50' ? 'el 50%' : 'el total'}: *${usd(ahora)}* (${cs(ahora)})${pago === '50' ? `. El resto (${usd(Math.round((total - ahora) * 100) / 100)}) lo paga al recibir.` : ''}`,
+      '👉 En este enlace puede ver las cuentas y subir su comprobante:',
       linkPagoEncargo(cod),
       '',
-      'El link vence en 48 horas. Cualquier duda nos escribís por aquí 🙌',
+      'El enlace vence en 48 horas. Cualquier duda, con gusto le atendemos por aquí 🙌',
     ].join('\n')
   }
 

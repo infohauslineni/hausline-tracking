@@ -106,7 +106,7 @@ export function ReembolsosPage() {
                       <p className="mt-1">Pagado: <b>{usd(s.monto_pagado)}</b>{s.monto_reembolso != null && s.estado === 'aprobada' ? <> · reembolsado: <b className="text-emerald-300">{usd(s.monto_reembolso)}</b></> : null}</p>
                       <p className="mt-1">{s.banco} · <span className="font-mono">{s.numero_cuenta}</span> <button className="ml-1 inline-flex align-middle text-muted hover:text-white" onClick={() => copiar(s.numero_cuenta)} aria-label="Copiar número de cuenta"><Copy size={13} /></button></p>
                       <p className="mt-1">Titular: <b>{s.titular}</b></p>
-                      {s.whatsapp_cliente && <a className="mt-2 inline-flex items-center gap-1.5 text-xs text-accent hover:underline" href={whatsappUrl(s.whatsapp_cliente, `Hola${s.nombre_cliente ? `, ${s.nombre_cliente}` : ''}. Recibimos tu solicitud de cancelación del pedido ${s.codigo} y la estamos revisando.`)} target="_blank" rel="noreferrer"><MessageCircle size={14} /> Escribir al cliente</a>}
+                      {s.whatsapp_cliente && <a className="mt-2 inline-flex items-center gap-1.5 text-xs text-accent hover:underline" href={whatsappUrl(s.whatsapp_cliente, `Hola${s.nombre_cliente ? `, ${s.nombre_cliente}` : ''}. Recibimos su solicitud de cancelación del pedido ${s.codigo} y la estamos revisando.`)} target="_blank" rel="noreferrer"><MessageCircle size={14} /> Escribir al cliente</a>}
                     </div>
                   </div>
                   {s.estado === 'pendiente' && (
@@ -140,7 +140,7 @@ function AprobarModal({ s, onClose, onDone }: { s: SolicitudReembolso; onClose: 
   const [respuesta, setRespuesta] = useState('')
   const [saving, setSaving] = useState(false)
   useEffect(() => { void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined) }, [])
-  const msg = `Hola${s.nombre_cliente ? `, ${s.nombre_cliente}` : ''}. Revisamos tu solicitud y la *aprobamos*: tu pedido ${s.codigo} quedó cancelado.${monto > 0 ? ` Te reembolsamos *US$ ${monto.toFixed(2)}* a tu cuenta ${s.banco} ${s.numero_cuenta} a nombre de ${s.titular}. El reembolso se procesa en 1 a 3 días hábiles.` : ''}${respuesta.trim() ? `\n\n${respuesta.trim()}` : ''}\n\nGracias por tu comprensión.`
+  const msg = `Hola${s.nombre_cliente ? `, ${s.nombre_cliente}` : ''}. Revisamos su solicitud y la *aprobamos*: su pedido ${s.codigo} quedó cancelado.${monto > 0 ? ` Le reembolsamos *US$ ${monto.toFixed(2)}* a su cuenta ${s.banco} ${s.numero_cuenta} a nombre de ${s.titular}. El reembolso se procesa en 1 a 3 días hábiles.` : ''}${respuesta.trim() ? `\n\n${respuesta.trim()}` : ''}\n\nGracias por su comprensión.`
 
   const confirmar = async () => {
     setSaving(true)
@@ -164,7 +164,7 @@ function AprobarModal({ s, onClose, onDone }: { s: SolicitudReembolso; onClose: 
 function RechazarModal({ s, onClose, onDone }: { s: SolicitudReembolso; onClose: () => void; onDone: () => void }) {
   const [respuesta, setRespuesta] = useState('')
   const [saving, setSaving] = useState(false)
-  const msg = `Hola${s.nombre_cliente ? `, ${s.nombre_cliente}` : ''}. Revisamos tu solicitud de cancelación del pedido ${s.codigo} y no pudimos aprobar el reembolso.${respuesta.trim() ? ` ${respuesta.trim()}` : ''}\n\nPodés elegir desde Mi cuenta: *seguir con tu pedido* o *cancelarlo sin reembolso*: https://hauslineshopni.es/cuenta/pedido/?id=${s.codigo}`
+  const msg = `Hola${s.nombre_cliente ? `, ${s.nombre_cliente}` : ''}. Revisamos su solicitud de cancelación del pedido ${s.codigo} y no pudimos aprobar el reembolso.${respuesta.trim() ? ` ${respuesta.trim()}` : ''}\n\nPuede elegir desde Mi cuenta: *seguir con su pedido* o *cancelarlo sin reembolso*: https://hauslineshopni.es/cuenta/pedido/?id=${s.codigo}`
   const confirmar = async () => {
     setSaving(true)
     try {

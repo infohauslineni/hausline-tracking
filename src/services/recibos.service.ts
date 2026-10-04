@@ -91,7 +91,7 @@ export async function descargarRecibo(pago: Pago, pedido: Pedido) {
 // imagen y abre el chat del cliente con un mensaje listo para que la adjunte a mano.
 export async function enviarReciboWhatsApp(pago: Pago, pedido: Pedido) {
   const file = await crearReciboImagenFile(pago, pedido)
-  const mensaje = `Hola ${pedido.clientes?.nombre ?? ''}, aquí está tu comprobante de pago del pedido ${pedido.codigo} por USD ${Number(pago.monto).toFixed(2)}. ¡Gracias por confiar en Hausline!`.replace(/\s+/g, ' ').trim()
+  const mensaje = `Hola ${pedido.clientes?.nombre ?? ''}, aquí está su comprobante de pago del pedido ${pedido.codigo} por USD ${Number(pago.monto).toFixed(2)}. ¡Gracias por confiar en Hausline!`.replace(/\s+/g, ' ').trim()
   if (navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title: `Comprobante ${pedido.codigo}`, text: mensaje })
