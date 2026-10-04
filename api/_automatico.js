@@ -18,8 +18,21 @@ import { obtenerCatalogoMergeado } from './_catalogo.js'
 
 const HORA = 3_600_000
 const DIA = 24 * HORA
-const RECOMPRA_PORCENTAJE = 10   // % del cupón de "volver a comprar"
-const RECOMPRA_VIGENCIA_DIAS = 15  // corto a propósito: que vuelva a comprar pronto
+// "Volver a comprar" VARIADO (pedido del dueño): no a todos los clientes, 5% o 10%, 7 o 15 días.
+// Se decide con el código del pedido (siempre lo mismo para ese pedido, aunque la tarea corra
+// varias veces), así no hay dos cupones distintos para la misma compra.
+const RECOMPRA_PROBABILIDAD = 60          // % de clientes que reciben el cupón
+const RECOMPRA_PORCENTAJES = [5, 10]
+const RECOMPRA_VIGENCIAS = [7, 15]        // días: corto a propósito, que vuelvan a comprar pronto
+function sorteoRecompra(codigo) {
+  let h = 2166136261
+  for (const ch of String(codigo)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0 }
+  return {
+    recibe: h % 100 < RECOMPRA_PROBABILIDAD,
+    porcentaje: RECOMPRA_PORCENTAJES[(h >>> 8) % RECOMPRA_PORCENTAJES.length],
+    dias: RECOMPRA_VIGENCIAS[(h >>> 16) % RECOMPRA_VIGENCIAS.length],
+  }
+}
 const NIC = -6 * HORA             // Nicaragua = UTC-6, sin horario de verano
 
 const ahoraNic = () => new Date(Date.now() + NIC)
@@ -101,16 +114,18 @@ async function postEntrega(db) {
       const { count: nuevos } = await db.from('pedidos').select('id', { count: 'exact', head: true })
         .eq('cliente_id', p.cliente_id).gt('created_at', h.created_at).neq('estado', 'cancelado')
       if (nuevos) continue
-      const vence = fechaNic(new Date(Date.now() + NIC + RECOMPRA_VIGENCIA_DIAS * DIA))
-      // Código con formato de la marca: HAUS10-7K4QX (porcentaje + 5 caracteres sin 0/O/1/I).
-      const codigoCupon = `HAUS${RECOMPRA_PORCENTAJE}-${Array.from({ length: 5 }, () => "ABCDEFGHJKMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 31)]).join("")}`
+      const sorteo = sorteoRecompra(p.codigo)
+      if (!sorteo.recibe) continue
+      const vence = fechaNic(new Date(Date.now() + NIC + sorteo.dias * DIA))
+      // Código con formato de la marca: HAUS10-7K4QX / HAUS5-7K4QX (porcentaje + 5 caracteres sin 0/O/1/I).
+      const codigoCupon = `HAUS${sorteo.porcentaje}-${Array.from({ length: 5 }, () => "ABCDEFGHJKMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 31)]).join("")}`
       // El cupón se crea SOLO si el correo todavía no salió (el candado va primero).
       const reserva = await reservarEmail({ clave: `recompra:${p.codigo}`, tipo: 'recompra', codigo: p.codigo, destinatario: correo })
       if (reserva.duplicado) continue
       try {
-        const { error: eCupon } = await db.from('cupones').insert({ codigo: codigoCupon, tipo: 'porcentaje', valor: RECOMPRA_PORCENTAJE, cliente_id: p.cliente_id, usos_max: 1, vence_el: vence, nota: `Volver a comprar (automático) · ${p.codigo}`, created_by: null })
+        const { error: eCupon } = await db.from('cupones').insert({ codigo: codigoCupon, tipo: 'porcentaje', valor: sorteo.porcentaje, cliente_id: p.cliente_id, usos_max: 1, vence_el: vence, nota: `Volver a comprar (automático) · ${p.codigo}`, created_by: null })
         if (eCupon) throw new Error(eCupon.message)
-        await enviarCorreoRecompra({ correo, nombre: cli?.nombre ?? null, cupon: codigoCupon, porcentaje: RECOMPRA_PORCENTAJE, vence })
+        await enviarCorreoRecompra({ correo, nombre: cli?.nombre ?? null, cupon: codigoCupon, porcentaje: sorteo.porcentaje, vence })
         await cerrarEmail(reserva.id); recompra++
       } catch (e) {
         await cerrarEmail(reserva.id, e?.message || 'error'); console.error('auto recompra: falló', p.codigo, e?.message)
