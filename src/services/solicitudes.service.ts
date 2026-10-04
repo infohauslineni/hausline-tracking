@@ -138,3 +138,26 @@ export function suscribirSolicitudes(onChange: () => void) {
   const channel = client.channel('solicitudes-panel').on('postgres_changes', { event: '*', schema: 'public', table: 'solicitudes' }, onChange).subscribe()
   return () => { void client.removeChannel(channel) }
 }
+
+// "Compra directa": el equipo le arma el encargo al cliente desde el panel y le manda el link
+// de pago de la tienda por WhatsApp (migración 202610030002). Devuelve el código SOL-####.
+export type EncargoPanelInput = {
+  nombre: string; whatsapp: string; correo?: string | null; ciudad?: string | null; direccion?: string | null
+  producto: string; productoCodigo?: string | null; marca?: string | null; talla?: string | null; color?: string | null
+  cantidad: number; precioUnitario: number; envio: 'estandar' | 'rapido'; recargo: number; pago: '50' | 'total'
+  imagen?: string | null; clienteId?: string | null
+}
+export async function crearEncargoPanel(i: EncargoPanelInput): Promise<string> {
+  if (!supabase) throw new Error('Supabase no está configurado.')
+  const { data, error } = await supabase.rpc('crear_encargo_panel', {
+    p_nombre: i.nombre, p_whatsapp: i.whatsapp, p_correo: i.correo ?? null, p_ciudad: i.ciudad ?? null, p_direccion: i.direccion ?? null,
+    p_producto: i.producto, p_producto_codigo: i.productoCodigo ?? null, p_marca: i.marca ?? null, p_talla: i.talla ?? null, p_color: i.color ?? null,
+    p_cantidad: i.cantidad, p_precio_unitario: i.precioUnitario, p_envio: i.envio, p_recargo: i.recargo, p_pago: i.pago,
+    p_imagen: i.imagen ?? null, p_cliente_id: i.clienteId ?? null,
+  })
+  if (error) throw error
+  return String(data)
+}
+
+// Link de la tienda donde el cliente ve las cuentas y sube el comprobante.
+export const linkPagoEncargo = (codigo: string) => `https://hauslineshopni.es/checkout/?c=${encodeURIComponent(codigo)}&paso=pago`

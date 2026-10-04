@@ -2,6 +2,7 @@ import { AlertCircle, ArrowRight, Check, Clock3, Copy, Inbox, Mail, MapPin, Mess
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Modal } from '../../components/ui/Modal'
+import { CompraDirectaModal } from '../../components/pedidos/CompraDirectaModal'
 import { CuentaSelect, type DestinoPago } from '../../components/finanzas/CuentaSelect'
 import { DEMO_SOLICITUDES } from '../../data/demoSolicitudes'
 import { isSupabaseConfigured } from '../../lib/supabase'
@@ -76,6 +77,7 @@ export function SolicitudesPage() {
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [busy, setBusy] = useState<string | null>(null)
   const [confirmando, setConfirmando] = useState<Solicitud[] | null>(null)
+  const [compraDirecta, setCompraDirecta] = useState(false)
   const [resultado, setResultado] = useState<{ codigo: string; grupo: Solicitud[]; comprobante: boolean } | null>(null)
 
   const cargar = useCallback(async (silencioso = false) => {
@@ -166,7 +168,9 @@ export function SolicitudesPage() {
     {!isSupabaseConfigured && <div className="preview-banner"><strong>Vista previa local:</strong> mostrando encargos de demostración.</div>}
     <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
       <div><p className="eyebrow">Encargos</p><h1 className="page-title">Encargos por confirmar</h1><p className="page-subtitle">Pedidos hechos desde la web. Verificá la transferencia y confirmá para crear el pedido real.</p></div>
+      <button className="primary-button shrink-0 px-5" onClick={() => setCompraDirecta(true)} title="Le armás el pedido al cliente y le mandás el link para que solo transfiera"><Zap size={17} /> Compra directa</button>
     </div>
+    {compraDirecta && <CompraDirectaModal open onClose={() => setCompraDirecta(false)} onCreada={() => void cargar(true)} />}
 
     <div className="mt-6 flex flex-wrap gap-3">
       <Count value={pendientes.length} label="Por confirmar" tone="accent" />

@@ -1,4 +1,4 @@
-import { ArrowLeft, CreditCard, History, MapPin, MessageCircle, PackagePlus, Pencil, ShoppingBag } from 'lucide-react'
+import { ArrowLeft, CreditCard, Zap, History, MapPin, MessageCircle, PackagePlus, Pencil, ShoppingBag } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -14,6 +14,7 @@ import { ClienteModal } from './ClientesPage'
 import { CuentaWebCard } from '../../components/clientes/CuentaWebCard'
 import { DireccionesClienteCard } from '../../components/clientes/DireccionesClienteCard'
 import { EnvioClienteCard } from '../../components/clientes/EnvioClienteCard'
+import { CompraDirectaModal } from '../../components/pedidos/CompraDirectaModal'
 import { estadoLabel, estadoTone } from '../../constants/orders'
 import { formatDate, PagoModal } from './PagosPage'
 
@@ -27,6 +28,7 @@ export function ClienteDetailPage() {
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [tipoCambio, setTipoCambio] = useState(37)
   const [editOpen, setEditOpen] = useState(false)
+  const [compraOpen, setCompraOpen] = useState(false)
   const [abonoOpen, setAbonoOpen] = useState(false)
 
   const load = () => {
@@ -75,9 +77,11 @@ export function ClienteDetailPage() {
         <a className="subtle-button px-4" href={whatsappUrl(cliente.whatsapp)} target="_blank" rel="noreferrer"><MessageCircle size={16} /> WhatsApp</a>
         <button className="subtle-button px-4" onClick={() => setEditOpen(true)}><Pencil size={16} /> Editar</button>
         {conSaldo.length > 0 && <button className="subtle-button px-4" onClick={() => setAbonoOpen(true)}><CreditCard size={16} /> Registrar abono</button>}
+        <button className="subtle-button px-4" onClick={() => setCompraOpen(true)} title="Le armás el pedido y le mandás el link para que solo transfiera"><Zap size={16} /> Compra directa</button>
         <Link to="/pedidos/nuevo" className="primary-button px-5"><PackagePlus size={17} /> Nuevo pedido</Link>
       </div>
     </header>
+    {compraOpen && <CompraDirectaModal open cliente={cliente} onClose={() => setCompraOpen(false)} />}
 
     {isSupabaseConfigured && <CuentaWebCard clienteId={cliente.id} correoCliente={cliente.correo} />}
     {isSupabaseConfigured && <EnvioClienteCard key={cliente.id + String(cliente.costo_envio ?? "")} cliente={cliente} />}
