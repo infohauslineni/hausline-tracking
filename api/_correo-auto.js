@@ -12,13 +12,13 @@ const primerNombre = (nombre) => String(nombre ?? '').trim().split(/\s+/)[0] || 
 export async function enviarCorreoRecordatorioSaldo({ correo, nombre, codigo, saldo, cordobas, cuentas }) {
   const lista = (cuentas ?? []).slice(0, 4)
     .map((c) => `<br>• <strong>${esc(c.banco)}</strong> (${esc(c.moneda)}): ${esc(c.numero)}${c.titular ? ` · ${esc(c.titular)}` : ''}`).join('')
-  const nota = `Tu pedido <strong>${esc(codigo)}</strong> lleva 2 días disponible para entrega y tiene un saldo pendiente de <strong>US$${Number(saldo).toFixed(2)}</strong>`
-    + `${cordobas ? ` (≈ C$ ${Number(cordobas).toLocaleString('es-NI')})` : ''}. <strong>A partir de mañana</strong> se suman US$5 por cada día en bodega, así que te recomendamos coordinar hoy tu pago y entrega.`
-    + `${lista ? `<br><br>Podés transferir a:${lista}<br><br>Envianos el comprobante por WhatsApp y coordinamos la entrega.` : ''}`
+  const nota = `Su pedido <strong>${esc(codigo)}</strong> lleva 2 días disponible para entrega y tiene un saldo pendiente de <strong>US$${Number(saldo).toFixed(2)}</strong>`
+    + `${cordobas ? ` (≈ C$ ${Number(cordobas).toLocaleString('es-NI')})` : ''}. <strong>A partir de mañana</strong> se suman US$5 por cada día en bodega, así que le recomendamos coordinar hoy su pago y entrega.`
+    + `${lista ? `<br><br>Puede transferir a:${lista}<br><br>Envíenos el comprobante por WhatsApp y coordinamos la entrega.` : ''}`
   await transporteSmtp().sendMail({
     from: remitente(), to: correo,
-    subject: `${codigo}: tu pedido te espera · saldo pendiente US$${Number(saldo).toFixed(2)}`,
-    html: plantillaCorreo({ nombre, codigo, estado: 'disponible_entrega', estadoLabel: 'Tu pedido te espera', nota, urlSeguimiento: urlPedidoCuenta(codigo), esNuevo: false, factura: null, fotos: [], pedirResena: false }),
+    subject: `${codigo}: su pedido le espera · saldo pendiente US$${Number(saldo).toFixed(2)}`,
+    html: plantillaCorreo({ nombre, codigo, estado: 'disponible_entrega', estadoLabel: 'Su pedido le espera', nota, urlSeguimiento: urlPedidoCuenta(codigo), esNuevo: false, factura: null, fotos: [], pedirResena: false }),
   })
 }
 
@@ -26,24 +26,24 @@ export async function enviarCorreoRecordatorioSaldo({ correo, nombre, codigo, sa
 export async function enviarCorreoRecompra({ correo, nombre, cupon, porcentaje, vence }) {
   const url = `${baseTienda()}/?cupon=${encodeURIComponent(cupon)}`
   const venceTxt = vence ? new Intl.DateTimeFormat('es-NI', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${vence}T12:00:00Z`)) : null
-  const nota = `¡Gracias por confiar en HAUSLINE! Como ya tenés tu pedido, te regalamos <strong>${porcentaje}% de descuento</strong> en tu próxima compra con el código `
-    + `<strong style="font-size:16px;letter-spacing:1px">${esc(cupon)}</strong>${venceTxt ? ` (válido hasta el ${esc(venceTxt)})` : ''}. Tocá el botón y el descuento se aplica solo al pagar.`
+  const nota = `¡Gracias por confiar en HAUSLINE! Como ya tiene su pedido, le regalamos <strong>${porcentaje}% de descuento</strong> en su próxima compra con el código `
+    + `<strong style="font-size:16px;letter-spacing:1px">${esc(cupon)}</strong>${venceTxt ? ` (válido hasta el ${esc(venceTxt)})` : ''}. Toque el botón y el descuento se aplica solo al pagar.`
   const n = primerNombre(nombre)
   await transporteSmtp().sendMail({
     from: remitente(), to: correo,
-    subject: `${n ? `${n}, tenés` : 'Tenés'} ${porcentaje}% de descuento en tu próxima compra`,
-    html: plantillaCorreo({ nombre, codigo: null, estado: null, estadoLabel: `Un regalo para vos: ${porcentaje}% OFF`, nota, urlSeguimiento: url, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Ver la tienda con mi descuento', ctaUrl: url, pedirResena: false }),
+    subject: `${n ? `${n}, tiene` : 'Tiene'} ${porcentaje}% de descuento en su próxima compra`,
+    html: plantillaCorreo({ nombre, codigo: null, estado: null, estadoLabel: `Un regalo para usted: ${porcentaje}% OFF`, nota, urlSeguimiento: url, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Ver la tienda con mi descuento', ctaUrl: url, pedirResena: false }),
   })
 }
 
 // (8) RESEÑA: 5 días después de la entrega, si todavía no dejó la suya.
 export async function enviarCorreoRecordatorioResena({ correo, nombre, codigo }) {
   const url = `${baseTienda()}/resena/?c=${encodeURIComponent(codigo)}`
-  const nota = `Esperamos que estés disfrutando tu pedido <strong>${esc(codigo)}</strong>. ¿Nos regalás un minuto para contarnos cómo te fue? Tu reseña (y si querés, una foto) ayuda muchísimo a otros clientes a comprar con confianza.`
+  const nota = `Esperamos que esté disfrutando su pedido <strong>${esc(codigo)}</strong>. ¿Nos regala un minuto para contarnos cómo le fue? Su reseña (y si desea, una foto) ayuda muchísimo a otros clientes a comprar con confianza.`
   await transporteSmtp().sendMail({
     from: remitente(), to: correo,
-    subject: `¿Cómo te fue con tu pedido ${codigo}? ★★★★★`,
-    html: plantillaCorreo({ nombre, codigo, estado: null, estadoLabel: '¿Qué te pareció tu compra?', nota, urlSeguimiento: url, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Dejar mi reseña', ctaUrl: url, pedirResena: false }),
+    subject: `¿Cómo le fue con su pedido ${codigo}? ★★★★★`,
+    html: plantillaCorreo({ nombre, codigo, estado: null, estadoLabel: '¿Qué le pareció su compra?', nota, urlSeguimiento: url, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Dejar mi reseña', ctaUrl: url, pedirResena: false }),
   })
 }
 
@@ -60,14 +60,14 @@ export async function enviarCorreoCarritoAbandonado({ correo, nombre, items, tot
       + `<td class="rowline t-primary" style="padding:10px 0;border-bottom:1px solid #eef0f2;text-align:right;white-space:nowrap;vertical-align:top;font-size:13px;font-weight:600;color:#0b0f19">${Number(it.precio) > 0 ? montoUSDcorto(it.precio) : ''}</td></tr>`
   }).join('')
   const destino = urlDe(lista[0])
-  const nota = `Dejaste ${lista.length === 1 ? 'un producto' : 'unos productos'} a un paso de encargar. Los guardamos para vos: completá tu pedido cuando quieras (las tallas se agotan rápido).`
+  const nota = `Dejó ${lista.length === 1 ? 'un producto' : 'unos productos'} a un paso de encargar. Los guardamos para usted: complete su pedido cuando quiera (las tallas se agotan rápido).`
     + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px">${filas}</table>`
     + `${Number(total) > 0 ? `<p class="t-primary" style="margin:10px 0 0;text-align:right;font-size:14px;color:#0b0f19">Total: <strong>${montoUSDcorto(total)}</strong></p>` : ''}`
   const n = primerNombre(nombre)
   await transporteSmtp().sendMail({
     from: remitente(), to: correo,
-    subject: `${n ? `${n}, tu` : 'Tu'} carrito te está esperando 🛒`,
-    html: plantillaCorreo({ nombre, codigo: null, estado: null, estadoLabel: 'Te quedó algo en el carrito', nota, urlSeguimiento: destino, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Terminar mi pedido', ctaUrl: destino, pedirResena: false }),
+    subject: `${n ? `${n}, su` : 'Su'} carrito le está esperando 🛒`,
+    html: plantillaCorreo({ nombre, codigo: null, estado: null, estadoLabel: 'Le quedó algo en el carrito', nota, urlSeguimiento: destino, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Terminar mi pedido', ctaUrl: destino, pedirResena: false }),
   })
 }
 
@@ -86,12 +86,12 @@ export async function enviarCorreoBajaPrecio({ correo, nombre, items }) {
       + `<td class="rowline" style="padding:10px 0;border-bottom:1px solid #eef0f2;text-align:right;white-space:nowrap;vertical-align:top"><div style="font-size:12px;color:#9aa0ab;text-decoration:line-through">${montoUSDcorto(it.antes)}</div><div class="t-primary" style="font-size:15px;font-weight:800;color:#0b0f19">${montoUSDcorto(it.ahora)}</div></td></tr>`
   }).join('')
   const destino = lista.length === 1 ? urlDe(lista[0]) : `${base}/cuenta/favoritos/`
-  const nota = `${lista.length === 1 ? 'Un producto que guardaste en tus favoritos <strong>bajó de precio</strong>' : `<strong>${lista.length} productos</strong> que guardaste en tus favoritos <strong>bajaron de precio</strong>`}. Las ofertas duran poco y las tallas se agotan: aprovechalo.`
+  const nota = `${lista.length === 1 ? 'Un producto que guardó en sus favoritos <strong>bajó de precio</strong>' : `<strong>${lista.length} productos</strong> que guardó en sus favoritos <strong>bajaron de precio</strong>`}. Las ofertas duran poco y las tallas se agotan: aprovechalo.`
     + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px">${filas}</table>`
   const n = primerNombre(nombre)
   await transporteSmtp().sendMail({
     from: remitente(), to: correo,
-    subject: lista.length === 1 ? `⬇️ Bajó de precio: ${lista[0].nombre}` : `⬇️ ${n ? `${n}, b` : 'B'}ajaron de precio ${lista.length} de tus favoritos`,
+    subject: lista.length === 1 ? `⬇️ Bajó de precio: ${lista[0].nombre}` : `⬇️ ${n ? `${n}, b` : 'B'}ajaron de precio ${lista.length} de sus favoritos`,
     html: plantillaCorreo({ nombre, codigo: null, estado: null, estadoLabel: lista.length === 1 ? '¡Bajó de precio!' : '¡Bajaron de precio!', nota, urlSeguimiento: destino, esNuevo: false, factura: null, fotos: [], ctaTexto: lista.length === 1 ? 'Verlo ahora' : 'Ver mis favoritos', ctaUrl: destino, pedirResena: false }),
   })
 }
@@ -112,9 +112,9 @@ export async function enviarCorreoNovedades({ correo, nombre, tipo, productos, u
   let filas = ''
   for (let i = 0; i < lista.length; i += 2) filas += `<tr>${tarjeta(lista[i])}${lista[i + 1] ? tarjeta(lista[i + 1]) : '<td width="50%"></td>'}</tr>`
   const nuevos = tipo === 'nuevos'
-  const nota = (nuevos ? 'Acaban de entrar productos nuevos a la tienda. Mirá lo que llegó:' : 'Te dejamos lo que más están pidiendo nuestros clientes. ¡Las tallas vuelan!')
+  const nota = (nuevos ? 'Acaban de entrar productos nuevos a la tienda. Mire lo que llegó:' : 'Le dejamos lo que más están pidiendo nuestros clientes. ¡Las tallas vuelan!')
     + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px">${filas}</table>`
-    + `<p style="margin:14px 0 0;font-size:11px;line-height:1.5;color:#9aa0ab">Recibís este correo porque aceptaste novedades de HAUSLINE. <a href="${esc(urlBaja)}" style="color:#9aa0ab">Darme de baja</a></p>`
+    + `<p style="margin:14px 0 0;font-size:11px;line-height:1.5;color:#9aa0ab">Recibe este correo porque aceptó recibir novedades de HAUSLINE. <a href="${esc(urlBaja)}" style="color:#9aa0ab">Darme de baja</a></p>`
   const n = primerNombre(nombre)
   await transporteSmtp().sendMail({
     from: remitente(), to: correo,
@@ -147,7 +147,7 @@ export async function enviarCorreoReporteDiario({ to, r }) {
         </table>
         ${seccion('💰 Disponibles con saldo pendiente', r.disponibles.map((p) => fila(`${esc(p.codigo)} · ${esc(p.cliente)}`, m(p.saldo), `${p.dias} ${p.dias === 1 ? 'día' : 'días'} disponible${p.dias > 2 ? ' · ya cobra bodega' : ''}`)), 'Ninguno: todos los disponibles están pagados.')}
         ${seccion('⏳ Pedidos sin movimiento (7+ días)', r.trabados.map((p) => fila(`${esc(p.codigo)} · ${esc(p.cliente)}`, `${p.dias} días`, esc(p.estado))), 'Ninguno: todo se está moviendo.')}
-        ${seccion('🏦 Saldo de tus cuentas', r.cuentas.map((c) => fila(esc(c.nombre), `${c.moneda === 'USD' ? 'US$' : 'C$'} ${num(c.saldo)}`)), 'Sin cuentas registradas.')}
+        ${seccion('🏦 Saldo de sus cuentas', r.cuentas.map((c) => fila(esc(c.nombre), `${c.moneda === 'USD' ? 'US$' : 'C$'} ${num(c.saldo)}`)), 'Sin cuentas registradas.')}
         ${(r.incompletos ?? []).length ? seccion(`🧩 Productos incompletos en la tienda (${r.incompletos.length})`, r.incompletos.slice(0, 12).map((p) => fila(`${esc(p.codigo)} · ${esc(p.nombre)}`, esc(p.faltas))).concat(r.incompletos.length > 12 ? [fila(`y ${r.incompletos.length - 12} más…`, '')] : []), '') : ''}
         ${r.automatico ? `<p style="margin:18px 0 0;font-size:12px;color:#8b93a7">Correos automáticos de ayer: ${esc(r.automatico)}</p>` : ''}
         <a href="${appUrl}/dashboard" style="display:block;margin-top:22px;background:#050505;color:#fff;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:2px;text-transform:uppercase;text-align:center;padding:15px;border-radius:6px">Abrir el panel</a>

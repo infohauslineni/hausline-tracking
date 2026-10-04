@@ -28,21 +28,21 @@ export const ESTADO_LABEL = {
 }
 
 export const ESTADO_NOTA = {
-  pedido_confirmado: 'Gracias por tu compra. Confirmamos tu pedido y ya comenzamos a prepararlo. Te avisaremos en cada etapa. El tiempo de entrega incluye unos días de preparación (aprox. 4-5 en envío estándar y 3-4 en rápido; algunos productos tardan más) y el resto es tránsito, que empieza a contar cuando tu pedido sale en camino. Las fechas son aproximadas, no exactas: muchas veces las paqueterías retrasan los envíos.',
-  en_preparacion: 'Estamos preparando y revisando tu pedido antes de enviarlo.',
-  control_calidad: 'Tu pedido está pasando por control de calidad antes de despacharlo. Revisá bien las fotos: tenés 24 horas para avisarnos si el producto no coincide con lo que pediste o no cumple tus expectativas. Pasado ese plazo, el pedido sigue su camino.',
-  etiqueta_creada: 'Tu pedido va en tránsito rumbo a Nicaragua. Desde ahora empieza a contar el tiempo de tránsito; la fecha de entrega es aproximada y a veces las paqueterías retrasan los envíos.',
-  despachado: 'Tu pedido va en tránsito rumbo a Nicaragua. Desde ahora empieza a contar el tiempo de tránsito; la fecha de entrega es aproximada y a veces las paqueterías retrasan los envíos.',
-  transito_internacional: 'Tu pedido va en tránsito rumbo a Nicaragua. Desde ahora empieza a contar el tiempo de tránsito; la fecha de entrega es aproximada y a veces las paqueterías retrasan los envíos.',
-  recibido_estados_unidos: 'Tu pedido va en tránsito rumbo a Nicaragua. Desde ahora empieza a contar el tiempo de tránsito; la fecha de entrega es aproximada y a veces las paqueterías retrasan los envíos.',
-  transito_nicaragua: 'Tu pedido va en tránsito rumbo a Nicaragua. Desde ahora empieza a contar el tiempo de tránsito; la fecha de entrega es aproximada y a veces las paqueterías retrasan los envíos.',
-  llego_nicaragua: 'Tu pedido llegó a Nicaragua. Pronto estará disponible para entrega.',
-  disponible_entrega: 'Tu pedido ya está disponible para entrega. Escríbenos para coordinar el envío o retiro.',
-  pagado: '¡Recibimos tu pago! Tu pedido ya quedó apartado y está a la espera de ser entregado. Muy pronto coordinamos la entrega contigo. ¡Muchas gracias por tu compra!',
-  empaquetado: '¡Buenas noticias! Tu pedido ya está empaquetado y listo para envío. Abajo puedes ver la foto de tu paquete: ya va en camino hacia vos. Pronto coordinamos la entrega.',
-  entregado: '¡Tu pedido fue entregado! Esperamos que lo disfrutes muchísimo. Fue un gusto atenderte y te esperamos en tu próxima compra.',
-  cancelado: 'Tu pedido fue cancelado. Si tienes dudas, escríbenos.',
-  incidencia: 'Tenemos una novedad con tu pedido y ya la estamos gestionando. Te contactaremos pronto.',
+  pedido_confirmado: 'Gracias por su compra. Confirmamos su pedido y ya comenzamos a prepararlo. Le avisaremos en cada etapa. El tiempo de entrega incluye unos días de preparación (aprox. 4-5 en envío estándar y 3-4 en rápido; algunos productos tardan más) y el resto es tránsito, que empieza a contar cuando su pedido sale en camino. Las fechas son aproximadas, no exactas: muchas veces las paqueterías retrasan los envíos.',
+  en_preparacion: 'Estamos preparando y revisando su pedido antes de enviarlo.',
+  control_calidad: 'Su pedido está pasando por control de calidad antes de despacharlo. Revise bien las fotos: tiene 24 horas para avisarnos si el producto no coincide con lo que pidió o no cumple sus expectativas. Pasado ese plazo, el pedido sigue su camino.',
+  etiqueta_creada: 'Su pedido va en tránsito rumbo a Nicaragua. Desde ahora empieza a contar el tiempo de tránsito; la fecha de entrega es aproximada y a veces las paqueterías retrasan los envíos.',
+  despachado: 'Su pedido va en tránsito rumbo a Nicaragua. Desde ahora empieza a contar el tiempo de tránsito; la fecha de entrega es aproximada y a veces las paqueterías retrasan los envíos.',
+  transito_internacional: 'Su pedido va en tránsito rumbo a Nicaragua. Desde ahora empieza a contar el tiempo de tránsito; la fecha de entrega es aproximada y a veces las paqueterías retrasan los envíos.',
+  recibido_estados_unidos: 'Su pedido va en tránsito rumbo a Nicaragua. Desde ahora empieza a contar el tiempo de tránsito; la fecha de entrega es aproximada y a veces las paqueterías retrasan los envíos.',
+  transito_nicaragua: 'Su pedido va en tránsito rumbo a Nicaragua. Desde ahora empieza a contar el tiempo de tránsito; la fecha de entrega es aproximada y a veces las paqueterías retrasan los envíos.',
+  llego_nicaragua: 'Su pedido llegó a Nicaragua. Pronto estará disponible para entrega.',
+  disponible_entrega: 'Su pedido ya está disponible para entrega. Escríbanos para coordinar el envío o retiro.',
+  pagado: '¡Recibimos su pago! Su pedido ya quedó apartado y está a la espera de ser entregado. Muy pronto coordinamos la entrega con usted. ¡Muchas gracias por su compra!',
+  empaquetado: '¡Buenas noticias! Su pedido ya está empaquetado y listo para envío. Abajo puede ver la foto de su paquete: ya va en camino hacia usted. Pronto coordinamos la entrega.',
+  entregado: '¡Su pedido fue entregado! Esperamos que lo disfrute muchísimo. Fue un gusto atenderle y le esperamos en su próxima compra.',
+  cancelado: 'Su pedido fue cancelado. Si tiene dudas, escríbanos.',
+  incidencia: 'Tenemos una novedad con su pedido y ya la estamos gestionando. Le contactaremos pronto.',
 }
 
 // Botón de los correos: el seguimiento del pedido SIN necesidad de iniciar sesión. Vive en la
@@ -140,7 +140,7 @@ export function bloqueFactura(factura) {
           <!-- Factura -->
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 30px;">
             <tr><td class="card" style="border:1px solid #e6e8ec;border-radius:12px;padding:20px 18px 16px;">
-              <div style="font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#8b93a7;margin-bottom:14px;">${esPago ? 'Comprobante de pago' : factura.variante === 'saldo' ? 'Tu saldo pendiente' : 'Detalle de tu compra'}</div>
+              <div style="font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#8b93a7;margin-bottom:14px;">${esPago ? 'Comprobante de pago' : factura.variante === 'saldo' ? 'Su saldo pendiente' : 'Detalle de su compra'}</div>
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td style="padding:0 0 10px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#8b93a7;">Producto</td>
@@ -168,17 +168,17 @@ export function bloqueFotos(fotos, estado) {
   const base = ETAPA_BASE[estado] || estado
   const esEmpaque = base === 'empaquetado'
   const esProducto = base === 'disponible_entrega'
-  const alt = esEmpaque ? 'Foto de tu paquete empacado' : 'Foto de tu producto'
+  const alt = esEmpaque ? 'Foto de su paquete empacado' : 'Foto de su producto'
   const img = (f, style) => `<img src="cid:${esc(f.cid)}" alt="${alt}" style="${style}">`
   const varias = fotos.length > 1
   const titulo = esEmpaque
-    ? (varias ? 'Fotos de tu paquete' : 'Foto de tu paquete')
-    : (varias ? 'Fotos de tu producto' : 'Foto de tu producto')
+    ? (varias ? 'Fotos de su paquete' : 'Foto de su paquete')
+    : (varias ? 'Fotos de su producto' : 'Foto de su producto')
   const subtitulo = esEmpaque
-    ? 'Tu pedido ya quedó empaquetado y listo para envío. ¡Va en camino hacia vos!'
+    ? 'Su pedido ya quedó empaquetado y listo para envío. ¡Va en camino hacia usted!'
     : esProducto
-      ? 'Tu pedido ya llegó a HAUSLINE. Estas son las fotos reales de tu producto.'
-      : 'Así se ve tu pedido en nuestro control de calidad.'
+      ? 'Su pedido ya llegó a HAUSLINE. Estas son las fotos reales de su producto.'
+      : 'Así se ve su pedido en nuestro control de calidad.'
 
   // La cuadrícula se adapta a la cantidad para verse bien incluso con muchas fotos:
   //   1 foto  → centrada y grande
@@ -250,21 +250,21 @@ function indiceEtapa(estado) {
 
 // Titular editorial (serif) según la etapa. Se busca por la etapa base.
 const HEADLINE = {
-  pedido_confirmado: 'Tu orden está confirmada',
-  en_preparacion: 'Estamos preparando tu pedido',
-  control_calidad: 'Tu pedido está en control de calidad',
-  transito_internacional: 'Tu pedido está en camino',
-  llego_nicaragua: 'Tu pedido llegó al país de destino',
-  disponible_entrega: 'Tu pedido está disponible para entrega',
-  pagado: 'Confirmamos el pago de tu pedido',
-  empaquetado: 'Tu pedido está empaquetado y listo para envío',
-  entregado: 'Tu pedido fue entregado',
-  cancelado: 'Tu pedido fue cancelado',
-  incidencia: 'Tu pedido requiere atención',
+  pedido_confirmado: 'Su orden está confirmada',
+  en_preparacion: 'Estamos preparando su pedido',
+  control_calidad: 'Su pedido está en control de calidad',
+  transito_internacional: 'Su pedido está en camino',
+  llego_nicaragua: 'Su pedido llegó al país de destino',
+  disponible_entrega: 'Su pedido está disponible para entrega',
+  pagado: 'Confirmamos el pago de su pedido',
+  empaquetado: 'Su pedido está empaquetado y listo para envío',
+  entregado: 'Su pedido fue entregado',
+  cancelado: 'Su pedido fue cancelado',
+  incidencia: 'Su pedido requiere atención',
 }
 export function tituloEstado(estado) {
   const base = ETAPA_BASE[estado] || estado
-  return HEADLINE[base] || 'Actualización de tu pedido'
+  return HEADLINE[base] || 'Actualización de su pedido'
 }
 
 // Progreso del pedido como BARRA (no puntos): los clientes de correo (Gmail/iOS)
@@ -302,12 +302,12 @@ function bloqueWhatsapp() {
   const wa = String(process.env.WHATSAPP_NUMERO || '50578995116').replace(/[^0-9]/g, '')
   return `
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-            <td class="t-primary" style="vertical-align:middle;font-size:14px;font-weight:700;color:#0b0f19;line-height:1.5;">¿Necesitas ayuda?<br><span style="font-size:13px;font-weight:400;color:#8b93a7;">Habla con nosotros por WhatsApp</span></td>
+            <td class="t-primary" style="vertical-align:middle;font-size:14px;font-weight:700;color:#0b0f19;line-height:1.5;">¿Necesita ayuda?<br><span style="font-size:13px;font-weight:400;color:#8b93a7;">Habla con nosotros por WhatsApp</span></td>
             <td style="vertical-align:middle;text-align:right;white-space:nowrap;"><a class="t-primary underline-accent" href="https://wa.me/${wa}" target="_blank" style="font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#0b0f19;text-decoration:none;border-bottom:2px solid #0b0f19;padding-bottom:2px;">Escribir</a></td>
           </tr></table>`
 }
 
-// Caja de "deja tu reseña" (se muestra en el correo de pedido entregado). El link va a
+// Caja de "deja su reseña" (se muestra en el correo de pedido entregado). El link va a
 // la tienda (/resena/?c=CODE), donde el cliente deja su reseña (queda pendiente de
 // aprobación). Base del sitio en CATALOGO_BASE_URL (mismo dominio del catálogo).
 function bloqueResena(codigo) {
@@ -317,8 +317,8 @@ function bloqueResena(codigo) {
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr><td class="card" style="border:1px solid #e6e8ec;border-radius:8px;padding:20px;text-align:center;">
               <div class="t-primary" style="font-size:18px;letter-spacing:4px;color:#0b0f19;">★★★★★</div>
-              <div class="t-primary" style="font-size:16px;font-weight:700;color:#0b0f19;margin-top:8px;">¿Cómo estuvo tu experiencia?</div>
-              <div style="font-size:13px;line-height:1.6;color:#8b93a7;margin:6px 0 14px;">Tu opinión ayuda a otros clientes a comprar con confianza.</div>
+              <div class="t-primary" style="font-size:16px;font-weight:700;color:#0b0f19;margin-top:8px;">¿Cómo estuvo su experiencia?</div>
+              <div style="font-size:13px;line-height:1.6;color:#8b93a7;margin:6px 0 14px;">Su opinión ayuda a otros clientes a comprar con confianza.</div>
               <a class="btn-outline" href="${url}" target="_blank" style="display:inline-block;border:1px solid #050505;color:#050505;text-decoration:none;font-weight:700;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;padding:12px 26px;border-radius:6px;">Dejar mi reseña</a>
             </td></tr>
           </table>`
@@ -328,16 +328,16 @@ export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, url
   const btnUrl = ctaUrl || urlSeguimiento
   const btnTxt = ctaTexto || 'Ver mi pedido'
   const esEntregado = (ETAPA_BASE[estado] || estado) === 'entregado'
-  // Caja "deja tu reseña": la decide quien llama (pagado y/o entregado); si no lo indica,
+  // Caja "deja su reseña": la decide quien llama (pagado y/o entregado); si no lo indica,
   // se conserva el comportamiento histórico de mostrarla al entregar.
   const mostrarResena = pedirResena ?? esEntregado
   const intro = esNuevo
-    ? `Gracias por tu compra. Confirmamos tu pedido y ya comenzamos a gestionarlo.`
-    : `Tu pedido tiene una nueva actualización.`
+    ? `Gracias por su compra. Confirmamos su pedido y ya comenzamos a gestionarlo.`
+    : `Su pedido tiene una nueva actualización.`
   // Texto de previsualización (lo que se ve en la bandeja antes de abrir el correo).
   const preheader = esNuevo
-    ? `Confirmamos tu pedido ${codigo}. Sigue cada etapa desde aquí.`
-    : `${codigo}: ${estadoLabel}. Revisa el detalle del seguimiento.`
+    ? `Confirmamos su pedido ${codigo}. Siga cada etapa desde aquí.`
+    : `${codigo}: ${estadoLabel}. Revise el detalle del seguimiento.`
   const anio = new Date().getFullYear()
   // Sin etapa (recordatorios, cupones, carrito…): el titular es la etiqueta propia del correo.
   const titulo = estado ? tituloEstado(estado) : (estadoLabel || tituloEstado(estado))
@@ -453,7 +453,7 @@ export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, url
             <td class="t-primary" style="font-size:13px;font-weight:800;letter-spacing:3px;color:#0b0f19;">HAUSLINE</td>
             <td style="text-align:right;font-size:11px;color:#9aa0ab;line-height:1.6;">${esc(correoContacto)}<br>${esc(telContacto)}</td>
           </tr></table>
-          <p style="margin:14px 0 0;font-size:10px;color:#c4c9d0;">© ${anio} Hausline · King of Shoes · Aviso automático de tu pedido</p>
+          <p style="margin:14px 0 0;font-size:10px;color:#c4c9d0;">© ${anio} Hausline · King of Shoes · Aviso automático de su pedido</p>
         </td></tr>
 
       </table>
@@ -467,7 +467,7 @@ function montoNIO(valor) {
   return `C$ ${(Number(valor) || 0).toLocaleString('es-NI', { maximumFractionDigits: 0 })}`
 }
 
-// ── Aviso INTERNO (para ti) cuando cae un ENCARGO WEB nuevo ──────────────────
+// ── Aviso INTERNO (para usted) cuando cae un ENCARGO WEB nuevo ──────────────────
 // No va al cliente: avisa al negocio que entró una solicitud desde el catálogo,
 // con el resumen (cliente, producto, montos, envío) y un botón al panel de
 // "Encargos por confirmar". El encargo vence en 24 h si no se confirma.
@@ -662,7 +662,7 @@ export async function enviarCorreoEncargoAdminGrupo({ to, solicitudes, pagoRepor
   // El correo al admin se manda cuando el cliente REPORTA el pago (subió comprobante o tocó
   // "ya pagué"), no al crear el encargo — así el buzón no se llena de encargos sin pagar.
   const subject = pagoReportado
-    ? `💰 Pago reportado · ${nombre} · ${solicitudes.length} ${solicitudes.length === 1 ? 'producto' : 'productos'} · ${monto} — verificá`
+    ? `💰 Pago reportado · ${nombre} · ${solicitudes.length} ${solicitudes.length === 1 ? 'producto' : 'productos'} · ${monto} — verifique`
     : `Nuevo encargo · ${nombre} · ${solicitudes.length} productos · ${monto}`
   const transporter = transporteSmtp()
   await transporter.sendMail({
@@ -680,7 +680,7 @@ export async function enviarCorreoEncargoAdminGrupo({ to, solicitudes, pagoRepor
 export async function enviarCorreoBodega({ correo, nombre, codigo, dias, diasCobrados, cargo, cordobas }) {
   const urlSeguimiento = urlPedidoCuenta(codigo)
   const cargoTxt = montoUSD(cargo) + (cordobas ? ` (≈ C$ ${Number(cordobas).toLocaleString('es-NI')})` : '')
-  const nota = `Tu pedido lleva <strong>${dias} días</strong> disponible para entrega. Pasados los 2 días de gracia, se cobran US$ 5 por cada día extra en bodega. Hasta hoy se han sumado <strong>${cargoTxt}</strong> (${diasCobrados} ${diasCobrados === 1 ? 'día' : 'días'}) a tu factura final. Coordiná tu entrega y pago para que no siga subiendo.`
+  const nota = `Su pedido lleva <strong>${dias} días</strong> disponible para entrega. Pasados los 2 días de gracia, se cobran US$ 5 por cada día extra en bodega. Hasta hoy se han sumado <strong>${cargoTxt}</strong> (${diasCobrados} ${diasCobrados === 1 ? 'día' : 'días'}) a su factura final. Coordine su entrega y pago para que no siga subiendo.`
 
   const transporter = transporteSmtp()
 
@@ -698,16 +698,16 @@ export async function enviarCorreoBodega({ correo, nombre, codigo, dias, diasCob
 export async function enviarCorreoAbandono({ correo, nombre, codigo, producto }) {
   const base = (process.env.CATALOGO_BASE_URL ?? 'https://hauslineshopni.es/').replace(/\/$/, '')
   const checkoutUrl = `${base}/checkout/?c=${encodeURIComponent(codigo)}`
-  const nota = `Tu pedido ${codigo}${producto ? ` de <strong>${esc(producto)}</strong>` : ''} quedó a un paso de confirmarse. Completá tu pago y lo mandamos a pedir enseguida — recordá que el encargo se cancela solo a las 24 horas de creado.`
+  const nota = `Su pedido ${codigo}${producto ? ` de <strong>${esc(producto)}</strong>` : ''} quedó a un paso de confirmarse. Complete su pago y lo mandamos a pedir enseguida — recuerde que el encargo se cancela solo a las 24 horas de creado.`
 
   const transporter = transporteSmtp()
 
   await transporter.sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to: correo,
-    subject: `${codigo}: completá tu pedido antes de que expire`,
+    subject: `${codigo}: complete su pedido antes de que expire`,
     html: plantillaCorreo({
-      nombre, codigo, estado: null, estadoLabel: 'Completa tu pedido', nota,
+      nombre, codigo, estado: null, estadoLabel: 'Complete su pedido', nota,
       urlSeguimiento: checkoutUrl, esNuevo: false, factura: null, fotos: [],
       ctaTexto: 'Completar mi pedido', ctaUrl: checkoutUrl,
     }),
@@ -722,13 +722,13 @@ export async function enviarCorreoEncargoPorVencer({ correo, nombre, codigo, pro
   const checkoutUrl = `${base}/checkout/?c=${encodeURIComponent(codigo)}`
   const hora = vence ? new Intl.DateTimeFormat('es-NI', { timeZone: 'America/Managua', hour: 'numeric', minute: '2-digit' }).format(new Date(vence)) : null
   const lista = (productos ?? []).slice(0, 3).map((p) => `<strong>${esc(p)}</strong>`).join(', ') + ((productos ?? []).length > 3 ? ' y más' : '')
-  const nota = `Tu encargo ${codigo}${lista ? ` (${lista})` : ''} vence${hora ? ` hoy a las <strong>${esc(hora)}</strong>` : ' en unas 3 horas'} (hora de Nicaragua). Si no recibimos tu pago antes, se cancela solo y el producto queda libre. Completá tu pago y enviá tu comprobante para que lo mandemos a pedir.`
+  const nota = `Su encargo ${codigo}${lista ? ` (${lista})` : ''} vence${hora ? ` hoy a las <strong>${esc(hora)}</strong>` : ' en unas 3 horas'} (hora de Nicaragua). Si no recibimos su pago antes, se cancela solo y el producto queda libre. Complete su pago y envíe su comprobante para que lo mandemos a pedir.`
   await transporteSmtp().sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to: correo,
-    subject: `⏰ ${codigo}: tu encargo vence en unas 3 horas`,
+    subject: `⏰ ${codigo}: su encargo vence en unas 3 horas`,
     html: plantillaCorreo({
-      nombre, codigo, estado: null, estadoLabel: 'Tu encargo está por vencer', nota,
+      nombre, codigo, estado: null, estadoLabel: 'Su encargo está por vencer', nota,
       urlSeguimiento: checkoutUrl, esNuevo: false, factura: null, fotos: [],
       ctaTexto: 'Pagar y enviar comprobante', ctaUrl: checkoutUrl, pedirResena: false,
     }),
@@ -743,36 +743,36 @@ export async function enviarCorreoEncargoPorVencer({ correo, nombre, codigo, pro
 export async function enviarCorreoEsperandoPago({ correo, nombre, codigo, producto }) {
   const base = (process.env.CATALOGO_BASE_URL ?? 'https://hauslineshopni.es/').replace(/\/$/, '')
   const checkoutUrl = `${base}/checkout/?c=${encodeURIComponent(codigo)}`
-  const nota = `¡Recibimos tu pedido <strong>${esc(codigo)}</strong>!${producto ? ` de <strong>${esc(producto)}</strong>` : ''} Estamos <strong>esperando tu pago</strong> para confirmarlo. Realizá la transferencia y enviá tu comprobante desde el botón de abajo. Guardá tu código: es tu referencia para cualquier consulta. Tenemos tu pedido en espera por <strong>24 horas</strong>; si no recibimos el pago, se cancela solo.<br><br><span style="font-size:12px;color:#8b93a7;">Importante: los pedidos por encargo <strong>no admiten devoluciones de dinero ni cambios</strong>.</span>`
+  const nota = `¡Recibimos su pedido <strong>${esc(codigo)}</strong>!${producto ? ` de <strong>${esc(producto)}</strong>` : ''} Estamos <strong>esperando su pago</strong> para confirmarlo. Realice la transferencia y envíe su comprobante desde el botón de abajo. Guarde su código: es su referencia para cualquier consulta. Tenemos su pedido en espera por <strong>24 horas</strong>; si no recibimos el pago, se cancela solo.<br><br><span style="font-size:12px;color:#8b93a7;">Importante: los pedidos por encargo <strong>no admiten devoluciones de dinero ni cambios</strong>.</span>`
 
   const transporter = transporteSmtp()
 
   await transporter.sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to: correo,
-    subject: `${codigo}: recibimos tu pedido — esperamos tu pago`,
+    subject: `${codigo}: recibimos su pedido — esperamos su pago`,
     html: plantillaCorreo({
-      nombre, codigo, estado: null, estadoLabel: 'Esperando tu pago', nota,
+      nombre, codigo, estado: null, estadoLabel: 'Esperando su pago', nota,
       urlSeguimiento: checkoutUrl, esNuevo: false, factura: null, fotos: [],
       ctaTexto: 'Pagar y enviar comprobante', ctaUrl: checkoutUrl,
     }),
   })
 }
 
-// Versión AGRUPADA de "esperamos tu pago": un carrito con varios productos → UN correo al
+// Versión AGRUPADA de "esperamos su pago": un carrito con varios productos → UN correo al
 // cliente con todos sus códigos. El botón lleva al checkout con todos (separados por coma),
 // igual que el flujo del carrito de la tienda.
 export async function enviarCorreoEsperandoPagoGrupo({ correo, nombre, codigos, cantidad }) {
   const base = (process.env.CATALOGO_BASE_URL ?? 'https://hauslineshopni.es/').replace(/\/$/, '')
   const checkoutUrl = `${base}/checkout/?c=${encodeURIComponent(codigos.join(','))}`
-  const nota = `¡Recibimos tu pedido de <strong>${cantidad} productos</strong>! Estamos <strong>esperando tu pago</strong> para confirmarlo. Realizá la transferencia y enviá tu comprobante desde el botón de abajo. Tenemos tu pedido en espera por <strong>24 horas</strong>; si no recibimos el pago, se cancela solo.<br><br><span style="font-size:12px;color:#8b93a7;">Importante: los pedidos por encargo <strong>no admiten devoluciones de dinero ni cambios</strong>.</span>`
+  const nota = `¡Recibimos su pedido de <strong>${cantidad} productos</strong>! Estamos <strong>esperando su pago</strong> para confirmarlo. Realice la transferencia y envíe su comprobante desde el botón de abajo. Tenemos su pedido en espera por <strong>24 horas</strong>; si no recibimos el pago, se cancela solo.<br><br><span style="font-size:12px;color:#8b93a7;">Importante: los pedidos por encargo <strong>no admiten devoluciones de dinero ni cambios</strong>.</span>`
   const transporter = transporteSmtp()
   await transporter.sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to: correo,
-    subject: `Recibimos tu pedido de ${cantidad} productos — esperamos tu pago`,
+    subject: `Recibimos su pedido de ${cantidad} productos — esperamos su pago`,
     html: plantillaCorreo({
-      nombre, codigo: codigos[0], estado: null, estadoLabel: 'Esperando tu pago', nota,
+      nombre, codigo: codigos[0], estado: null, estadoLabel: 'Esperando su pago', nota,
       urlSeguimiento: checkoutUrl, esNuevo: false, factura: null, fotos: [],
       ctaTexto: 'Pagar y enviar comprobante', ctaUrl: checkoutUrl,
     }),
@@ -784,14 +784,14 @@ export async function enviarCorreoEsperandoPagoGrupo({ correo, nombre, codigos, 
 // la etapa de tránsito y un botón al seguimiento. Sin factura ni reseña. Lanza si SMTP falla.
 export async function enviarCorreoRetraso({ correo, nombre, codigo, estado }) {
   const urlSeguimiento = urlPedidoCuenta(codigo)
-  const nota = `Queremos contarte que tu pedido <strong>${esc(codigo)}</strong> está tardando un poco más de lo habitual en su tránsito internacional. Los envíos internacionales a veces tienen demoras en aduana o transporte que no dependen de nosotros; ya le estamos dando seguimiento para que llegue lo antes posible. Gracias por tu paciencia y por confiar en nosotros — cualquier duda, escríbenos.`
+  const nota = `Queremos contarle que su pedido <strong>${esc(codigo)}</strong> está tardando un poco más de lo habitual en su tránsito internacional. Los envíos internacionales a veces tienen demoras en aduana o transporte que no dependen de nosotros; ya le estamos dando seguimiento para que llegue lo antes posible. Gracias por su paciencia y por confiar en nosotros — cualquier duda, escríbanos.`
 
   const transporter = transporteSmtp()
 
   await transporter.sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to: correo,
-    subject: `Pedido ${codigo}: tu envío está tardando un poco más`,
+    subject: `Pedido ${codigo}: su envío está tardando un poco más`,
     html: plantillaCorreo({
       nombre, codigo, estado: estado ?? null, estadoLabel: 'Aviso de retraso', nota,
       urlSeguimiento, esNuevo: false, factura: null, fotos: [],
@@ -802,13 +802,13 @@ export async function enviarCorreoRetraso({ correo, nombre, codigo, estado }) {
 // Frase (al cliente) que explica el motivo de la cancelación. Espejo de MOTIVO_CANCELACION_RAZON
 // en src/constants/orders.ts (los api son JS independientes, no importan el TS de la app).
 const MOTIVO_CANCELACION_RAZON = {
-  no_disponible: 'el producto que elegiste ya no está disponible con el proveedor',
-  sin_venta: 'el producto que elegiste ya no lo tenemos a la venta',
-  no_entregado: 'tu paquete no pudo entregarse',
-  cliente_cancelo: 'nos pediste cancelarlo',
+  no_disponible: 'el producto que eligió ya no está disponible con el proveedor',
+  sin_venta: 'el producto que eligió ya no lo tenemos a la venta',
+  no_entregado: 'su paquete no pudo entregarse',
+  cliente_cancelo: 'nos pidió cancelarlo',
   otro: 'no pudimos completarlo',
 }
-const POLITICA_DEVOLUCION = 'El reembolso se procesa en un plazo de 1 a 3 días hábiles y se devuelve a la misma cuenta desde la que realizaste el pago.'
+const POLITICA_DEVOLUCION = 'El reembolso se procesa en un plazo de 1 a 3 días hábiles y se devuelve a la misma cuenta desde la que realizó el pago.'
 
 // Correo de CANCELACIÓN al cliente. Lo dispara el panel al confirmar la cancelación (no el
 // webhook, para que lleve el motivo real y el monto de la devolución). Explica el motivo y,
@@ -817,9 +817,9 @@ export async function enviarCorreoCancelacion({ correo, nombre, codigo, motivo, 
   const razon = MOTIVO_CANCELACION_RAZON[motivo] || MOTIVO_CANCELACION_RAZON.otro
   const hayReembolso = (Number(monto) || 0) > 0
   const urlSeguimiento = urlPedidoCuenta(codigo)
-  let nota = `Lamentamos informarte que tu pedido <strong>${esc(codigo)}</strong> fue cancelado porque ${razon}.`
+  let nota = `Lamentamos informarle que su pedido <strong>${esc(codigo)}</strong> fue cancelado porque ${razon}.`
   if (hayReembolso) nota += ` Ya iniciamos la <strong>devolución de ${montoUSD(monto)}</strong> que habías pagado. ${POLITICA_DEVOLUCION}`
-  nota += ' Cualquier duda quedamos a la orden y gracias por tu comprensión.'
+  nota += ' Cualquier duda quedamos a la orden y gracias por su comprensión.'
 
   const transporter = transporteSmtp()
 
@@ -828,7 +828,7 @@ export async function enviarCorreoCancelacion({ correo, nombre, codigo, motivo, 
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to: correo,
     ...(bccArchivo ? { bcc: bccArchivo } : {}),
-    subject: `Pedido ${codigo}: tu pedido fue cancelado`,
+    subject: `Pedido ${codigo}: su pedido fue cancelado`,
     html: plantillaCorreo({
       nombre, codigo, estado: 'cancelado', estadoLabel: ESTADO_LABEL.cancelado, nota,
       urlSeguimiento, esNuevo: false, factura: null, fotos: [],
@@ -841,10 +841,10 @@ export async function enviarCorreoCancelacion({ correo, nombre, codigo, motivo, 
 // (al crear el pedido) o del pago (al entregarlo).
 export async function enviarCorreoPedido({ correo, nombre, codigo, estado, esNuevo, factura, fotos, pedirResena, entrega }) {
   const estadoLabel = ESTADO_LABEL[estado]
-  let nota = ESTADO_NOTA[estado] ?? 'Tu pedido fue actualizado.'
+  let nota = ESTADO_NOTA[estado] ?? 'Su pedido fue actualizado.'
   // Disponible con saldo: se le dice cuánto falta y cómo pagarlo (la factura va abajo con el detalle).
-  if (estado === 'disponible_entrega' && factura?.variante === 'saldo') nota = `Tu pedido ya está disponible para entrega. Tenés un saldo pendiente de US${Number(factura.saldo).toFixed(2)}: podés pagarlo por transferencia y enviarnos el comprobante por WhatsApp, o al recibirlo. Escríbenos para coordinar el envío o retiro.`
-  else if (estado === 'disponible_entrega' && factura?.variante === 'pago') nota = 'Tu pedido ya está disponible para entrega y está completamente pagado. Escríbenos para coordinar el envío o retiro.'
+  if (estado === 'disponible_entrega' && factura?.variante === 'saldo') nota = `Su pedido ya está disponible para entrega. Tiene un saldo pendiente de US${Number(factura.saldo).toFixed(2)}: puede pagarlo por transferencia y enviarnos el comprobante por WhatsApp, o al recibirlo. Escríbanos para coordinar el envío o retiro.`
+  else if (estado === 'disponible_entrega' && factura?.variante === 'pago') nota = 'Su pedido ya está disponible para entrega y está completamente pagado. Escríbanos para coordinar el envío o retiro.'
   // Disponible: dirección + envío + total con envío; el botón lleva a confirmar la dirección.
   if (entrega?.html) nota += entrega.html
   const urlSeguimiento = urlPedidoCuenta(codigo)
@@ -893,17 +893,17 @@ export async function enviarCorreoPedido({ correo, nombre, codigo, estado, esNue
 // ── Correo POR PRODUCTO: actualización de UN producto dentro de un pedido de varios ──
 // Cuando un producto del pedido cambia de etapa (recibido / enviado / entregado), el cliente
 // recibe un correo sobre ESE producto. El de "recibido" lleva su foto de control de calidad.
-const ITEM_ESTADO_LABEL = { control_calidad: 'Control de calidad de tu producto', recibido: 'Producto recibido y revisado', enviado: 'Producto en camino', entregado: 'Producto entregado' }
+const ITEM_ESTADO_LABEL = { control_calidad: 'Control de calidad de su producto', recibido: 'Producto recibido y revisado', enviado: 'Producto en camino', entregado: 'Producto entregado' }
 const ITEM_ESTADO_NOTA = {
-  control_calidad: (p) => `Tu producto <strong>${esc(p)}</strong> está pasando por <strong>control de calidad</strong> antes de despacharlo. Mirá las fotos reales de la revisión abajo.`,
-  recibido: (p) => `¡Buenas noticias! Tu producto <strong>${esc(p)}</strong> ya llegó a HAUSLINE y pasó el <strong>control de calidad</strong>. Mirá las fotos de revisión abajo. Te avisaremos cuando esté disponible para entrega.`,
-  enviado: (p) => `Tu producto <strong>${esc(p)}</strong> ya va en camino. Te avisamos apenas esté disponible para que lo recibás.`,
-  entregado: (p) => `Tu producto <strong>${esc(p)}</strong> fue entregado. ¡Gracias por comprar en Hausline!`,
+  control_calidad: (p) => `Su producto <strong>${esc(p)}</strong> está pasando por <strong>control de calidad</strong> antes de despacharlo. Mire las fotos reales de la revisión abajo.`,
+  recibido: (p) => `¡Buenas noticias! Su producto <strong>${esc(p)}</strong> ya llegó a HAUSLINE y pasó el <strong>control de calidad</strong>. Mire las fotos de revisión abajo. Le avisaremos cuando esté disponible para entrega.`,
+  enviado: (p) => `Su producto <strong>${esc(p)}</strong> ya va en camino. Le avisamos apenas esté disponible para que lo reciba.`,
+  entregado: (p) => `Su producto <strong>${esc(p)}</strong> fue entregado. ¡Gracias por comprar en Hausline!`,
 }
 export async function enviarCorreoItemEstado({ correo, nombre, codigo, producto, estadoItem, fotos }) {
   const label = ITEM_ESTADO_LABEL[estadoItem]
   if (!label) return false
-  const nota = (ITEM_ESTADO_NOTA[estadoItem] || (() => `Tu producto <strong>${esc(producto)}</strong> fue actualizado.`))(producto)
+  const nota = (ITEM_ESTADO_NOTA[estadoItem] || (() => `Su producto <strong>${esc(producto)}</strong> fue actualizado.`))(producto)
   const urlSeguimiento = urlPedidoCuenta(codigo)
   const transporter = transporteSmtp()
   const attachments = []
@@ -935,9 +935,9 @@ export async function enviarCorreoBienvenida({ correo, nombre }) {
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:14px;padding:40px 32px;">
       <tr><td style="text-align:center;font-weight:800;letter-spacing:6px;font-size:20px;">HAUSLINE</td></tr>
       <tr><td style="padding-top:32px;font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.2;">${primer ? `Bienvenido, ${esc(primer)}.` : 'Bienvenido.'}</td></tr>
-      <tr><td style="padding-top:14px;font-size:15px;line-height:1.6;color:#4a4a4a;">Tu cuenta de HAUSLINE ya está activa. Desde <b>Mi cuenta</b> vas a ver tus pedidos, su estado y su historial en tiempo real, y te avisaremos por correo cada vez que avancen.</td></tr>
+      <tr><td style="padding-top:14px;font-size:15px;line-height:1.6;color:#4a4a4a;">Su cuenta de HAUSLINE ya está activa. Desde <b>Mi cuenta</b> va a ver sus pedidos, su estado y su historial en tiempo real, y le avisaremos por correo cada vez que avancen.</td></tr>
       <tr><td style="padding-top:28px;"><a href="${url}" target="_blank" style="display:block;background:#050505;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:2px;text-transform:uppercase;text-align:center;padding:17px 20px;border-radius:6px;">Ir a mi cuenta</a></td></tr>
-      <tr><td style="padding-top:24px;font-size:12px;line-height:1.6;color:#8b8b8b;">¿Compraste antes con este mismo correo? Tus pedidos aparecen solos en tu cuenta.</td></tr>
+      <tr><td style="padding-top:24px;font-size:12px;line-height:1.6;color:#8b8b8b;">¿Compró antes con este mismo correo? Sus pedidos aparecen solos en su cuenta.</td></tr>
     </table>
   </td></tr></table></body></html>`
   const transporter = transporteSmtp()
@@ -951,7 +951,7 @@ export async function enviarCorreoBienvenida({ correo, nombre }) {
 
 // ─────────────── Transporte SMTP (todos los correos del sistema salen por acá) ───────────────
 // Gmail marca como LEÍDO todo lo que sale de la propia cuenta, incluida la copia de archivo
-// (BCC a alerta@) y los avisos al admin. Entonces las etiquetas de Gmail ("Esperamos tu pago",
+// (BCC a alerta@) y los avisos al admin. Entonces las etiquetas de Gmail ("Esperamos su pago",
 // "Orden confirmada"…) no mostraban el contador de no leídos. Tras enviar, si la cuenta que envía
 // está entre los destinatarios, se entra por IMAP (misma contraseña de aplicación) y esa copia se
 // marca como NO leída; los filtros de Gmail le siguen poniendo la etiqueta. Best-effort: si falla,
@@ -1023,7 +1023,7 @@ export async function enviarCorreoReembolsoAdmin({ to, s }) {
       <tr><td style="padding:26px 24px">
         <p style="margin:0 0 6px;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#b45309;font-weight:700">Solicitud de cancelación · revisar</p>
         <h1 style="margin:0 0 14px;font-size:20px;color:#0b0f19">${esc(s.nombre_cliente || 'Un cliente')} pidió cancelar el pedido ${esc(s.codigo)}</h1>
-        <p style="margin:0 0 16px;font-size:14px;color:#374151;line-height:1.5">No se canceló nada todavía: el reembolso solo se hace si confirmás que el motivo es real.</p>
+        <p style="margin:0 0 16px;font-size:14px;color:#374151;line-height:1.5">No se canceló nada todavía: el reembolso solo se hace si confirma que el motivo es real.</p>
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
           ${fila('Etapa del pedido', esc(s.estado_pedido))}
           ${fila('Motivo', esc(s.motivo_label))}
@@ -1049,30 +1049,30 @@ export async function enviarCorreoReembolsoAdmin({ to, s }) {
 // Al CLIENTE: su solicitud NO se aprobó. Puede seguir con el pedido o cancelarlo sin reembolso.
 export async function enviarCorreoReembolsoRechazado({ correo, nombre, codigo, estado, respuesta, montoPagado }) {
   const url = `https://hauslineshopni.es/cuenta/pedido/?id=${encodeURIComponent(codigo)}`
-  let nota = `Revisamos tu solicitud de cancelación del pedido <strong>${esc(codigo)}</strong> y <strong>no pudimos aprobar el reembolso</strong>.`
+  let nota = `Revisamos su solicitud de cancelación del pedido <strong>${esc(codigo)}</strong> y <strong>no pudimos aprobar el reembolso</strong>.`
   if (respuesta) nota += ` ${esc(respuesta)}`
-  nota += ` Ahora podés elegir: <strong>seguir con tu pedido</strong> (sigue su curso normal) o <strong>cancelarlo sin reembolso</strong>${Number(montoPagado) > 0 ? `, perdiendo lo pagado (${montoUSD(montoPagado)})` : ''}. Elegí desde Mi cuenta <strong>en las próximas 48 horas</strong>; si no elegís, tu pedido sigue su curso.`
+  nota += ` Ahora puede elegir: <strong>seguir con su pedido</strong> (sigue su curso normal) o <strong>cancelarlo sin reembolso</strong>${Number(montoPagado) > 0 ? `, perdiendo lo pagado (${montoUSD(montoPagado)})` : ''}. Elija desde Mi cuenta <strong>en las próximas 48 horas</strong>; si no elige, su pedido sigue su curso.`
   await transporteSmtp().sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to: correo,
-    subject: `Pedido ${codigo}: tu solicitud de cancelación no fue aprobada`,
+    subject: `Pedido ${codigo}: su solicitud de cancelación no fue aprobada`,
     html: plantillaCorreo({
-      nombre, codigo, estado, estadoLabel: ESTADO_LABEL[estado] || 'Tu pedido', nota,
+      nombre, codigo, estado, estadoLabel: ESTADO_LABEL[estado] || 'Su pedido', nota,
       urlSeguimiento: url, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Elegir qué hacer', ctaUrl: url, pedirResena: false,
     }),
   })
 }
 
-// Al CLIENTE: recibimos tu solicitud de cancelación; queda EN REVISIÓN (nada se canceló aún).
+// Al CLIENTE: recibimos su solicitud de cancelación; queda EN REVISIÓN (nada se canceló aún).
 export async function enviarCorreoReembolsoRecibido({ correo, nombre, codigo, estado, s }) {
   const url = `https://hauslineshopni.es/cuenta/pedido/?id=${encodeURIComponent(codigo)}`
-  const nota = `Recibimos tu <strong>solicitud de cancelación y reembolso</strong> del pedido <strong>${esc(codigo)}</strong>. Está <strong>en revisión</strong>: la vamos a revisar y te avisamos por correo si se aprueba o no.`
+  const nota = `Recibimos su <strong>solicitud de cancelación y reembolso</strong> del pedido <strong>${esc(codigo)}</strong>. Está <strong>en revisión</strong>: la vamos a revisar y le avisamos por correo si se aprueba o no.`
     + `<br><br><strong>Motivo:</strong> ${esc(s.motivo_label)}<br><strong>Reembolso a:</strong> ${esc(s.banco)} · ****${esc(String(s.numero_cuenta || '').slice(-4))} (${esc(s.titular)})`
-    + `<br><br>El reembolso solo se aprueba si el motivo es real y se puede verificar. Mientras tanto, tu pedido sigue su curso normal.`
+    + `<br><br>El reembolso solo se aprueba si el motivo es real y se puede verificar. Mientras tanto, su pedido sigue su curso normal.`
   await transporteSmtp().sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to: correo,
-    subject: `Pedido ${codigo}: recibimos tu solicitud de reembolso (en revisión)`,
+    subject: `Pedido ${codigo}: recibimos su solicitud de reembolso (en revisión)`,
     html: plantillaCorreo({
       nombre, codigo, estado, estadoLabel: 'Solicitud en revisión', nota,
       urlSeguimiento: url, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Ver mi solicitud', ctaUrl: url, pedirResena: false,
@@ -1083,14 +1083,14 @@ export async function enviarCorreoReembolsoRecibido({ correo, nombre, codigo, es
 // Al CLIENTE: su solicitud se APROBÓ → pedido cancelado y reembolso a la cuenta que indicó.
 export async function enviarCorreoReembolsoAprobado({ correo, nombre, codigo, monto, banco, numeroCuenta, titular, respuesta }) {
   const url = `https://hauslineshopni.es/cuenta/pedido/?id=${encodeURIComponent(codigo)}`
-  let nota = `Revisamos tu solicitud y la <strong>aprobamos</strong>: tu pedido <strong>${esc(codigo)}</strong> quedó cancelado.`
-  if (Number(monto) > 0) nota += ` Te reembolsamos <strong>${montoUSD(monto)}</strong> a tu cuenta ${esc(banco)} · ****${esc(String(numeroCuenta || '').slice(-4))} a nombre de ${esc(titular)}. El reembolso se procesa en un plazo de 1 a 3 días hábiles.`
+  let nota = `Revisamos su solicitud y la <strong>aprobamos</strong>: su pedido <strong>${esc(codigo)}</strong> quedó cancelado.`
+  if (Number(monto) > 0) nota += ` Le reembolsamos <strong>${montoUSD(monto)}</strong> a su cuenta ${esc(banco)} · ****${esc(String(numeroCuenta || '').slice(-4))} a nombre de ${esc(titular)}. El reembolso se procesa en un plazo de 1 a 3 días hábiles.`
   if (respuesta) nota += ` ${esc(respuesta)}`
-  nota += ' Gracias por tu comprensión.'
+  nota += ' Gracias por su comprensión.'
   await transporteSmtp().sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to: correo,
-    subject: `Pedido ${codigo}: tu solicitud de reembolso fue aprobada`,
+    subject: `Pedido ${codigo}: su solicitud de reembolso fue aprobada`,
     html: plantillaCorreo({
       nombre, codigo, estado: 'cancelado', estadoLabel: 'Reembolso aprobado', nota,
       urlSeguimiento: url, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Ver mi pedido', ctaUrl: url, pedirResena: false,
@@ -1109,7 +1109,7 @@ export async function enviarCorreoReembolsoDecisionAdmin({ to, s }) {
       <tr><td style="padding:26px 24px">
         <p style="margin:0 0 6px;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#b91c1c;font-weight:700">Cancelar pedido · sin reembolso</p>
         <h1 style="margin:0 0 14px;font-size:20px;color:#0b0f19">${esc(s.nombre_cliente || 'El cliente')} eligió cancelar el pedido ${esc(s.codigo)} sin reembolso</h1>
-        <p style="margin:0 0 8px;font-size:14px;color:#374151;line-height:1.5">Rechazaste su solicitud y el cliente decidió cancelar igual, perdiendo lo pagado (${montoUSD(s.monto_pagado)}). Entrá a Reembolsos y tocá <strong>Cancelar pedido sin reembolso</strong> para cerrar el pedido.</p>
+        <p style="margin:0 0 8px;font-size:14px;color:#374151;line-height:1.5">Rechazaste su solicitud y el cliente decidió cancelar igual, perdiendo lo pagado (${montoUSD(s.monto_pagado)}). Entre a Reembolsos y toque <strong>Cancelar pedido sin reembolso</strong> para cerrar el pedido.</p>
         <p style="margin:0;font-size:13px;color:#6b7280">Motivo que había dado: ${esc(s.motivo_label)}</p>
         <a href="${appUrl}/reembolsos" style="display:block;margin-top:22px;background:#050505;color:#fff;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:2px;text-transform:uppercase;text-align:center;padding:15px;border-radius:6px">Ir a Reembolsos</a>
       </td></tr>
@@ -1140,7 +1140,7 @@ export async function enviarCorreoSaludClientesAdmin({ to, grupos, total, client
       <tr><td style="padding:26px 24px">
         <p style="margin:0 0 6px;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#b91c1c;font-weight:700">Salud de clientes · últimas 24 h</p>
         <h1 style="margin:0 0 10px;font-size:20px;color:#0b0f19">${clientes === 1 ? '1 cliente tuvo' : `${clientes} clientes tuvieron`} problemas en la tienda</h1>
-        <p style="margin:0 0 14px;font-size:14px;color:#374151;line-height:1.5">${total} ${total === 1 ? 'error' : 'errores'} que los clientes vieron en pantalla (Mi cuenta, checkout o seguimiento). Puede que nadie te lo haya dicho.</p>
+        <p style="margin:0 0 14px;font-size:14px;color:#374151;line-height:1.5">${total} ${total === 1 ? 'error' : 'errores'} que los clientes vieron en pantalla (Mi cuenta, checkout o seguimiento). Puede que nadie se lo haya dicho.</p>
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${filas}</table>
         <a href="${appUrl}/salud-clientes" style="display:block;margin-top:22px;background:#050505;color:#fff;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:2px;text-transform:uppercase;text-align:center;padding:15px;border-radius:6px">Ver detalles</a>
       </td></tr>

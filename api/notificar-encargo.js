@@ -51,7 +51,7 @@ async function reclamar(record, campo, extra) {
 // Correos del encargo web. Lo dispara el Database Webhook de Supabase sobre `solicitudes`
 // (INSERT y UPDATE), con el secreto NOTIFY_SECRET. Regla nueva para NO llenar el buzón del
 // admin de encargos que nadie paga:
-//   • INSERT (se crea el encargo)               → correo SOLO al CLIENTE ("esperamos tu pago").
+//   • INSERT (se crea el encargo)               → correo SOLO al CLIENTE ("esperamos su pago").
 //   • UPDATE con pago_reportado_at recién puesto → correo SOLO al ADMIN ("cliente reportó pago").
 // Un carrito comparte grupo, así que agrupamos y mandamos UN correo por cliente.
 export default async function handler(request, response) {
@@ -98,7 +98,7 @@ export default async function handler(request, response) {
     return response.status(200).json({ ok: true, admin: destino, count: encargos.length })
   }
 
-  // ── INSERT: nuevo encargo → avisa al ADMIN (cada encargo web) y al CLIENTE ("esperamos tu pago") ──
+  // ── INSERT: nuevo encargo → avisa al ADMIN (cada encargo web) y al CLIENTE ("esperamos su pago") ──
   if (body.type !== 'INSERT') {
     return response.status(200).json({ ok: true, skipped: 'evento no aplica' })
   }

@@ -64,7 +64,7 @@ export default async function handler(request, response) {
   if (!fotos.length) return response.status(200).json({ ok: true, skipped: 'producto sin fotos de calidad' })
 
   try {
-    await enviarCorreoItemEstado({ correo: ctx.correo, nombre: ctx.nombre, codigo: ctx.codigo, producto: record.producto || 'Tu producto', estadoItem: 'control_calidad', fotos })
+    await enviarCorreoItemEstado({ correo: ctx.correo, nombre: ctx.nombre, codigo: ctx.codigo, producto: record.producto || 'Su producto', estadoItem: 'control_calidad', fotos })
   } catch (sendError) {
     console.error('notificar-item-calidad: no se pudo enviar', sendError?.message)
     return response.status(502).json({ ok: false, error: 'No se pudo enviar el correo' })

@@ -186,11 +186,11 @@ export async function facturaPdfBuffer({ codigo, nombre, fecha, factura }) {
   y += 24
   doc.rect(M, y, contentW, 60).fill('#f2f6e6')
   doc.fillColor('#4c6500').font('Helvetica-Bold').fontSize(11).text(
-    esPago ? `Pago recibido · Pedido ${codigo} entregado` : `Rastrea tu pedido con el código ${codigo}`,
+    esPago ? `Pago recibido · Pedido ${codigo} entregado` : `Rastree su pedido con el código ${codigo}`,
     M, y + 16, { width: contentW, align: 'center' },
   )
   doc.fillColor(GRIS).font('Helvetica').fontSize(9).text(
-    esPago ? '¡Muchas gracias por tu compra en Hausline!' : 'Gracias por comprar en Hausline · Los tiempos pueden variar por logística internacional.',
+    esPago ? '¡Muchas gracias por su compra en Hausline!' : 'Gracias por comprar en Hausline · Los tiempos pueden variar por logística internacional.',
     M, y + 36, { width: contentW, align: 'center' },
   )
 

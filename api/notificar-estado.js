@@ -238,7 +238,7 @@ async function entregaInmediataDesdeCompra(response, body, authorization) {
   if (!id) return response.status(400).json({ ok: false, error: 'Falta la compra.' })
   const { data: compra } = await admin.from('inversiones').select('id, codigo, estado').eq('id', id).maybeSingle()
   if (!compra) return response.status(404).json({ ok: false, error: 'No se encontró la compra.' })
-  if (!String(compra.codigo ?? '').trim()) return response.status(200).json({ ok: false, error: 'Esta compra no tiene código de producto: ponele el código de la tienda (Editar) y volvé a intentar.' })
+  if (!String(compra.codigo ?? '').trim()) return response.status(200).json({ ok: false, error: 'Esta compra no tiene código de producto: ponele el código de la tienda (Editar) y vuelva a intentar.' })
   const { data: secreto } = await admin.from('config_privada').select('valor').eq('clave', 'secreto_entrega_inmediata').maybeSingle()
   if (!secreto?.valor) return response.status(200).json({ ok: false, error: 'Falta la clave de entrega inmediata en el sistema (SQL 202610020004).' })
 
@@ -252,7 +252,7 @@ async function entregaInmediataDesdeCompra(response, body, authorization) {
   if (r === 'colores actualizados') return response.status(200).json({ ok: true, soloColores: true })
   const MOTIVO = {
     'ya estaba agregada': 'Esta compra ya está en Entrega inmediata en la tienda. Si llegaron más unidades, registralas como otra compra.',
-    'sin fila en el catálogo': `El producto ${compra.codigo} no está en el admin de la tienda: abrilo en admin.html y tocá Guardar una vez, después volvé a intentar.`,
+    'sin fila en el catálogo': `El producto ${compra.codigo} no está en el admin de la tienda: abrilo en admin.html y toque Guardar una vez, después vuelva a intentar.`,
     'no autorizado': 'La clave de entrega inmediata no coincide entre el panel y la tienda.',
   }
   return response.status(200).json({ ok: false, error: MOTIVO[r] || (res && !res.ok ? 'Falta aplicar el SQL del catálogo (marcar_entrega_inmediata).' : 'No se pudo conectar con la tienda.') })
@@ -729,12 +729,12 @@ async function datosEntregaCorreo(codigo, factura) {
   const saldo = factura?.variante === 'saldo' ? Number(factura.saldo) || 0 : Number(d.saldo) || 0
   const lugar = [d.direccion, d.departamento].filter(Boolean).join(', ')
   const filas = [
-    lugar ? `📍 <strong>Entrega en:</strong> ${esc(lugar)}${d.referencia ? ` (${esc(d.referencia)})` : ''}` : '📍 <strong>Todavía no tenemos tu dirección de entrega.</strong>',
+    lugar ? `📍 <strong>Entrega en:</strong> ${esc(lugar)}${d.referencia ? ` (${esc(d.referencia)})` : ''}` : '📍 <strong>Todavía no tenemos su dirección de entrega.</strong>',
     envio != null ? `🚚 <strong>Envío:</strong> ${us(envio)} (${cs(envio)})` : '🚚 <strong>Envío:</strong> a cotizar',
     envio != null ? `💵 <strong>Total a pagar con envío:</strong> ${us(saldo + envio)} (${cs(saldo + envio)})` : null,
   ].filter(Boolean)
   return {
-    html: `<br><br>${filas.join('<br>')}<br><br>${lugar ? '¿Te lo enviamos a esta dirección? Confirmala (o corregila) con el botón de abajo y coordinamos la entrega.' : 'Dejanos tu dirección con el botón de abajo y te confirmamos el envío.'}`,
+    html: `<br><br>${filas.join('<br>')}<br><br>${lugar ? '¿Se lo enviamos a esta dirección? Confírmela (o corríjala) con el botón de abajo y coordinamos la entrega.' : 'Déjenos su dirección con el botón de abajo y le confirmamos el envío.'}`,
     ctaTexto: lugar ? 'Confirmar dirección de entrega' : 'Dejar mi dirección de entrega',
     ctaUrl: url,
   }
@@ -841,7 +841,7 @@ async function procesarAvisoPedido(body, response) {
     }
   }
 
-  // Archiva la MISMA factura del correo en tu Google Drive, en la carpeta del mes y del
+  // Archiva la MISMA factura del correo en su Google Drive, en la carpeta del mes y del
   // código de pedido. Al confirmar → "Orden confirmada"; al pagar/entregar → "Comprobante
   // pagado", en la MISMA carpeta del pedido. Best-effort: si falla (o no está configurado
   // Drive), no rompe el aviso, solo se registra en el log.
