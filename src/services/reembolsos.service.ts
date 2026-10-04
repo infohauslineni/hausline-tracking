@@ -38,7 +38,7 @@ function client() { if (!supabase) throw new Error('Supabase no está configurad
 
 export const ETAPA_REEMBOLSO_LABEL: Record<SolicitudReembolso['etapa'], string> = {
   antes_envio: 'Antes del envío (en preparación)',
-  calidad: 'Dentro de las 24 h de control de calidad',
+  calidad: 'Dentro de las 48 h de control de calidad',
   transito: 'En tránsito / ya pasó control de calidad',
   disponible: 'Ya en Nicaragua',
 }

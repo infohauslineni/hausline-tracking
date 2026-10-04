@@ -102,7 +102,7 @@ export function mensajeWhatsAppEstado(estado: EstadoPedido, data: { nombre?: str
   const mensajes: Record<EstadoPedido, string> = {
     pedido_confirmado: `${saludo} Confirmamos su orden ${data.codigo}. Ya quedó registrada y le avisaremos cada avance. ${seguimiento}`,
     en_preparacion: `${saludo} Su pedido ${data.codigo} está en preparación. Estamos coordinando el producto antes de enviarlo. ${seguimiento}`,
-    control_calidad: `${saludo} Su pedido ${data.codigo} está en control de calidad.${data.fotosCalidad ? ' Ya puede ver las fotos de revisión: tiene 24 horas para revisarlas y avisarnos si algo no coincide con lo que pidió.' : ' Le avisaremos cuando estén listas.'} ${seguimiento}`,
+    control_calidad: `${saludo} Su pedido ${data.codigo} está en control de calidad.${data.fotosCalidad ? ' Ya puede ver las fotos de revisión: tiene 48 horas para revisarlas y avisarnos si algo no coincide con lo que pidió.' : ' Le avisaremos cuando estén listas.'} ${seguimiento}`,
     etiqueta_creada: `${saludo} Su pedido ${data.codigo} ya fue despachado y va en camino. ${seguimiento}`,
     despachado: `${saludo} Su pedido ${data.codigo} ya fue despachado y va en camino. ${seguimiento}`,
     transito_internacional: `${saludo} Su pedido ${data.codigo} está en tránsito internacional. ${seguimiento}`,
