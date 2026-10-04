@@ -1,8 +1,8 @@
-import { AlertTriangle, Check, CheckCircle2, ChevronDown, Eye, HeartPulse, LogIn, MailCheck, MapPin, MessageCircle, RefreshCw, Search, ShoppingBag, Users, X } from 'lucide-react'
+import { AlertTriangle, BadgeCheck, Check, CheckCircle2, ChevronDown, Eye, HeartPulse, LogIn, MailCheck, MapPin, MessageCircle, RefreshCw, Search, Send, ShoppingBag, Users, X } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
-import { listarCuentasClientes, listarCuentasRevisadas, listarEventosClientes, marcarCuentaRevisada, marcarEventosRevisados, type CuentaCliente, type CuentaRevisada, type EventoCliente, type MotivoAyuda } from '../../services/saludClientes.service'
+import { activarCuentaCliente, listarCuentasClientes, listarCuentasRevisadas, listarEventosClientes, marcarCuentaRevisada, marcarEventosRevisados, reenviarConfirmacion, type CuentaCliente, type CuentaRevisada, type EventoCliente, type MotivoAyuda } from '../../services/saludClientes.service'
 import { whatsappUrl } from '../../utils/whatsapp'
 import { DireccionesClienteCard } from '../../components/clientes/DireccionesClienteCard'
 import { contarDireccionesPorCuenta } from '../../services/direccionesCliente.service'
@@ -281,7 +281,8 @@ export function SaludClientesPage() {
         {(sinConfirmar.length > 0 || sinPedidos.length > 0) && (
           <section className="mt-6 grid gap-3 lg:grid-cols-2">
             {sinConfirmar.length > 0 && <ListaAyuda titulo="No confirmaron su correo" nota="Puede que el correo les haya caído en spam o no les llegó."
-              cuentas={sinConfirmar} onListo={(c) => void contactado(c.user_id, 'sin_confirmar')} mensaje={(c) => `Hola${primerNombre(c.nombre) ? ` ${primerNombre(c.nombre)}` : ''}, te saludamos del equipo de HAUSLINE 👋 Vimos que creaste tu cuenta en nuestra tienda, pero todavía falta confirmar tu correo. ¿Te llegó el mensaje? Revisá también la carpeta de spam; si no aparece, te ayudamos por aquí.`} />}
+              cuentas={sinConfirmar} onListo={(c) => void contactado(c.user_id, 'sin_confirmar')}
+              extra={(c) => <AccionesConfirmar cuenta={c} onActivada={(fecha) => setCuentas((lista) => lista.map((x) => x.user_id === c.user_id ? { ...x, confirmada_at: fecha } : x))} />} mensaje={(c) => `Hola${primerNombre(c.nombre) ? ` ${primerNombre(c.nombre)}` : ''}, te saludamos del equipo de HAUSLINE 👋 Vimos que creaste tu cuenta en nuestra tienda, pero todavía falta confirmar tu correo. ¿Te llegó el mensaje? Revisá también la carpeta de spam; si no aparece, te ayudamos por aquí.`} />}
             {sinPedidos.length > 0 && <ListaAyuda titulo="Todavía no compran" nota="Invitalos a su primera compra. Si ya te compraron con otro correo, vinculá el pedido desde la ficha del cliente."
               cuentas={sinPedidos} onListo={(c) => void contactado(c.user_id, 'sin_pedidos')} mensaje={(c) => `Hola${primerNombre(c.nombre) ? ` ${primerNombre(c.nombre)}` : ''}, te saludamos del equipo de HAUSLINE 👋 ¡Gracias por crear tu cuenta en nuestra tienda! Cuando quieras hacer tu primer pedido, estamos para ayudarte: mirá lo nuevo en hauslineshopni.es o escribinos por aquí si buscás algún modelo o talla en especial.`} />}
           </section>
@@ -351,16 +352,39 @@ function Barra({ etiqueta, valor, total }: { etiqueta: string; valor: number; to
   return <div className="mt-4"><div className="flex justify-between text-sm"><span className="text-white/85">{etiqueta}</span><b>{valor}{total ? <span className="ml-1 text-[11px] font-normal text-muted">{pct}%</span> : null}</b></div><div className="mt-1.5 h-2 rounded-full bg-white/[0.06]"><div className="h-2 rounded-full bg-accent transition-all" style={{ width: `${pct}%` }} /></div></div>
 }
 
-function ListaAyuda({ titulo, nota, cuentas, mensaje, onListo }: { titulo: string; nota: string; cuentas: CuentaCliente[]; mensaje: (c: CuentaCliente) => string; onListo: (c: CuentaCliente) => void }) {
+// "No le llegó el correo": reenviarlo, o activar la cuenta desde el panel (solo admin).
+function AccionesConfirmar({ cuenta, onActivada }: { cuenta: CuentaCliente; onActivada: (fecha: string) => void }) {
+  const [ocupado, setOcupado] = useState<'' | 'reenviar' | 'activar'>('')
+  const reenviar = async () => {
+    setOcupado('reenviar')
+    try { await reenviarConfirmacion(cuenta.correo); toast.success(`Le volvimos a mandar el correo a ${cuenta.correo}.`) }
+    catch (e) { toast.error(e instanceof Error && /seconds|rate/i.test(e.message) ? 'Esperá un minuto antes de volver a mandarlo.' : 'No se pudo reenviar. Probá con "Activar".') }
+    finally { setOcupado('') }
+  }
+  const activar = async () => {
+    if (!window.confirm(`¿Activar la cuenta de ${cuenta.nombre || cuenta.correo}?\n\nQueda como si hubiera confirmado su correo (${cuenta.correo}) y ya puede ingresar con su contraseña.`)) return
+    setOcupado('activar')
+    try { const fecha = await activarCuentaCliente(cuenta.user_id); toast.success('Cuenta activada. Ya puede ingresar en la tienda con su contraseña.'); onActivada(fecha) }
+    catch (e) { toast.error(e instanceof Error && /activar_cuenta_cliente|schema cache/i.test(e.message) ? 'Falta aplicar la migración 202610030001.' : e instanceof Error ? e.message : 'No se pudo activar.') }
+    finally { setOcupado('') }
+  }
+  return <>
+    <button className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted hover:bg-white/[0.05] hover:text-white disabled:opacity-50" title="Le vuelve a mandar el correo de confirmación" disabled={!!ocupado} onClick={() => void reenviar()}><Send size={13} /> {ocupado === 'reenviar' ? 'Enviando…' : 'Reenviar'}</button>
+    <button className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-emerald-400/30 px-2 py-1 text-xs font-semibold text-emerald-300 hover:bg-emerald-400/10 disabled:opacity-50" title="Confirma su cuenta sin el correo" disabled={!!ocupado} onClick={() => void activar()}><BadgeCheck size={13} /> {ocupado === 'activar' ? 'Activando…' : 'Activar'}</button>
+  </>
+}
+
+function ListaAyuda({ titulo, nota, cuentas, mensaje, onListo, extra }: { titulo: string; nota: string; cuentas: CuentaCliente[]; mensaje: (c: CuentaCliente) => string; onListo: (c: CuentaCliente) => void; extra?: (c: CuentaCliente) => ReactNode }) {
   return (
     <div className="rounded-2xl border border-line bg-panel p-5">
       <div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold">{titulo}</p><span className="rounded-full bg-amber-400/12 px-2 py-0.5 text-[11px] font-bold text-amber-300">{cuentas.length}</span></div>
       <p className="mt-0.5 text-[12px] text-muted">{nota}</p>
       <ul className="mt-3 divide-y divide-line/60">
         {cuentas.slice(0, 10).map((c) => (
-          <li key={c.user_id} className="flex items-center gap-2 py-2 text-sm">
+          <li key={c.user_id} className="flex flex-wrap items-center gap-2 py-2 text-sm">
             <span className="grid size-7 shrink-0 place-items-center rounded-full bg-white/[0.06] text-[11px] font-bold">{(c.nombre || c.correo || '?').trim().charAt(0).toUpperCase()}</span>
-            <span className="min-w-0 flex-1 truncate">{c.nombre || c.correo} <span className="text-[11px] text-muted">· {hace(c.creada_at)}</span></span>
+            <span className="min-w-0 flex-1 truncate">{c.nombre || c.correo} <span className="text-[11px] text-muted">· {hace(c.creada_at)}</span>{extra && c.correo ? <span className="block truncate text-[11px] text-muted">{c.correo}</span> : null}</span>
+            {extra?.(c)}
             {c.telefono && <a className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-accent hover:bg-accent/10" href={whatsappUrl(c.telefono, mensaje(c))} target="_blank" rel="noreferrer"><MessageCircle size={13} /> Escribir</a>}
             <button className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted hover:bg-white/[0.05] hover:text-white" title="Sale de la lista (queda guardado)" onClick={() => onListo(c)}><Check size={13} /> Listo</button>
           </li>

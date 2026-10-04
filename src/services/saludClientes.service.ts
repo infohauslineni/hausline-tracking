@@ -64,6 +64,20 @@ export async function marcarEventosRevisados(ids: number[], revisado = true): Pr
   if (error) throw error
 }
 
+// "No confirmaron su correo": el admin confirma la cuenta a mano (migración 202610030001).
+export async function activarCuentaCliente(userId: string): Promise<string> {
+  if (!supabase) throw new Error('Sin conexión')
+  const { data, error } = await supabase.rpc('activar_cuenta_cliente', { p_user_id: userId })
+  if (error) throw error
+  return String(data)
+}
+// Le vuelve a mandar el correo de confirmación (el mismo que al crear la cuenta en la tienda).
+export async function reenviarConfirmacion(correo: string): Promise<void> {
+  if (!supabase) throw new Error('Sin conexión')
+  const { error } = await supabase.auth.resend({ type: 'signup', email: correo, options: { emailRedirectTo: 'https://hauslineshopni.es/cuenta/ingresar/?verificado=1' } })
+  if (error) throw error
+}
+
 // "Ya lo contacté" en las listas de cuentas que necesitan ayuda.
 export async function listarCuentasRevisadas(): Promise<CuentaRevisada[]> {
   if (!supabase) return []
