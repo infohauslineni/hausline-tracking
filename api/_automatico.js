@@ -19,7 +19,7 @@ import { obtenerCatalogoMergeado } from './_catalogo.js'
 const HORA = 3_600_000
 const DIA = 24 * HORA
 const RECOMPRA_PORCENTAJE = 10   // % del cupón de "volver a comprar"
-const RECOMPRA_VIGENCIA_DIAS = 30
+const RECOMPRA_VIGENCIA_DIAS = 15  // corto a propósito: que vuelva a comprar pronto
 const NIC = -6 * HORA             // Nicaragua = UTC-6, sin horario de verano
 
 const ahoraNic = () => new Date(Date.now() + NIC)
@@ -102,7 +102,8 @@ async function postEntrega(db) {
         .eq('cliente_id', p.cliente_id).gt('created_at', h.created_at).neq('estado', 'cancelado')
       if (nuevos) continue
       const vence = fechaNic(new Date(Date.now() + NIC + RECOMPRA_VIGENCIA_DIAS * DIA))
-      const codigoCupon = `VUELVE-${Math.random().toString(36).slice(2, 7).toUpperCase()}`
+      // Código con formato de la marca: HAUS10-7K4QX (porcentaje + 5 caracteres sin 0/O/1/I).
+      const codigoCupon = `HAUS${RECOMPRA_PORCENTAJE}-${Array.from({ length: 5 }, () => "ABCDEFGHJKMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 31)]).join("")}`
       // El cupón se crea SOLO si el correo todavía no salió (el candado va primero).
       const reserva = await reservarEmail({ clave: `recompra:${p.codigo}`, tipo: 'recompra', codigo: p.codigo, destinatario: correo })
       if (reserva.duplicado) continue

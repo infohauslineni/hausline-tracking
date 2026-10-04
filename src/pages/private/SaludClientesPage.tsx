@@ -1,10 +1,13 @@
 import { AlertTriangle, BadgeCheck, Check, CheckCircle2, ChevronDown, Eye, HeartPulse, LogIn, MailCheck, MapPin, MessageCircle, RefreshCw, Search, Send, ShoppingBag, Users, X } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { activarCuentaCliente, listarCuentasClientes, listarCuentasRevisadas, listarEventosClientes, marcarCuentaRevisada, marcarEventosRevisados, reenviarConfirmacion, type CuentaCliente, type CuentaRevisada, type EventoCliente, type MotivoAyuda } from '../../services/saludClientes.service'
 import { whatsappUrl } from '../../utils/whatsapp'
 import { DireccionesClienteCard } from '../../components/clientes/DireccionesClienteCard'
+import { ClienteAvatar } from '../../components/clientes/ClienteAvatar'
+import { listarAvataresClientes } from '../../services/clientes.service'
 import { contarDireccionesPorCuenta } from '../../services/direccionesCliente.service'
 
 type Rango = 1 | 7 | 30
@@ -149,6 +152,9 @@ export function SaludClientesPage() {
   const pendientes = errores.filter((e) => !e.revisado_at)
   const visitasConError = visitasDe(pendientes)
   const [busca, setBusca] = useState('')
+  // Fotos de perfil de Mi cuenta (por id de la cuenta).
+  const [avatares, setAvatares] = useState<Record<string, string>>({})
+  useEffect(() => { if (isSupabaseConfigured) void listarAvataresClientes().then((a) => setAvatares(a.porUsuario)).catch(() => undefined) }, [])
   const filtradas = useMemo(() => {
     const t = busca.trim().toLowerCase()
     return t ? cuentas.filter((c) => [c.nombre, c.correo, c.telefono].some((v) => String(v ?? '').toLowerCase().includes(t))) : cuentas
@@ -163,7 +169,7 @@ export function SaludClientesPage() {
       {/* Encabezado */}
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <p className="eyebrow">Clientes y productos</p>
+          <Link to="/configuracion" className="eyebrow inline-flex items-center gap-1 hover:underline">← Configuración</Link>
           <h1 className="page-title">Salud de clientes</h1>
           <p className="page-subtitle max-w-2xl">Errores que ven los clientes en la tienda, el checkout, Mi cuenta y el seguimiento — anotados solos, aunque nadie te lo diga.</p>
         </div>
@@ -280,10 +286,10 @@ export function SaludClientesPage() {
         {/* Cuentas que necesitan ayuda */}
         {(sinConfirmar.length > 0 || sinPedidos.length > 0) && (
           <section className="mt-6 grid gap-3 lg:grid-cols-2">
-            {sinConfirmar.length > 0 && <ListaAyuda titulo="No confirmaron su correo" nota="Puede que el correo les haya caído en spam o no les llegó."
+            {sinConfirmar.length > 0 && <ListaAyuda avatares={avatares} titulo="No confirmaron su correo" nota="Puede que el correo les haya caído en spam o no les llegó."
               cuentas={sinConfirmar} onListo={(c) => void contactado(c.user_id, 'sin_confirmar')}
               extra={(c) => <AccionesConfirmar cuenta={c} onActivada={(fecha) => setCuentas((lista) => lista.map((x) => x.user_id === c.user_id ? { ...x, confirmada_at: fecha } : x))} />} mensaje={(c) => `Hola${primerNombre(c.nombre) ? ` ${primerNombre(c.nombre)}` : ''}, le saludamos del equipo de HAUSLINE 👋 Vimos que creó su cuenta en nuestra tienda, pero todavía falta confirmar su correo. ¿Le llegó el mensaje? Revise también la carpeta de spam; si no aparece, le ayudamos por aquí.`} />}
-            {sinPedidos.length > 0 && <ListaAyuda titulo="Todavía no compran" nota="Invitalos a su primera compra. Si ya te compraron con otro correo, vinculá el pedido desde la ficha del cliente."
+            {sinPedidos.length > 0 && <ListaAyuda avatares={avatares} titulo="Todavía no compran" nota="Invitalos a su primera compra. Si ya te compraron con otro correo, vinculá el pedido desde la ficha del cliente."
               cuentas={sinPedidos} onListo={(c) => void contactado(c.user_id, 'sin_pedidos')} mensaje={(c) => `Hola${primerNombre(c.nombre) ? ` ${primerNombre(c.nombre)}` : ''}, le saludamos del equipo de HAUSLINE 👋 ¡Gracias por crear su cuenta en nuestra tienda! Cuando desee hacer su primer pedido, estamos para ayudarle: puede ver lo nuevo en hauslineshopni.es o escribirnos por aquí si busca algún modelo o talla en especial.`} />}
           </section>
         )}
@@ -309,7 +315,7 @@ export function SaludClientesPage() {
                     const abiertaCuenta = cuentaAbierta === c.user_id
                     return <Fragment key={c.user_id}>
                     <tr className="border-b border-line/60 transition last:border-0 hover:bg-white/[0.015]">
-                      <td className="px-4 py-3"><div className="flex items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-full bg-accent/12 text-xs font-bold text-accent">{(c.nombre || c.correo || '?').trim().charAt(0).toUpperCase()}</span><div className="min-w-0"><p className="truncate font-semibold">{c.nombre || 'Sin nombre'}</p><p className="truncate text-[11px] text-muted">{c.correo}</p></div>{c.telefono && <a className="ml-auto grid size-7 shrink-0 place-items-center rounded-lg text-muted hover:bg-white/[0.05] hover:text-accent" href={whatsappUrl(c.telefono)} target="_blank" rel="noreferrer" title={`WhatsApp ${c.telefono}`}><MessageCircle size={14} /></a>}</div></td>
+                      <td className="px-4 py-3"><div className="flex items-center gap-3"><ClienteAvatar nombre={c.nombre || c.correo} url={avatares[c.user_id]} size={36} /><div className="min-w-0"><p className="truncate font-semibold">{c.nombre || 'Sin nombre'}</p><p className="truncate text-[11px] text-muted">{c.correo}</p></div>{c.telefono && <a className="ml-auto grid size-7 shrink-0 place-items-center rounded-lg text-muted hover:bg-white/[0.05] hover:text-accent" href={whatsappUrl(c.telefono)} target="_blank" rel="noreferrer" title={`WhatsApp ${c.telefono}`}><MessageCircle size={14} /></a>}</div></td>
                       <td className="px-3 py-3 text-[12px]">{c.confirmada_at ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/10 px-2 py-0.5 font-semibold text-emerald-300"><Check size={11} /> Confirmado</span> : <span className="rounded-full bg-amber-400/10 px-2 py-0.5 font-semibold text-amber-300">Sin confirmar</span>}</td>
                       <td className="px-3 py-3 text-[12px] text-muted">{fechaHora(c.creada_at)}</td>
                       <td className="px-3 py-3 text-[12px] text-muted">{hace(c.ultimo_ingreso_at)}</td>
@@ -374,7 +380,7 @@ function AccionesConfirmar({ cuenta, onActivada }: { cuenta: CuentaCliente; onAc
   </>
 }
 
-function ListaAyuda({ titulo, nota, cuentas, mensaje, onListo, extra }: { titulo: string; nota: string; cuentas: CuentaCliente[]; mensaje: (c: CuentaCliente) => string; onListo: (c: CuentaCliente) => void; extra?: (c: CuentaCliente) => ReactNode }) {
+function ListaAyuda({ titulo, nota, cuentas, mensaje, onListo, extra, avatares }: { avatares?: Record<string, string>; titulo: string; nota: string; cuentas: CuentaCliente[]; mensaje: (c: CuentaCliente) => string; onListo: (c: CuentaCliente) => void; extra?: (c: CuentaCliente) => ReactNode }) {
   return (
     <div className="rounded-2xl border border-line bg-panel p-5">
       <div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold">{titulo}</p><span className="rounded-full bg-amber-400/12 px-2 py-0.5 text-[11px] font-bold text-amber-300">{cuentas.length}</span></div>
@@ -382,7 +388,7 @@ function ListaAyuda({ titulo, nota, cuentas, mensaje, onListo, extra }: { titulo
       <ul className="mt-3 divide-y divide-line/60">
         {cuentas.slice(0, 10).map((c) => (
           <li key={c.user_id} className="flex flex-wrap items-center gap-2 py-2 text-sm">
-            <span className="grid size-7 shrink-0 place-items-center rounded-full bg-white/[0.06] text-[11px] font-bold">{(c.nombre || c.correo || '?').trim().charAt(0).toUpperCase()}</span>
+            <ClienteAvatar nombre={c.nombre || c.correo} url={avatares?.[c.user_id]} size={28} />
             <span className="min-w-0 flex-1 truncate">{c.nombre || c.correo} <span className="text-[11px] text-muted">· {hace(c.creada_at)}</span>{extra && c.correo ? <span className="block truncate text-[11px] text-muted">{c.correo}</span> : null}</span>
             {extra?.(c)}
             {c.telefono && <a className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-accent hover:bg-accent/10" href={whatsappUrl(c.telefono, mensaje(c))} target="_blank" rel="noreferrer"><MessageCircle size={13} /> Escribir</a>}

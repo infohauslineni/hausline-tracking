@@ -1,5 +1,7 @@
-import { CalendarClock, Check, Clock3, Cloud, Coins, DatabaseBackup, Info, Power, RefreshCw, Save, ShieldCheck, Smartphone, Trash2, UserPlus, Users } from 'lucide-react'
+import { CalendarClock, ChevronRight, HeartPulse, Check, Clock3, Cloud, Coins, DatabaseBackup, Info, Power, RefreshCw, Save, ShieldCheck, Smartphone, Trash2, UserPlus, Users } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
+import { contarErroresClientes24h } from '../../services/saludClientes.service'
 import { toast } from 'sonner'
 import { ESTADOS_PEDIDO } from '../../constants/orders'
 import { isSupabaseConfigured } from '../../lib/supabase'
@@ -19,6 +21,9 @@ export function ConfiguracionPage() {
   const [recalculating, setRecalculating] = useState(false)
   const [tipoCambio, setTipoCambio] = useState(37)
   const [savingTc, setSavingTc] = useState(false)
+  // Salud de clientes vive aquí (antes en el menú): errores sin revisar de las últimas 24 h.
+  const [erroresClientes, setErroresClientes] = useState(0)
+  useEffect(() => { if (isSupabaseConfigured) void contarErroresClientes24h().then(setErroresClientes).catch(() => undefined) }, [])
   useEffect(() => { if (isSupabaseConfigured) { void obtenerConfiguracionEstimaciones().then(setConfig).catch(() => toast.error('No se pudo cargar la configuración.')); void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined) } }, [])
   const saveTipoCambio = async () => { if (tipoCambio <= 0) return toast.error('Ingresa un tipo de cambio válido.'); setSavingTc(true); try { if (isSupabaseConfigured) await guardarTipoCambio(tipoCambio); toast.success('Tipo de cambio guardado.') } catch { toast.error('No se pudo guardar el tipo de cambio.') } finally { setSavingTc(false) } }
 
@@ -36,7 +41,14 @@ export function ConfiguracionPage() {
     {!isSupabaseConfigured && <div className="preview-banner"><strong>Vista previa local:</strong> la configuración real se guardará al conectar Supabase.</div>}
     <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><p className="eyebrow">Sistema</p><h1 className="page-title">Configuración</h1><p className="page-subtitle">Controla las estimaciones y la operación automática.</p></div><div className="flex flex-wrap gap-2"><button className="subtle-button min-h-11" disabled={recalculating} onClick={() => void recalculate()}><RefreshCw size={16} className={recalculating ? 'animate-spin' : ''} /> Recalcular ahora</button><button className="primary-button min-h-11 px-5" disabled={saving} onClick={() => void save()}><Save size={17} /> Guardar cambios</button></div></div>
 
-    <div className="mt-7 grid gap-5 xl:grid-cols-[1.35fr_.65fr]">
+    <Link to="/salud-clientes" className="mt-7 flex items-center gap-4 rounded-2xl border border-line bg-panel p-4 transition hover:border-accent/40 hover:bg-accent/[.03]">
+      <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-accent/10 text-accent"><HeartPulse size={20} /></span>
+      <span className="min-w-0 flex-1"><b className="block text-sm">Salud de clientes</b><span className="block text-xs text-muted">Errores que ven los clientes, cuentas de la tienda, ingresos a Mi cuenta y direcciones.</span></span>
+      {erroresClientes > 0 ? <span className="rounded-full bg-red-400/15 px-2.5 py-1 text-[11px] font-bold text-red-300">{erroresClientes} {erroresClientes === 1 ? 'error' : 'errores'}</span> : <span className="rounded-full bg-emerald-400/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300">Todo en orden</span>}
+      <ChevronRight size={18} className="text-muted" />
+    </Link>
+
+    <div className="mt-5 grid gap-5 xl:grid-cols-[1.35fr_.65fr]">
       <div className="space-y-5">
         <section className="form-section"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><h2 className="flex items-center gap-2 font-semibold"><CalendarClock size={18} className="text-accent" /> Fecha de entrega dinámica</h2><p className="mt-2 max-w-2xl text-xs leading-5 text-muted">La fecha cambia según el estado que tú registras. Si el pedido se demora, se mueve hacia adelante; si avanza antes, se acerca.</p></div><label className="flex cursor-pointer items-center gap-2 text-xs text-muted"><input type="checkbox" checked={config.activo} onChange={(event) => setConfig((current) => ({ ...current, activo: event.target.checked }))} className="size-4 accent-[#b7ff00]" /> Activada</label></div>
           <div className="mt-6 rounded-xl border border-accent/15 bg-accent/[0.04] p-4"><div className="flex items-start gap-3"><Info className="mt-0.5 shrink-0 text-accent" size={18} /><p className="text-xs leading-5 text-[#d8ff78]">No consulta USPS ni otras paqueterías por sí sola. Reacciona a los estados y eventos guardados manualmente; cuando exista una API, también podrá reaccionar a esos eventos.</p></div></div>

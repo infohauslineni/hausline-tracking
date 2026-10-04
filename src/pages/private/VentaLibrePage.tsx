@@ -1,3 +1,4 @@
+import { LibresTabs } from '../../components/layout/LibresTabs'
 import { Copy, ExternalLink, ImagePlus, Link2, MessageCircle, Plus, Power, Star, Store, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
@@ -44,7 +45,7 @@ export function VentaLibrePage() {
   const publicar = (v: VentaLibre) => { if (window.confirm(`¿Publicar ${v.datos.nombre} en la tienda? Va a salir en el catálogo, la búsqueda y “Nuevo” como cualquier producto. El link que ya mandaste sigue funcionando.`)) void accion(() => publicarEnTienda(v), 'Publicado en la tienda. Ya no aparece en esta lista.') }
   const borrar = (v: VentaLibre) => { if (window.confirm(`¿Borrar la venta libre ${v.codigo}? El link deja de funcionar. Los encargos que ya hizo el cliente no se tocan.`)) void accion(() => borrarVentaLibre(v), 'Venta libre borrada.') }
 
-  return <div>
+  return <div><LibresTabs />
     <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
       <div><p className="eyebrow">Clientes y productos</p><h1 className="page-title">Venta libre</h1><p className="page-subtitle">Un cliente pide algo que no está en la tienda: subís la foto, le mandás el link y lo encarga igual que en la web. No sale en la tienda hasta que vos lo publiqués.</p></div>
       {conectado && <button className="primary-button shrink-0 whitespace-nowrap px-5" onClick={() => { setEditing(null); setOpen(true) }}><Plus size={18} /> Crear venta libre</button>}

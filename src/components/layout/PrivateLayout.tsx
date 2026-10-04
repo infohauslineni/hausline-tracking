@@ -1,4 +1,4 @@
-import { ArrowUpRight, BarChart3, Bell, Boxes, CircleGauge, CreditCard, HandCoins, HeartPulse, Inbox, Link2, LogOut, Menu, MoreHorizontal, PackagePlus, PackageSearch, Plus, ReceiptText, RotateCcw, Settings, ShoppingBag, Star, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
+import { ArrowUpRight, BarChart3, Bell, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, MoreHorizontal, PackagePlus, PackageSearch, Plus, ReceiptText, RotateCcw, Settings, ShoppingBag, Star, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -37,7 +37,8 @@ async function calcularEstado(): Promise<{ badges: Badges; alertas: Alerta[] }> 
     '/pedidos': pedidos.filter((p) => p.estado === 'disponible_entrega').length,
     '/solicitudes': solicitudes,
     '/reembolsos': reembolsos,
-    '/salud-clientes': erroresClientes,
+    // Salud de clientes vive dentro de Configuración: el contador de errores sale ahí.
+    '/configuracion': erroresClientes,
     '/pagos': pedidos.filter((p) => (p.estado === 'disponible_entrega' || p.estado === 'entregado') && Number(p.saldo) > 0.01).length,
     '/logistica': pedidos.filter((p) => p.estado === 'incidencia').length,
   }
@@ -46,7 +47,8 @@ async function calcularEstado(): Promise<{ badges: Badges; alertas: Alerta[] }> 
   return { badges, alertas: calcularAlertas(pedidos, trayectos) }
 }
 
-type NavItem = { to: string; label: string; icon: typeof CircleGauge; nuevo?: boolean }
+// `tambien`: otras rutas que marcan este ítem como activo (p. ej. las pestañas de un apartado).
+type NavItem = { to: string; label: string; icon: typeof CircleGauge; nuevo?: boolean; tambien?: string[] }
 // Operaciones del día a día. "Encargos web" recibe los pedidos que llegan del sitio.
 const operaciones: NavItem[] = [
   { to: '/dashboard', label: 'Resumen', icon: CircleGauge },
@@ -57,10 +59,9 @@ const operaciones: NavItem[] = [
 const clientesProductos: NavItem[] = [
   { to: '/clientes', label: 'Clientes', icon: Users },
   { to: '/resenas', label: 'Reseñas', icon: Star },
-  { to: '/salud-clientes', label: 'Salud de clientes', icon: HeartPulse, nuevo: true },
   { to: '/productos', label: 'Productos', icon: PackageSearch },
-  { to: '/stock', label: 'Compras libres', icon: HandCoins },
-  { to: '/venta-libre', label: 'Venta libre', icon: Link2, nuevo: true },
+  // Un solo apartado con dos pestañas (Compras libres / Venta libre): siguen siendo páginas aparte.
+  { to: '/stock', label: 'Compras y ventas libres', icon: HandCoins, tambien: ['/venta-libre'] },
 ]
 // "Mi cuenta" es el hub de dinero: gastos, ingresos, salidas, estado de cuenta y saldo.
 // Por eso "Gastos" ya no es una entrada aparte (se registran desde Mi cuenta).
@@ -75,7 +76,7 @@ const logistica: NavItem[] = [
 ]
 // Opciones administrativas (agrupadas aparte; se pueden ocultar por rol más adelante).
 const administracion: NavItem[] = [
-  { to: '/configuracion', label: 'Configuración', icon: Settings },
+  { to: '/configuracion', label: 'Configuración', icon: Settings, tambien: ['/salud-clientes'] },
 ]
 const navGroups = [
   { title: 'Operaciones', items: operaciones },
@@ -185,8 +186,8 @@ export function PrivateLayout() {
             <div key={group.title}>
               <p className="nav-group-title">{group.title}</p>
               <div className="mt-1.5 flex flex-col gap-0.5">
-                {group.items.map(({ to, label, icon: Icon, nuevo }) => (
-                  <NavLink key={to} to={to} onPointerEnter={() => prefetchRoute(to)} onFocus={() => prefetchRoute(to)} onClick={() => setOpen(false)} className={({ isActive }) => `nav-link ${isActive ? 'nav-link-active' : ''}`}>
+                {group.items.map(({ to, label, icon: Icon, nuevo, tambien }) => (
+                  <NavLink key={to} to={to} onPointerEnter={() => prefetchRoute(to)} onFocus={() => prefetchRoute(to)} onClick={() => setOpen(false)} className={({ isActive }) => `nav-link ${isActive || tambien?.some((r) => location.pathname.startsWith(r)) ? 'nav-link-active' : ''}`}>
                     <Icon size={18} /><span>{label}</span>
                     {badges[to] > 0
                       ? <span className="ml-auto grid min-w-5 place-items-center rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold text-app">{badges[to]}</span>

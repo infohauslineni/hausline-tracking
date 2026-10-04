@@ -14,6 +14,8 @@ const valorLabel = (c: Pick<Cupon, 'tipo' | 'valor'>) => c.tipo === 'porcentaje'
 const usosLabel = (c: Pick<Cupon, 'usos_max' | 'usos_confirmados'>) => c.usos_max == null ? `${c.usos_confirmados} usos · ilimitado` : `${c.usos_confirmados} / ${c.usos_max} usos`
 // "Hoy" en Nicaragua (UTC-6): igual que la base, así un cupón no vence a las 6 p. m. de su último día.
 const hoyNic = () => new Date(Date.now() - 6 * 3600e3).toISOString().slice(0, 10)
+// Fecha (Nicaragua) dentro de N días: los cupones nuevos duran 15 días por defecto (que compren pronto).
+const enDias = (n: number) => new Date(Date.now() - 6 * 3600e3 + n * 86400e3).toISOString().slice(0, 10)
 const fmtFecha = (d: string) => d.split('-').reverse().join('/')
 const vencido = (c: Pick<Cupon, 'vence_el'>) => !!c.vence_el && c.vence_el < hoyNic()
 const programado = (c: Pick<Cupon, 'inicia_el'>) => !!c.inicia_el && c.inicia_el > hoyNic()
@@ -133,8 +135,8 @@ export function CuponModal({ open, cupon, clientePreset, onClose, onSaved }: { o
       setIniciaEl(cupon.inicia_el ?? ''); setVenceEl(cupon.vence_el ?? ''); setNota(cupon.nota ?? '')
     } else {
       const preset = clientePreset ?? null
-      setCodigo(generarCodigo(preset ? preset.nombre.split(' ')[0] : 'HAUS'))
-      setTipo('porcentaje'); setValor(10); setClienteId(preset?.id ?? ''); setUsos(preset ? '1' : 'ilimitado'); setUsosMax(20); setIniciaEl(''); setVenceEl(''); setNota('')
+      setCodigo(generarCodigo('HAUS'))
+      setTipo('porcentaje'); setValor(10); setClienteId(preset?.id ?? ''); setUsos(preset ? '1' : 'ilimitado'); setUsosMax(20); setIniciaEl(''); setVenceEl(enDias(15)); setNota('')
     }
   }, [open, cupon, clientePreset])
 
@@ -163,7 +165,7 @@ export function CuponModal({ open, cupon, clientePreset, onClose, onSaved }: { o
       {usos === 'varios' ? <label className="form-field"><span>Tope de usos</span><input type="number" min="1" step="1" value={usosMax} onChange={(e) => setUsosMax(Number(e.target.value))} /></label> : <div className="hidden sm:block" />}
       <label className="form-field"><span>Empieza (opcional)</span><input type="date" value={iniciaEl} onChange={(e) => setIniciaEl(e.target.value)} /></label>
       <label className="form-field"><span>Termina (opcional)</span><input type="date" value={venceEl} onChange={(e) => setVenceEl(e.target.value)} /></label>
-      <p className="col-span-full -mt-1 text-xs text-muted">Vacío = empieza ya / no vence. Funciona desde las 12 a. m. del día de inicio hasta las 11:59 p. m. del último día (hora de Nicaragua).</p>
+      <p className="col-span-full -mt-1 text-xs text-muted">Por defecto dura 15 días (para que compren pronto). Vacío = empieza ya / no vence. Funciona desde las 12 a. m. del día de inicio hasta las 11:59 p. m. del último día (hora de Nicaragua).</p>
       <label className="form-field sm:col-span-2"><span>Nota (opcional)</span><input value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej: promo del Día de las Madres" /></label>
       <div className="col-span-full flex justify-end gap-2 pt-1"><button type="button" className="subtle-button px-4" onClick={onClose}>Cancelar</button><button className="primary-button px-5" disabled={saving}>{saving ? 'Guardando…' : 'Guardar cupón'}</button></div>
     </form>

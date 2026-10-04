@@ -4,7 +4,8 @@ import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { DEMO_CLIENTES, DEMO_PEDIDOS } from '../../data/demo'
 import { isSupabaseConfigured } from '../../lib/supabase'
-import { listarClientes } from '../../services/clientes.service'
+import { listarAvataresClientes, listarClientes, lugarCliente } from '../../services/clientes.service'
+import { ClienteAvatar } from '../../components/clientes/ClienteAvatar'
 import { listarPagos, obtenerTipoCambio } from '../../services/comercial.service'
 import { listarPedidos } from '../../services/pedidos.service'
 import type { Cliente, Pago, Pedido } from '../../types/domain'
@@ -29,6 +30,8 @@ export function ClienteDetailPage() {
   const [tipoCambio, setTipoCambio] = useState(37)
   const [editOpen, setEditOpen] = useState(false)
   const [compraOpen, setCompraOpen] = useState(false)
+  const [avatar, setAvatar] = useState<string | undefined>(undefined)
+  useEffect(() => { if (isSupabaseConfigured && id) void listarAvataresClientes().then((a) => setAvatar(a.porCliente[id])).catch(() => undefined) }, [id])
   const [abonoOpen, setAbonoOpen] = useState(false)
 
   const load = () => {
@@ -63,12 +66,13 @@ export function ClienteDetailPage() {
 
     <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div className="flex items-center gap-4">
-        <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-accent/12 text-xl font-bold text-accent">{cliente.nombre.charAt(0).toUpperCase()}</span>
+        <ClienteAvatar nombre={cliente.nombre} url={avatar} size={56} />
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{cliente.nombre}</h1>
           <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
             <span>{cliente.whatsapp}</span>
-            {(cliente.ciudad || cliente.departamento) && <span className="flex items-center gap-1"><MapPin size={13} /> {[cliente.ciudad, cliente.departamento].filter(Boolean).join(', ')}</span>}
+            {(cliente.ciudad || cliente.departamento) && <span className="flex items-center gap-1"><MapPin size={13} /> {lugarCliente(cliente)}</span>}
+            {cliente.correo && <span>{cliente.correo}</span>}
             <span>Registrado {formatDate(cliente.created_at)}</span>
           </p>
         </div>

@@ -2,6 +2,7 @@ import { Bookmark, Camera, ChevronDown, ExternalLink, Eye, Link2, PackageCheck, 
 import type { ReactNode } from 'react'
 import type { Inversion } from '../../types/domain'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
+import { ProductoImg } from '../ui/ProductoImg'
 
 // Tarjeta de una compra libre (Compras libres). Ordenada en bloques: cabecera (foto, código,
 // estado, nombre) → números (costo / venta / ganancia) → etiquetas de estado → acciones
@@ -73,7 +74,7 @@ export function CompraCard(p: Props) {
     {/* Cabecera */}
     <div className="flex gap-3.5 p-4 pb-3">
       <button className={`grid ${p.enModal ? 'size-28' : 'size-[76px]'} shrink-0 place-items-center overflow-hidden rounded-xl bg-white`} onClick={p.onVer} aria-label={`Ver ${item.producto}`}>
-        {img ? <img src={img} alt={item.producto} className="size-full object-cover" loading="lazy" /> : <PackageCheck size={22} className="text-black/40" />}
+        {img ? <ProductoImg src={img} alt={item.producto} className="size-full" /> : <PackageCheck size={22} className="text-black/40" />}
       </button>
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
@@ -157,7 +158,7 @@ export function CompraFila({ item, costo, enEI, enCaminoPublicado, fotos, onDeta
   const porPagar = item.pagado === false && item.estado !== 'descartado'
   const img = item.imagen ? resolverImagenCatalogo(item.imagen) : ''
   return <article onClick={onDetalles} className={`group grid cursor-pointer grid-cols-[56px_1fr_auto] items-center gap-3 rounded-2xl border border-line bg-panel p-3 transition hover:border-white/20 hover:bg-white/[.025] md:grid-cols-[56px_minmax(0,2.2fr)_130px_minmax(0,1.4fr)_minmax(0,1.6fr)_auto] md:gap-4 ${cerrado ? 'opacity-60' : ''}`}>
-    <span className="grid size-14 place-items-center overflow-hidden rounded-xl bg-white">{img ? <img src={img} alt="" className="size-full object-cover" loading="lazy" /> : <PackageCheck size={18} className="text-black/40" />}</span>
+    <span className="grid size-14 place-items-center overflow-hidden rounded-xl bg-white">{img ? <ProductoImg src={img} className="size-full" /> : <PackageCheck size={18} className="text-black/40" />}</span>
     <div className="min-w-0">
       <p className="truncate font-mono text-[10.5px] font-semibold tracking-wider text-accent">{(item.codigo ?? '').trim() || 'SIN CÓDIGO'}</p>
       <p className="truncate text-sm font-semibold">{item.producto}</p>

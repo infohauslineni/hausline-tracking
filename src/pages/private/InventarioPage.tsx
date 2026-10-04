@@ -12,6 +12,8 @@ import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { contarFotosInversiones, ponerEntregaInmediataCompra, quitarEntregaInmediata } from '../../services/archivos.service'
 import { FotosCompraModal } from '../../components/inventario/FotosCompraModal'
 import { CompraCard, CompraFila } from '../../components/inventario/CompraCard'
+import { LibresTabs } from '../../components/layout/LibresTabs'
+import { ProductoImg } from '../../components/ui/ProductoImg'
 
 // pago: 'ahora' = se descuenta de la cuenta al registrar; 'antes' = ya estaba pagado/descontado;
 // 'pendiente' = todavía no se le pagó al proveedor (queda "por pagar" en la tarjeta).
@@ -123,7 +125,7 @@ export function InventarioPage() {
     } } })
   }
 
-  return <div><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Compras propias · sin pedido de cliente</p><h1 className="page-title">Compras libres</h1><p className="page-subtitle">Lo que compras por tu cuenta para vender (ej. unos Golden Goose para stock): si ya lo pagaste o no, si viene en camino o ya lo tenés, y apartalo a un cliente como pedido normal.</p></div><button className="primary-button px-5" onClick={() => { setEditing(null); setOpen(true) }}><Plus size={17} /> Registrar compra</button></div>
+  return <div><LibresTabs /><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Compras propias · sin pedido de cliente</p><h1 className="page-title">Compras libres</h1><p className="page-subtitle">Lo que compras por tu cuenta para vender (ej. unos Golden Goose para stock): si ya lo pagaste o no, si viene en camino o ya lo tenés, y apartalo a un cliente como pedido normal.</p></div><button className="primary-button px-5" onClick={() => { setEditing(null); setOpen(true) }}><Plus size={17} /> Registrar compra</button></div>
     <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5"><Metric icon={CircleDollarSign} label="Capital invertido" value={`USD ${metrics.invested.toFixed(2)}`} /><Metric icon={Wallet} label={`Por pagar al proveedor${metrics.debtCount ? ` (${metrics.debtCount})` : ''}`} value={`USD ${metrics.debt.toFixed(2)}`} warn={metrics.debt > 0} /><Metric icon={Boxes} label="Unidades activas" value={String(metrics.units)} /><Metric icon={ShoppingBag} label="Venta potencial" value={`USD ${metrics.potential.toFixed(2)}`} /><Metric icon={TrendingUp} label="Ganancia potencial" value={`USD ${Math.max(0, metrics.potential - metrics.costActive).toFixed(2)}`} accent /></div>
     <EntregaInmediataTienda lista={ei} items={items} quitando={quitandoEI} onQuitar={(p) => void quitarEI(p.codigo, p.nombre)} onRegistrar={(datos) => {
       const prod = products.find((p) => p.codigo?.trim().toUpperCase() === String(datos.codigo).toUpperCase())
@@ -349,27 +351,25 @@ function EntregaInmediataTienda({ lista, items, quitando, onQuitar, onRegistrar 
   if (!lista?.length) return null
   const registrado = (codigo: string) => items.find((i) => (i.codigo ?? '').trim().toUpperCase() === codigo.toUpperCase() && activo(i.estado))
   const faltan = lista.filter((p) => !registrado(p.codigo)).length
-  return <section className="mt-6 rounded-2xl border border-accent/25 bg-accent/[.03] p-4">
+  return <section className="mt-6 rounded-2xl border border-line bg-panel p-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <h2 className="flex items-center gap-2 font-semibold"><Zap size={17} className="text-accent" /> En la tienda como Entrega inmediata <span className="rounded-full bg-white/[.06] px-2 py-0.5 text-[11px] font-normal text-muted">{lista.length}</span></h2>
-      {faltan > 0 && <span className="text-[11px] text-amber-200">{faltan} sin registrar con su costo</span>}
+      <h2 className="flex items-center gap-2 text-sm font-semibold"><span className="grid size-8 place-items-center rounded-lg bg-accent/10 text-accent"><Zap size={16} /></span> En la tienda como Entrega inmediata <span className="rounded-full bg-white/[.06] px-2 py-0.5 text-[11px] font-normal text-muted">{lista.length}</span></h2>
+      {faltan > 0 && <span className="rounded-full bg-amber-300/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200">{faltan} sin registrar con su costo</span>}
     </div>
-    <p className="mt-1 text-[11px] leading-4 text-muted">Lo que ven los clientes en "Entrega inmediata" (se edita en el admin de la tienda). Cuando se vende una talla, sale sola de la tienda y de aquí.</p>
-    <div className="mt-3 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">{lista.map((p) => {
+    <p className="mt-1.5 text-[11px] leading-4 text-muted">Lo que ven los clientes en "Entrega inmediata". Cuando se vende una talla, sale sola de la tienda y de aquí.</p>
+    <div className="mt-3 grid gap-2 lg:grid-cols-2">{lista.map((p) => {
       const reg = registrado(p.codigo)
       const precio = p.precio_entrega_inmediata > 0 ? p.precio_entrega_inmediata : p.precio_venta
       const unidades = p.tallas_entrega_inmediata.length || p.cantidad_disponible || 1
-      return <article key={p.codigo} className="flex gap-3 rounded-xl border border-line bg-panel p-2.5">
-        <div className="size-16 shrink-0 overflow-hidden rounded-lg bg-white/[.04]">{p.imagen ? <img src={resolverImagenCatalogo(p.imagen)} alt="" className="size-full object-cover" /> : <PackageCheck size={18} className="m-auto mt-5 text-muted" />}</div>
+      return <article key={p.codigo} className="flex items-center gap-3 rounded-xl border border-line bg-white/[.02] p-2.5 transition hover:border-white/15">
+        <span className="size-12 shrink-0 overflow-hidden rounded-lg bg-white">{p.imagen ? <ProductoImg src={resolverImagenCatalogo(p.imagen)} className="size-full" /> : <PackageCheck size={16} className="m-auto mt-4 text-black/40" />}</span>
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-accent">{p.codigo}</p>
-          <strong className="block truncate text-sm">{p.nombre}</strong>
-          <p className="mt-0.5 text-[11px] text-muted">{p.tallas_entrega_inmediata.length ? `Tallas: ${p.tallas_entrega_inmediata.join(', ')}` : p.cantidad_disponible ? `${p.cantidad_disponible} disponibles` : 'Sin talla'} · USD {precio.toFixed(2)}</p>
-          {reg
-            ? <p className="mt-1.5 text-[11px] font-semibold text-green-300">✓ En Compras libres · {statusLabel[reg.estado]}</p>
-            : <button className="mt-1.5 rounded-lg border border-amber-300/30 bg-amber-300/[.08] px-2 py-1 text-[11px] font-semibold text-amber-200 transition hover:bg-amber-300/[.15]" onClick={() => onRegistrar({ codigo: p.codigo, producto: p.nombre, marca: p.marca ?? '', talla_color: [p.tallas_entrega_inmediata.join(', '), p.colores_entrega_inmediata.join(', ')].filter(Boolean).join(' · '), cantidad: String(unidades), precio_venta_estimado: String(precio), pago: 'antes', estado: 'en_inventario' })}>+ Registrar su costo</button>}
-          <button className="mt-1 block text-[11px] font-semibold text-red-300/90 hover:text-red-200 disabled:opacity-50" disabled={quitando === p.codigo} onClick={() => onQuitar(p)}>{quitando === p.codigo ? 'Quitando…' : '✕ Quitar de Entrega inmediata'}</button>
+          <p className="truncate text-[13px] font-semibold"><span className="mr-1.5 font-mono text-[10.5px] tracking-wider text-accent">{p.codigo}</span>{p.nombre}</p>
+          <p className="mt-0.5 truncate text-[11px] text-muted">{p.tallas_entrega_inmediata.length ? `Talla${p.tallas_entrega_inmediata.length > 1 ? 's' : ''} ${p.tallas_entrega_inmediata.join(', ')}` : p.cantidad_disponible ? `${p.cantidad_disponible} disponibles` : 'Sin talla'} · <span className="font-mono text-white/80">USD {precio.toFixed(2)}</span></p>
+          {reg && <p className="mt-0.5 text-[10.5px] font-semibold text-green-300/90">✓ En Compras libres · {statusLabel[reg.estado]}</p>}
         </div>
+        {!reg && <button className="shrink-0 rounded-lg border border-amber-300/30 bg-amber-300/[.08] px-2.5 py-1.5 text-[11px] font-semibold text-amber-200 transition hover:bg-amber-300/[.15]" onClick={() => onRegistrar({ codigo: p.codigo, producto: p.nombre, marca: p.marca ?? '', talla_color: [p.tallas_entrega_inmediata.join(', '), p.colores_entrega_inmediata.join(', ')].filter(Boolean).join(' · '), cantidad: String(unidades), precio_venta_estimado: String(precio), pago: 'antes', estado: 'en_inventario' })}>+ Registrar su costo</button>}
+        <button className="grid size-8 shrink-0 place-items-center rounded-lg border border-line text-muted transition hover:border-red-400/40 hover:bg-red-400/10 hover:text-red-300 disabled:opacity-50" title="Quitar de Entrega inmediata" aria-label="Quitar de Entrega inmediata" disabled={quitando === p.codigo} onClick={() => onQuitar(p)}>{quitando === p.codigo ? '…' : <X size={15} />}</button>
       </article>
     })}</div>
   </section>
