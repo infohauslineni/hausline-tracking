@@ -52,7 +52,7 @@ function Chip({ tono, children, onQuitar, tituloQuitar }: { tono: string; childr
 }
 
 function Herramienta({ icon, label, onClick, activo, peligro, disabled }: { icon: ReactNode; label: string; onClick: () => void; activo?: boolean; peligro?: boolean; disabled?: boolean }) {
-  return <button disabled={disabled} onClick={onClick} title={label}
+  return <button disabled={disabled} onClick={onClick} title={label} style={{ fontSize: 11 }}
     className={`flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-[10px] font-medium transition disabled:opacity-40 ${peligro ? 'text-muted hover:bg-red-400/10 hover:text-red-300' : activo ? 'text-accent hover:bg-accent/10' : 'text-muted hover:bg-white/[.05] hover:text-white'}`}>
     {icon}<span className="leading-none">{label}</span>
   </button>
@@ -124,8 +124,8 @@ export function CompraCard(p: Props) {
     <div className="px-4 pt-4">
       {porPagar && <button className="mb-2 flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300/30 bg-amber-300/[.07] py-2.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-300/[.13]" onClick={p.onPagar}><Wallet size={15} /> Registrar pago al proveedor · {usd(p.costo)}</button>}
       {activo && <div className={`grid gap-2 ${item.estado === 'en_transito' ? 'grid-cols-1' : 'grid-cols-2'}`}>
-        {item.estado !== 'en_transito' && <button className="primary-button justify-center py-2.5 text-xs" onClick={p.onVender}><Tag size={15} /> Vender ahora</button>}
-        <button className={`${item.estado === 'en_transito' ? 'primary-button' : 'subtle-button'} justify-center py-2.5 text-xs`} onClick={p.onApartar}><Bookmark size={15} /> Apartar (50%)</button>
+        {item.estado !== 'en_transito' && <button className="primary-button justify-center py-2.5" style={{ fontSize: 13 }} onClick={p.onVender}><Tag size={15} /> Vender ahora</button>}
+        <button className={`${item.estado === 'en_transito' ? 'primary-button' : 'subtle-button'} justify-center py-2.5`} style={{ fontSize: 13 }} onClick={p.onApartar}><Bookmark size={15} /> Apartar (50%)</button>
       </div>}
       {item.estado === 'vendido' && <div className="grid grid-cols-2 gap-2">
         {item.pedido_id

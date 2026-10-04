@@ -143,19 +143,20 @@ export function InventarioPage() {
           onDetalles={() => setDetalleId(item.id)} />
       })}
     </div>
-    {detalle && (() => {
+    {detalle && !preview && !fotosDe && !poniendoEI && !selling && !paying && !open && (() => {
       const item = detalle
       const cod = (item.codigo ?? '').trim().toUpperCase()
-      // Las acciones que abren otra ventana cierran primero la ficha.
-      const luego = (fn: () => void) => () => { setDetalleId(null); fn() }
+      // Las ventanas que se abren desde aquí tapan la ficha; al cerrarlas se vuelve a Detalles.
+      const luego = (fn: () => void) => () => fn()
+      const saliendo = (fn: () => void) => () => { setDetalleId(null); fn() }
       return <Modal open onClose={() => setDetalleId(null)} title="Detalles de la compra" description={`${item.codigo ? `${item.codigo} · ` : ''}comprada el ${new Date(item.fecha + 'T12:00:00').toLocaleDateString('es-NI', { day: 'numeric', month: 'short', year: 'numeric' })}`}>
         <CompraCard enModal item={item} costo={totalCost(item)} gastosAsociados={linkedExpenses(item)}
           enEI={!!cod && (ei ?? []).some((p) => p.codigo.toUpperCase() === cod)} enCaminoPublicado={!!cod && enCaminoTienda.has(cod)}
           fotos={fotosCount[item.id] ?? 0} quitandoEI={quitandoEI === (item.codigo ?? '').trim()} imprimiendo={printingId === item.id}
           onEstado={(estado) => void updateStatus(item, estado)} onVer={luego(() => setPreview(item))} onEditar={luego(() => { setEditing(item); setOpen(true) })}
           onEliminar={luego(() => void remove(item))} onPagar={luego(() => setPaying(item))} onFotos={luego(() => setFotosDe(item))} onEntregaInmediata={luego(() => setPoniendoEI(item))}
-          onQuitarEI={() => void quitarEI((item.codigo ?? '').trim(), item.producto)} onVender={luego(() => setSelling(item))} onApartar={luego(() => apartar(item))}
-          onVerPedido={luego(() => navigate(`/pedidos/${item.pedido_id}`))} onImprimir={() => void imprimirVendido(item)} />
+          onQuitarEI={() => void quitarEI((item.codigo ?? '').trim(), item.producto)} onVender={luego(() => setSelling(item))} onApartar={saliendo(() => apartar(item))}
+          onVerPedido={saliendo(() => navigate(`/pedidos/${item.pedido_id}`))} onImprimir={() => void imprimirVendido(item)} />
       </Modal>
     })()}
     {!items.length && <div className="mt-6 rounded-2xl border border-dashed border-line p-10 text-center text-sm text-muted">Todavía no hay compras libres. Registrá lo que compraste por tu cuenta para vender, esté pagado o no.</div>}
@@ -330,10 +331,10 @@ function ClientPreview({ item, onClose }: { item: Inversion | null; onClose: () 
   return <div className="fixed inset-0 z-[70] grid place-items-center overflow-y-auto bg-black/90 p-3 backdrop-blur-md sm:p-6" role="dialog" aria-modal="true" aria-label="Vista para cliente">
     <button className="absolute inset-0" aria-label="Cerrar vista" onClick={onClose} />
     <button type="button" className="fixed right-4 z-[90] grid size-12 place-items-center rounded-full border border-white/25 bg-black text-white shadow-2xl" style={{ top: 'calc(env(safe-area-inset-top) + 12px)' }} onClick={onClose} aria-label="Cerrar vista previa"><X size={23} /></button>
-    <section className="relative w-full max-w-[460px] overflow-hidden rounded-[28px] border border-white/15 bg-[#080a08] shadow-2xl">
+    <section className="relative w-full max-w-[400px] overflow-y-auto rounded-[26px] border border-white/15 bg-[#080a08] shadow-2xl" style={{ maxHeight: 'calc(100dvh - 32px)' }}>
       <header className="flex items-center justify-between border-b border-white/10 px-5 py-4"><div><strong className="block text-lg font-black tracking-[.24em] text-white">HAUSLINE</strong><span className="block text-[9px] font-bold tracking-[.42em] text-accent">NICARAGUA</span></div><span className="rounded-full border border-accent/30 bg-accent/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-accent">Entrega inmediata</span></header>
-      <div className="relative aspect-square overflow-hidden bg-white">{item.imagen ? <img src={item.imagen} alt={item.producto} className="size-full object-contain" /> : <div className="grid size-full place-items-center bg-[#111511] text-muted"><PackageCheck size={58} /><span className="sr-only">Sin foto</span></div>}</div>
-      <div className="p-6"><p className="text-[11px] font-bold uppercase tracking-[.2em] text-accent">{item.codigo || 'Disponible'}</p><h2 className="mt-2 text-3xl font-black leading-tight text-white">{item.producto}</h2>{item.marca && <p className="mt-2 text-sm uppercase tracking-wider text-white/55">{item.marca}</p>}
+      <div className="relative mx-auto aspect-square w-full overflow-hidden bg-white" style={{ maxHeight: 'min(400px, 42dvh)', maxWidth: 'min(400px, 42dvh)' }}>{item.imagen ? <ProductoImg src={resolverImagenCatalogo(item.imagen)} alt={item.producto} className="size-full" /> : <div className="grid size-full place-items-center bg-[#111511] text-muted"><PackageCheck size={58} /><span className="sr-only">Sin foto</span></div>}</div>
+      <div className="p-5"><p className="text-[11px] font-bold uppercase tracking-[.2em] text-accent">{item.codigo || 'Disponible'}</p><h2 className="mt-1.5 text-2xl font-black leading-tight text-white">{item.producto}</h2>{item.marca && <p className="mt-2 text-sm uppercase tracking-wider text-white/55">{item.marca}</p>}
         <div className="mt-6 grid grid-cols-2 gap-3"><div className="rounded-2xl border border-white/10 bg-white/[.035] p-4"><span className="text-[10px] font-bold uppercase tracking-wider text-white/45">Talla / color</span><strong className="mt-2 block text-xl text-white">{item.talla_color || 'Consultar'}</strong></div><div className="rounded-2xl border border-white/10 bg-white/[.035] p-4"><span className="text-[10px] font-bold uppercase tracking-wider text-white/45">Disponibles</span><strong className="mt-2 block text-xl text-white">{item.cantidad}</strong></div></div>
         <div className="mt-4 flex items-end justify-between rounded-2xl border border-accent/30 bg-accent/[.08] p-5"><div><span className="text-[10px] font-bold uppercase tracking-wider text-white/50">Precio</span><strong className="mt-1 block text-3xl font-black text-accent">USD {Number(item.precio_venta_estimado).toFixed(2)}</strong></div><span className="pb-1 text-xs font-semibold text-white/55">Disponible ahora</span></div>
         <p className="mt-5 text-center text-[10px] uppercase tracking-[.18em] text-white/35">Sneakers · Ropa · Accesorios</p>
