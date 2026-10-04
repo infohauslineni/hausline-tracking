@@ -4,6 +4,7 @@ import type { EstadoItem, EstadoPedido, Moneda, Pedido, PedidoItem } from '../ty
 import { cachedQuery, invalidateCache, invalidateComercial } from '../utils/queryCache'
 import { etiquetaCargoBodega } from '../utils/bodega'
 import { ajustarSaldoCuenta } from './cuentas.service'
+import { copiarFotosInversionAPedido } from './archivos.service'
 
 export type NuevoPedidoInput = {
   cliente_id: string
@@ -578,6 +579,8 @@ export async function crearPedido(input: NuevoPedidoInput, caja?: CajaPedido, op
   if (opts?.desdeInversion) {
     const { error: invError } = await client.from('inversiones').update({ estado: 'vendido', pedido_id: created.id }).eq('id', opts.desdeInversion)
     if (invError) console.error('No se pudo marcar la inversión como vendida:', invError)
+    // Las fotos de control de calidad que ya tenía la compra pasan al pedido (las ve el cliente).
+    try { await copiarFotosInversionAPedido(opts.desdeInversion, created.id) } catch (e) { console.error('No se pudieron copiar las fotos de la compra:', e) }
   }
 
   invalidateComercial()

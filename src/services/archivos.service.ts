@@ -273,3 +273,76 @@ export async function quitarEntregaInmediata(codigo: string): Promise<void> {
   const j = await res.json().catch(() => ({})) as { ok?: boolean; error?: string }
   if (!res.ok || !j.ok) throw new Error(j.error || 'No se pudo quitar de Entrega inmediata (HTTP ' + res.status + ').')
 }
+
+// ── Compras libres: fotos de control de calidad (migración 202610030003) ──────────────────
+// Se suben antes de que haya cliente; si después se aparta, se copian al pedido como control
+// de calidad visible para el cliente (le salen en su seguimiento).
+export type FotoInversion = { id: string; inversion_id: string; storage_path: string; nombre: string; tamano_bytes: number; created_at: string; signed_url?: string }
+
+export async function contarFotosInversiones(): Promise<Record<string, number>> {
+  const { data, error } = await requireSupabase().from('archivos_inversion').select('inversion_id')
+  if (error) throw error
+  return (data ?? []).reduce((acc: Record<string, number>, r: { inversion_id: string }) => { acc[r.inversion_id] = (acc[r.inversion_id] ?? 0) + 1; return acc }, {})
+}
+
+export async function listarFotosInversion(inversionId: string): Promise<FotoInversion[]> {
+  const client = requireSupabase()
+  const { data, error } = await client.from('archivos_inversion').select('*').eq('inversion_id', inversionId).order('created_at')
+  if (error) throw error
+  const fotos = (data ?? []) as FotoInversion[]
+  if (!fotos.length) return fotos
+  const { data: signed } = await client.storage.from('pedidos').createSignedUrls(fotos.map((f) => f.storage_path), 3600)
+  return fotos.map((f, i) => ({ ...f, signed_url: signed?.[i]?.signedUrl ?? undefined }))
+}
+
+export async function subirFotoInversion(inversionId: string, file: File, codigo?: string): Promise<FotoInversion> {
+  const client = requireSupabase()
+  validarImagen(file)
+  const blob = await comprimirImagen(file, marcaParaTipo('control_calidad', codigo))
+  const path = `inversiones/${inversionId}/control-calidad/${crypto.randomUUID()}.webp`
+  const { error: upErr } = await client.storage.from('pedidos').upload(path, blob, { contentType: 'image/webp', upsert: false, cacheControl: '31536000' })
+  if (upErr) throw upErr
+  const { data, error } = await client.from('archivos_inversion').insert({ inversion_id: inversionId, storage_path: path, nombre: file.name, mime_type: 'image/webp', tamano_bytes: blob.size }).select('*').single()
+  if (error) { await client.storage.from('pedidos').remove([path]); throw error }
+  const { data: signed } = await client.storage.from('pedidos').createSignedUrl(path, 3600)
+  return { ...(data as FotoInversion), signed_url: signed?.signedUrl ?? undefined }
+}
+
+export async function eliminarFotoInversion(foto: FotoInversion) {
+  const client = requireSupabase()
+  const { error: stErr } = await client.storage.from('pedidos').remove([foto.storage_path])
+  if (stErr) throw stErr
+  const { error } = await client.from('archivos_inversion').delete().eq('id', foto.id)
+  if (error) throw error
+}
+
+// Copia las fotos de la compra al pedido (control de calidad, visibles para el cliente).
+// No duplica: si el pedido ya tiene una foto con el mismo nombre de origen, la salta.
+export async function copiarFotosInversionAPedido(inversionId: string, pedidoId: string): Promise<number> {
+  const client = requireSupabase()
+  const { data: fotos, error } = await client.from('archivos_inversion').select('*').eq('inversion_id', inversionId).order('created_at')
+  if (error) throw error
+  if (!fotos?.length) return 0
+  const { data: yaHay } = await client.from('archivos_pedido').select('nombre').eq('pedido_id', pedidoId).eq('tipo', 'control_calidad')
+  const marca = (f: FotoInversion) => `compra-${f.id}`
+  const existentes = new Set((yaHay ?? []).map((a: { nombre: string }) => a.nombre))
+  let copiadas = 0
+  for (const f of fotos as FotoInversion[]) {
+    if (existentes.has(marca(f))) continue
+    const destino = `pedidos/${pedidoId}/control-calidad/${crypto.randomUUID()}.webp`
+    const { error: cpErr } = await client.storage.from('pedidos').copy(f.storage_path, destino)
+    if (cpErr) throw cpErr
+    const { error: insErr } = await client.from('archivos_pedido').insert({ pedido_id: pedidoId, tipo: 'control_calidad', storage_path: destino, nombre: marca(f), mime_type: 'image/webp', tamano_bytes: Number(f.tamano_bytes) || 1, visible_cliente: true, orden: copiadas + 1 })
+    if (insErr) { await client.storage.from('pedidos').remove([destino]); throw insErr }
+    copiadas++
+  }
+  return copiadas
+}
+
+// "Pasar fotos a un pedido" (cuando el cliente apartó desde la tienda y el pedido no quedó
+// conectado a la compra): busca el pedido por su código HS.
+export async function buscarPedidoPorCodigo(codigo: string): Promise<{ id: string; codigo: string } | null> {
+  const { data, error } = await requireSupabase().from('pedidos').select('id, codigo').ilike('codigo', codigo.trim()).maybeSingle()
+  if (error) throw error
+  return data as { id: string; codigo: string } | null
+}

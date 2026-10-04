@@ -1,4 +1,4 @@
-import { Bookmark, Boxes, CircleDollarSign, Eye, Zap, ImagePlus, Link2, PackageCheck, Pencil, Plus, Printer, Search, ShoppingBag, Tag, Trash2, TrendingUp, Wallet, X } from 'lucide-react'
+import { Bookmark, Boxes, Camera, CircleDollarSign, Eye, Zap, ImagePlus, Link2, PackageCheck, Pencil, Plus, Printer, Search, ShoppingBag, Tag, Trash2, TrendingUp, Wallet, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -9,7 +9,8 @@ import { actualizarInversion, cambiarEstadoInversion, eliminarInversion, listarI
 import type { Inversion, Producto } from '../../types/domain'
 import { imprimirReciboStock } from '../../utils/reciboStock'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
-import { ponerEntregaInmediataCompra, quitarEntregaInmediata } from '../../services/archivos.service'
+import { contarFotosInversiones, ponerEntregaInmediataCompra, quitarEntregaInmediata } from '../../services/archivos.service'
+import { FotosCompraModal } from '../../components/inventario/FotosCompraModal'
 
 // pago: 'ahora' = se descuenta de la cuenta al registrar; 'antes' = ya estaba pagado/descontado;
 // 'pendiente' = todavía no se le pagó al proveedor (queda "por pagar" en la tarjeta).
@@ -37,6 +38,9 @@ export function InventarioPage() {
   const [selling, setSelling] = useState<Inversion | null>(null)
   const [ventas, setVentas] = useState<VentaStock[]>([])
   const [printingId, setPrintingId] = useState<string | null>(null)
+  // Fotos de control de calidad por compra (cuántas tiene cada una) y la compra abierta.
+  const [fotosCount, setFotosCount] = useState<Record<string, number>>({})
+  const [fotosDe, setFotosDe] = useState<Inversion | null>(null)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'todos' | Inversion['estado']>('todos')
   // Datos para "Registrar costo" de un producto de entrega inmediata (abre el formulario ya lleno).
@@ -61,6 +65,7 @@ export function InventarioPage() {
     void Promise.all([listarInversiones(setItems), listarProductos((catalog) => setProducts(catalog.filter((item) => item.activo)))]).then(([investments, catalog]) => { setItems(investments); setProducts(catalog.filter((item) => item.activo)) }).catch(() => toast.error('No se pudo cargar el inventario. Ejecuta la migración nueva.'))
     // Ventas ya cerradas: se usan para reimprimir el recibo de un producto vendido con su cliente y monto reales.
     void listarVentasStock().then(setVentas).catch(() => undefined)
+    void contarFotosInversiones().then(setFotosCount).catch(() => undefined)
   }
   useEffect(load, [])
   // Reimprime el recibo de un producto ya vendido, reconstruyendo cliente/monto de la venta registrada.
@@ -131,7 +136,7 @@ export function InventarioPage() {
     <p className={`rounded-xl border px-3 py-2 text-[11px] leading-4 ${publicado ? 'border-amber-300/30 bg-amber-300/[.07] text-amber-200' : 'border-line bg-white/[.02] text-muted'}`}>{publicado ? '🚚 En la tienda como "En camino · Apartalo ya". Cuando la pases a Disponible, entra sola a Entrega inmediata.' : codigoItem ? '🚚 Se publica sola como "En camino" en unos segundos (el producto tiene que estar guardado en el admin de la tienda).' : '🚚 Ponele el código de la tienda (Editar) para que salga como "En camino".'}</p>
     {publicado && <a className="flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300/30 bg-amber-300/[.06] p-2.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-300/[.12]" href={`https://hauslineshopni.es/admin.html?ig=${encodeURIComponent(codigoItem)}&modo=encamino`} target="_blank" rel="noopener noreferrer">📸 Post e historia "En camino · Apartalo ya"</a>}
   </div>
-})()}{activo(item.estado) && <div className="mt-4 flex flex-col gap-2">{item.estado === 'en_inventario' && (() => {
+})()}{item.estado !== 'descartado' && <button className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl border p-2.5 text-xs font-semibold transition ${fotosCount[item.id] ? 'border-sky-400/30 bg-sky-400/[.07] text-sky-300 hover:bg-sky-400/[.13]' : 'border-line bg-white/[.02] text-white/80 hover:border-white/25'}`} onClick={() => setFotosDe(item)}><Camera size={15} /> {fotosCount[item.id] ? `Control de calidad · ${fotosCount[item.id]} ${fotosCount[item.id] === 1 ? 'foto' : 'fotos'}` : 'Subir control de calidad'}</button>}{activo(item.estado) && <div className="mt-4 flex flex-col gap-2">{item.estado === 'en_inventario' && (() => {
   const codigoItem = (item.codigo ?? '').trim()
   const enEI = (ei ?? []).some((p) => p.codigo.toUpperCase() === codigoItem.toUpperCase())
   const btn = 'flex items-center justify-center gap-2 rounded-xl border p-2.5 text-xs font-semibold transition'
@@ -147,6 +152,7 @@ export function InventarioPage() {
     <SellModal item={selling} onClose={() => setSelling(null)} onSold={(item) => { setItems((all) => all.map((current) => current.id === item.id ? item : current)); setSelling(null); void listarVentasStock().then(setVentas).catch(() => undefined) }} />
     <PayModal item={paying} onClose={() => setPaying(null)} onPaid={(item) => { setItems((all) => all.map((current) => current.id === item.id ? item : current)); setPaying(null) }} />
     <ClientPreview item={preview} onClose={() => setPreview(null)} />
+    {fotosDe && <FotosCompraModal item={fotosDe} onClose={() => setFotosDe(null)} onCambio={(n) => setFotosCount((c) => ({ ...c, [fotosDe.id]: n }))} />}
     <EntregaInmediataModal key={poniendoEI?.id ?? 'ninguna'} item={poniendoEI} enTienda={(ei ?? []).find((p) => p.codigo.toUpperCase() === (poniendoEI?.codigo ?? '').trim().toUpperCase()) ?? null} coloresProducto={coloresTienda[(poniendoEI?.codigo ?? '').trim().toUpperCase()] ?? []} onClose={() => setPoniendoEI(null)} onListo={() => { setPoniendoEI(null); setTimeout(cargarEI, 2500) }} />
   </div>
 }
