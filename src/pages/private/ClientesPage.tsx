@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Edit3, MapPin, MessageCircle, Plus, Search, Ticket, Trash2, Users } from 'lucide-react'
+import { Download, Edit3, MapPin, MessageCircle, Plus, Search, Ticket, Trash2, Users } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
@@ -48,6 +48,19 @@ export function ClientesPage() {
     return clientes.filter((client) => [client.nombre, client.whatsapp, client.ciudad, client.departamento, client.correo].some((value) => value?.toLowerCase().includes(term)))
   }, [clientes, search])
 
+  // Lista de clientes CON correo, para Excel / Google Sheets / herramientas de correo (CSV UTF-8).
+  const exportarConCorreo = () => {
+    const conCorreo = clientes.filter((c) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(c.correo ?? '').trim()))
+    if (!conCorreo.length) return toast.error('Ningún cliente tiene correo todavía.')
+    const celda = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const filas = [['Nombre', 'Correo', 'WhatsApp', 'Departamento', 'Ciudad', 'Dirección', 'Cliente desde'],
+      ...conCorreo.map((c) => [c.nombre, String(c.correo).trim().toLowerCase(), c.whatsapp, c.departamento ?? '', c.ciudad ?? '', c.direccion ?? '', String(c.created_at).slice(0, 10)])]
+    const csv = '\ufeff' + filas.map((fila) => fila.map(celda).join(',')).join('\r\n')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const a = document.createElement('a'); a.href = url; a.download = `clientes-con-correo-${new Date().toISOString().slice(0, 10)}.csv`; a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 2000)
+    toast.success(`${conCorreo.length} clientes con correo exportados.`)
+  }
   const openNew = () => { setEditing(null); setOpen(true) }
   const openEdit = (cliente: Cliente) => { setEditing(cliente); setOpen(true) }
   const remove = async (cliente: Cliente) => {
@@ -61,7 +74,7 @@ export function ClientesPage() {
 
   return <div>
     {!isSupabaseConfigured && <PreviewBanner />}
-    <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Directorio</p><h1 className="page-title">Clientes</h1><p className="page-subtitle">Información de contacto y pedidos por cliente.</p></div><button className="primary-button px-5" onClick={openNew}><Plus size={18} /> Nuevo cliente</button></div>
+    <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Directorio</p><h1 className="page-title">Clientes</h1><p className="page-subtitle">Información de contacto y pedidos por cliente.</p></div><div className="flex flex-wrap gap-2"><button className="subtle-button px-4" onClick={exportarConCorreo} title="Descarga un archivo para Excel con los clientes que tienen correo"><Download size={16} /> Exportar con correo</button><button className="primary-button px-5" onClick={openNew}><Plus size={18} /> Nuevo cliente</button></div></div>
     <div className="mt-7 flex items-center gap-3"><div className="relative max-w-md flex-1"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" size={18} /><input className="search-input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nombre, WhatsApp o ciudad" /></div><span className="hidden text-xs text-muted sm:block">{filtered.length} clientes</span></div>
 
     {loading ? <div className="mt-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{[1,2,3].map((n) => <div key={n} className="h-44 animate-pulse rounded-2xl border border-line bg-panel" />)}</div> : filtered.length === 0 ? <EmptyClients onAdd={openNew} /> : <>
