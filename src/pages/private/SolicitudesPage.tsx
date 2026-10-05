@@ -9,7 +9,7 @@ import { isSupabaseConfigured } from '../../lib/supabase'
 import { archivarComprobanteDrive } from '../../services/archivos.service'
 import { confirmarSolicitud, confirmarSolicitudesGrupo, descartarSolicitud, descartarSolicitudes, eliminarSolicitud, listarSolicitudes, suscribirSolicitudes, urlComprobanteSolicitud, type Solicitud } from '../../services/solicitudes.service'
 import { useAuth } from '../../contexts/AuthContext'
-import { whatsappUrl } from '../../utils/whatsapp'
+import { sinEmojis, whatsappUrl } from '../../utils/whatsapp'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { urlSeguimientoCliente } from '../../utils/seguimientoUrl'
 
@@ -54,7 +54,7 @@ function urlProveedor(mensaje: string): string {
   try { num = (localStorage.getItem('hausline_proveedor_wa') || '').replace(/\D/g, '') } catch { /* */ }
   const env = ((import.meta.env.VITE_PROVEEDOR_WHATSAPP as string | undefined) || '').replace(/\D/g, '')
   const phone = num || env
-  return phone ? `https://wa.me/${phone}?text=${encodeURIComponent(mensaje)}` : `https://wa.me/?text=${encodeURIComponent(mensaje)}`
+  return phone ? `https://wa.me/${phone}?text=${encodeURIComponent(sinEmojis(mensaje))}` : `https://wa.me/?text=${encodeURIComponent(sinEmojis(mensaje))}`
 }
 
 // Agrupa los encargos pendientes por cliente (teléfono normalizado: últimos 8 dígitos), así

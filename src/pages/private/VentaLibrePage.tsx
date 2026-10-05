@@ -1,3 +1,4 @@
+import { sinEmojis } from '../../utils/whatsapp'
 import { LibresTabs } from '../../components/layout/LibresTabs'
 import { Copy, ExternalLink, ImagePlus, Link2, MessageCircle, Plus, Power, Star, Store, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
@@ -22,7 +23,7 @@ const guardarWa = (codigo: string, wa: string) => { try { const m = leerWa(); if
 function urlWhatsApp(datos: Pick<DatosVentaLibre, 'codigo' | 'nombre' | 'precio'>, wa?: string) {
   let num = String(wa || '').replace(/\D/g, '')
   if (num.length === 8) num = '505' + num
-  return `https://wa.me/${num}?text=${encodeURIComponent(mensajeVentaLibre(datos))}`
+  return `https://wa.me/${num}?text=${encodeURIComponent(sinEmojis(mensajeVentaLibre(datos)))}`
 }
 
 export function VentaLibrePage() {
