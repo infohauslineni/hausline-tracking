@@ -75,3 +75,12 @@ export function generarCodigo(prefijo = 'HAUS'): string {
   for (let i = 0; i < 5; i++) s += abc[Math.floor(Math.random() * abc.length)]
   return `${prefijo.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'HAUS'}-${s}`
 }
+
+// Le manda al cliente su cupón por correo (lo arma el servidor con los datos de la base).
+export async function enviarCuponPorCorreo(cuponId: string): Promise<{ ok: boolean; correo?: string; sinCorreo?: boolean; error?: string }> {
+  const { data: sesion } = await client().auth.getSession()
+  const token = sesion.session?.access_token
+  if (!token) return { ok: false, error: 'Sesión no disponible.' }
+  const res = await fetch('/api/notificar-estado', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ cuponCliente: true, cuponId }) })
+  return res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` }))
+}

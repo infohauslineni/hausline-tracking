@@ -5,6 +5,7 @@ import { subirFacturaDrive, subirArchivoDrive, mesCarpeta } from './_drive.js'
 import { cerrarEmail, reservarEmail } from './_email-eventos.js'
 import { automatizaciones } from './_automatico.js'
 import { hacerRespaldo } from './_respaldo.js'
+import { enviarCorreoCuponCliente } from './_correo-auto.js'
 
 // La tarea de cada 15 min hace varias cosas (avisos, recordatorios, reporte): le damos margen.
 export const config = { maxDuration: 60 }
@@ -282,6 +283,31 @@ async function respaldoManual(response, authorization) {
 // (best-effort, solo log), aquí se devuelve el error REAL para mostrarlo en el panel.
 // "Vender ahora" (Entrega inmediata, Compras libres): manda al correo del cliente el
 // comprobante / factura de la venta. Solo personal del panel (JWT).
+// Cupón creado para un cliente desde el panel: se le manda por correo. El correo y los datos
+// salen de la base (no del navegador). Solo personal del panel (JWT).
+async function cuponCliente(response, body, authorization) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(500).json({ ok: false, error: 'Falta configuración del servidor.' })
+  const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  const token = String(authorization).replace(/^Bearer\s+/i, '').trim()
+  if (!token) return response.status(401).json({ ok: false })
+  const { data: userData } = await admin.auth.getUser(token).catch(() => ({ data: { user: null } }))
+  if (!userData?.user) return response.status(401).json({ ok: false })
+  const { data: perfil } = await admin.from('perfiles').select('rol, activo').eq('id', userData.user.id).maybeSingle()
+  if (!perfil || !perfil.activo || (perfil.rol !== 'admin' && perfil.rol !== 'operador')) return response.status(403).json({ ok: false, error: 'No autorizado.' })
+  const id = String(body.cuponId || '')
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return response.status(400).json({ ok: false, error: 'Cupón inválido.' })
+  const { data: c } = await admin.from('cupones').select('codigo, tipo, valor, vence_el, nota, activo, clientes(nombre, correo)').eq('id', id).maybeSingle()
+  if (!c || !c.activo) return response.status(200).json({ ok: false, error: 'El cupón no existe o está desactivado.' })
+  const correo = String(c.clientes?.correo || '').trim().toLowerCase()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) return response.status(200).json({ ok: false, sinCorreo: true, error: 'El cliente no tiene correo.' })
+  try {
+    await enviarCorreoCuponCliente({ correo, nombre: c.clientes?.nombre, cupon: c.codigo, tipo: c.tipo, valor: c.valor, vence: c.vence_el, nota: body.conNota ? c.nota : null })
+    return response.status(200).json({ ok: true, correo })
+  } catch (error) {
+    return response.status(200).json({ ok: false, error: error instanceof Error ? error.message : 'No se pudo enviar el correo.' })
+  }
+}
+
 async function facturaVentaInmediata(response, body, authorization) {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(500).json({ ok: false, error: 'Falta configuración del servidor.' })
   const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
@@ -679,6 +705,8 @@ export default async function handler(request, response) {
   if (body.archivarDrive) return archivarDriveManual(response, body, authorization)
   // Factura por correo de una venta de Entrega inmediata (JWT del personal).
   if (body.facturaVentaInmediata) return facturaVentaInmediata(response, body, authorization)
+  // Cupón para un cliente (Clientes / Cupones): se le manda por correo.
+  if (body.cuponCliente) return cuponCliente(response, body, authorization)
   // "Hacer respaldo ahora" desde Configuración (JWT del admin): Excel completo a Drive.
   if (body.respaldoAhora) return respaldoManual(response, authorization)
   // "Poner en Entrega inmediata" desde Compras libres (JWT del admin).

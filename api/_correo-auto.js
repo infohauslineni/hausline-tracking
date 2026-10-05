@@ -157,3 +157,20 @@ export async function enviarCorreoReporteDiario({ to, r }) {
 </body></html>`
   await transporteSmtp().sendMail({ from: remitente(), to, subject: `☀️ HAUSLINE ayer: ${m(r.cobrado)} cobrado · ${r.pedidosNuevos} pedidos nuevos · ${m(r.porCobrar)} por cobrar`, html })
 }
+
+// CUPÓN PERSONAL creado a mano desde el panel (Clientes / Cupones con cliente).
+export async function enviarCorreoCuponCliente({ correo, nombre, cupon, tipo, valor, vence, nota }) {
+  const url = `${baseTienda()}/?cupon=${encodeURIComponent(cupon)}`
+  const monto = tipo === 'porcentaje' ? `${Number(valor)}%` : `US$${Number(valor).toFixed(2)}`
+  const venceTxt = vence ? new Intl.DateTimeFormat('es-NI', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${vence}T12:00:00Z`)) : null
+  const n = primerNombre(nombre)
+  const texto = `${n ? `${esc(n)}, le` : 'Le'} regalamos <strong>${esc(monto)} de descuento</strong> en su próxima compra en HAUSLINE con el código `
+    + `<strong style="font-size:16px;letter-spacing:1px">${esc(cupon)}</strong>${venceTxt ? ` (válido hasta el ${esc(venceTxt)})` : ''}. `
+    + 'Toque el botón y el descuento se aplica solo al pagar. También lo ve en su Mi cuenta.'
+    + (nota ? `<br><br>${esc(nota)}` : '')
+  await transporteSmtp().sendMail({
+    from: remitente(), to: correo,
+    subject: `${n ? `${n}, tiene` : 'Tiene'} un cupón de ${monto} de descuento en HAUSLINE`,
+    html: plantillaCorreo({ nombre, codigo: null, estado: null, estadoLabel: `Un regalo para usted: ${monto} OFF`, nota: texto, urlSeguimiento: url, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Usar mi descuento', ctaUrl: url, pedirResena: false }),
+  })
+}

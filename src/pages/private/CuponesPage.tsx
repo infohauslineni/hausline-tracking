@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { Modal } from '../../components/ui/Modal'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { listarClientes } from '../../services/clientes.service'
-import { cambiarActivoCupon, eliminarCupon, generarCodigo, guardarCupon, listarCupones, type CuponInput } from '../../services/cupones.service'
+import { cambiarActivoCupon, eliminarCupon, enviarCuponPorCorreo, generarCodigo, guardarCupon, listarCupones, type CuponInput } from '../../services/cupones.service'
 import { listarSuscriptores } from '../../services/suscriptores.service'
 import { compartirHistoriaCupon } from '../../utils/cuponHistoria'
 import type { Cliente, Cupon } from '../../types/domain'
@@ -151,11 +151,19 @@ export function CuponModal({ open, cupon, clientePreset, onClose, onSaved }: { o
       const input: CuponInput = { codigo: codigo.trim(), tipo, valor: Number(valor), cliente_id: clienteId || null, usos_max: usos === 'ilimitado' ? null : usos === '1' ? 1 : Number(usosMax), inicia_el: iniciaEl || null, vence_el: venceEl || null, nota: nota.trim() || null }
       const saved = await guardarCupon(input, cupon?.id)
       toast.success(cupon ? 'Cupón actualizado.' : 'Cupón creado.')
+      // Cupón NUEVO para un cliente: le llega por correo (y lo ve en su Mi cuenta).
+      if (!cupon && clienteId && saved?.id) {
+        void enviarCuponPorCorreo(saved.id).then((r) => {
+          if (r.ok) toast.success(`Se le envió el cupón por correo a ${r.correo}.`)
+          else if (r.sinCorreo) toast.message('Este cliente no tiene correo: compártale el cupón por WhatsApp.')
+          else toast.error(`El cupón se creó, pero no se pudo enviar el correo: ${r.error ?? 'error'}`)
+        }).catch(() => toast.error('El cupón se creó, pero no se pudo enviar el correo.'))
+      }
       onSaved(saved)
     } catch (err) { const m = err instanceof Error ? err.message : ''; toast.error(m.includes('duplicate') ? 'Ese código ya existe.' : m.includes('inicia_el') ? 'Falta aplicar la migración 202609300001 (fecha de inicio) en Supabase.' : 'No se pudo guardar el cupón.') } finally { setSaving(false) }
   }
 
-  return <Modal open={open} onClose={onClose} title={cupon ? 'Editar cupón' : 'Nuevo cupón'} description="El descuento se aplica al total del pedido. Un cupón por cliente se ofrece en su próxima compra; sin cliente, es un código suelto para redes.">
+  return <Modal open={open} onClose={onClose} title={cupon ? 'Editar cupón' : 'Nuevo cupón'} description="El descuento se aplica al total del pedido. Si es para un cliente, le llega por correo y lo ve en su Mi cuenta; sin cliente, es un código suelto para redes.">
     <form onSubmit={(e) => void submit(e)} className="form-grid">
       <label className="form-field sm:col-span-2"><span>Código</span><div className="flex gap-2"><input className="min-w-0 flex-1 font-mono uppercase" value={codigo} onChange={(e) => setCodigo(e.target.value.toUpperCase())} placeholder="HAUS-XXXXX" /><button type="button" className="subtle-button shrink-0 px-3" onClick={() => setCodigo(generarCodigo(clienteId && clientes.find((c) => c.id === clienteId) ? clientes.find((c) => c.id === clienteId)!.nombre.split(' ')[0] : 'HAUS'))}>Generar</button></div></label>
       <label className="form-field"><span>Tipo de descuento</span><select value={tipo} onChange={(e) => setTipo(e.target.value as 'porcentaje' | 'monto')}><option value="porcentaje">Porcentaje (%)</option><option value="monto">Monto fijo (US$)</option></select></label>

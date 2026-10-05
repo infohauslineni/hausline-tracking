@@ -107,7 +107,7 @@ export function CompraCard(p: Props) {
       {porPagar && <Chip tono="border-amber-300/35 bg-amber-300/10 text-amber-200"><Wallet size={11} /> Por pagar al proveedor</Chip>}
       {p.enEI && <Chip tono="border-accent/35 bg-accent/10 text-accent" onQuitar={p.quitandoEI ? undefined : p.onQuitarEI} tituloQuitar="Quitar de Entrega inmediata"><Zap size={11} /> {p.quitandoEI ? 'Quitando…' : 'En Entrega inmediata'}</Chip>}
       {item.estado === 'en_transito' && (p.enCaminoPublicado
-        ? <Chip tono="border-amber-300/35 bg-amber-300/10 text-amber-200"><Truck size={11} /> En la tienda · Apártelo ya</Chip>
+        ? <Chip tono="border-amber-300/35 bg-amber-300/10 text-amber-200"><Truck size={11} /> En la tienda · Apártelo ya{item.llega_aprox ? ` · llega aprox. ${item.llega_aprox.split('-').reverse().slice(0, 2).join('/')}` : ''}</Chip>
         : <Chip tono="border-line bg-white/[.03] text-muted"><Truck size={11} /> {codigo ? 'Publicándose en la tienda…' : 'Sin código: no sale en la tienda'}</Chip>)}
       {p.fotos > 0 && <Chip tono="border-sky-400/35 bg-sky-400/10 text-sky-300"><Camera size={11} /> {p.fotos} {p.fotos === 1 ? 'foto' : 'fotos'} de calidad</Chip>}
     </div>}
