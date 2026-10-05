@@ -155,7 +155,7 @@ function RespaldoSection() {
   return <section className="form-section">
     <DatabaseBackup size={20} className="text-accent" />
     <h2 className="mt-3 font-semibold">Respaldo semanal</h2>
-    <p className="mt-2 text-xs leading-5 text-muted">Cada <b className="text-white">lunes a las 5 a. m.</b> se guarda en tu Drive un Excel con toda la información: pedidos, productos, clientes, pagos, gastos, cuentas, encargos y cupones. Carpeta: <b className="text-white">HAUSLINE Facturas → ADMINISTRACION → RESPALDOS</b>.</p>
+    <p className="mt-2 text-xs leading-5 text-muted">Cada <b className="text-white">lunes a las 5 a. m.</b> se guarda en tu Drive un Excel con toda la información: pedidos, productos, clientes, pagos, gastos, cuentas, encargos y cupones. Carpeta: <b className="text-white">ADMINISTRACION → PEDIDOS HAUSLINE → RESPALDOS → (año)</b>.</p>
     <button className="subtle-button mt-4 w-full" disabled={haciendo || !isSupabaseConfigured} onClick={() => void respaldar()}><DatabaseBackup size={16} /> {haciendo ? 'Haciendo respaldo… (puede tardar 30 s)' : 'Hacer respaldo ahora'}</button>
   </section>
 }
