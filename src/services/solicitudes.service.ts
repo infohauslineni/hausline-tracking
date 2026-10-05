@@ -161,3 +161,67 @@ export async function crearEncargoPanel(i: EncargoPanelInput): Promise<string> {
 
 // Link de la tienda donde el cliente ve las cuentas y sube el comprobante.
 export const linkPagoEncargo = (codigo: string) => `https://hauslineshopni.es/checkout/?c=${encodeURIComponent(codigo)}&paso=pago`
+
+// ── "En camino · Apártelo ya" ──────────────────────────────────────────────────────────────
+// Un encargo web de un producto que ya viene en camino (Compras libres en tránsito, mismo
+// código y talla) se convierte solo: la compra queda vendida y ligada al pedido, el pedido
+// arranca en "En tránsito internacional" con el costo real de la compra y le pasan las fotos
+// de control de calidad. Así no hay que volver a comprarlo ni pagarle al proveedor.
+type CompraEnCamino = { id: string; codigo: string | null; talla_color: string | null; cantidad: number; costo_unitario: number; gastos_adicionales: number }
+
+// "42", "M BLACK" → "M", "S · Negro" → "S"
+export function tallaDeCompra(t: string | null | undefined) {
+  const base = String(t ?? '').split('·')[0].trim()
+  return (/^(xxs|xs|s|m|l|xl|xxl|xxxl|\d{1,2}(\.5)?)\s+\S/i.test(base) ? base.split(/\s+/)[0] : base).toUpperCase()
+}
+
+export async function comprasEnCamino(): Promise<CompraEnCamino[]> {
+  if (!supabase) return []
+  const { data, error } = await supabase.from('inversiones').select('id, codigo, talla_color, cantidad, costo_unitario, gastos_adicionales').eq('estado', 'en_transito')
+  if (error) throw error
+  return (data ?? []) as CompraEnCamino[]
+}
+
+// Busca para cada encargo su compra en camino (sin repetir compras).
+export function emparejarEnCamino(grupo: Solicitud[], compras: CompraEnCamino[]): Map<string, CompraEnCamino> {
+  const usadas = new Set<string>(), out = new Map<string, CompraEnCamino>()
+  for (const s of grupo) {
+    const cod = String(s.producto_codigo ?? '').trim().toUpperCase()
+    if (!cod) continue
+    const talla = tallaDeCompra(s.talla)
+    const c = compras.find((x) => !usadas.has(x.id) && String(x.codigo ?? '').trim().toUpperCase() === cod
+      && (!talla || !tallaDeCompra(x.talla_color) || tallaDeCompra(x.talla_color) === talla))
+    if (c) { usadas.add(c.id); out.set(s.id, c) }
+  }
+  return out
+}
+
+export async function convertirComprasEnCamino(codigoPedido: string, grupo: Solicitud[]): Promise<number> {
+  const client = requireSupabase()
+  const pares = emparejarEnCamino(grupo, await comprasEnCamino())
+  if (!pares.size) return 0
+  const { data: pedido, error } = await client.from('pedidos').select('id, pedido_items(id, codigo_producto, talla)').eq('codigo', codigoPedido).single()
+  if (error) throw error
+  const items = ((pedido as { pedido_items?: { id: string; codigo_producto: string | null; talla: string | null }[] }).pedido_items ?? [])
+  const itemsUsados = new Set<string>()
+  const { copiarFotosInversionAPedido } = await import('./archivos.service')
+  for (const s of grupo) {
+    const compra = pares.get(s.id)
+    if (!compra) continue
+    const item = items.find((i) => !itemsUsados.has(i.id) && String(i.codigo_producto ?? '').toUpperCase() === String(s.producto_codigo ?? '').toUpperCase())
+    if (item) {
+      itemsUsados.add(item.id)
+      const unidades = Math.max(1, Number(compra.cantidad) || 1)
+      const costo = Math.round(((Number(compra.costo_unitario) * unidades + Number(compra.gastos_adicionales || 0)) / unidades) * 100) / 100
+      await client.from('pedido_item_costos').upsert({ item_id: item.id, precio_compra: costo }, { onConflict: 'item_id' })
+    }
+    await client.from('inversiones').update({ estado: 'vendido', pedido_id: pedido.id }).eq('id', compra.id)
+    try { await copiarFotosInversionAPedido(compra.id, pedido.id) } catch { /* las fotos se pueden pasar luego desde Compras libres */ }
+  }
+  // Ya está comprado y viajando: el pedido salta a "En tránsito internacional" (sin pasar por
+  // "En preparación", así no se pide registrar el pago al proveedor).
+  const { actualizarEstadoPedido } = await import('./pedidos.service')
+  await actualizarEstadoPedido(pedido.id, 'transito_internacional')
+  invalidateComercial()
+  return pares.size
+}

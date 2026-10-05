@@ -7,7 +7,7 @@ import { CuentaSelect, type DestinoPago } from '../../components/finanzas/Cuenta
 import { DEMO_SOLICITUDES } from '../../data/demoSolicitudes'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { archivarComprobanteDrive } from '../../services/archivos.service'
-import { confirmarSolicitud, confirmarSolicitudesGrupo, descartarSolicitud, descartarSolicitudes, eliminarSolicitud, listarSolicitudes, suscribirSolicitudes, urlComprobanteSolicitud, type Solicitud } from '../../services/solicitudes.service'
+import { comprasEnCamino, convertirComprasEnCamino, emparejarEnCamino, confirmarSolicitud, confirmarSolicitudesGrupo, descartarSolicitud, descartarSolicitudes, eliminarSolicitud, listarSolicitudes, suscribirSolicitudes, urlComprobanteSolicitud, type Solicitud } from '../../services/solicitudes.service'
 import { useAuth } from '../../contexts/AuthContext'
 import { sinEmojis, whatsappUrl } from '../../utils/whatsapp'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
@@ -79,10 +79,13 @@ export function SolicitudesPage() {
   const [confirmando, setConfirmando] = useState<Solicitud[] | null>(null)
   const [compraDirecta, setCompraDirecta] = useState(false)
   const [resultado, setResultado] = useState<{ codigo: string; grupo: Solicitud[]; comprobante: boolean } | null>(null)
+  // Compras libres que vienen en camino: un encargo del mismo producto y talla se convierte solo.
+  const [enCamino, setEnCamino] = useState<Awaited<ReturnType<typeof comprasEnCamino>>>([])
 
   const cargar = useCallback(async (silencioso = false) => {
     if (!isSupabaseConfigured) return
     try { setItems(await listarSolicitudes()) } catch { if (!silencioso) toast.error('No se pudieron cargar los encargos.') } finally { setLoading(false) }
+    void comprasEnCamino().then(setEnCamino).catch(() => undefined)
   }, [])
 
   useEffect(() => {
@@ -118,6 +121,11 @@ export function SolicitudesPage() {
           try { await archivarComprobanteDrive(codigo, comprobante) }
           catch { toast.error('El pedido se creó, pero no se pudo archivar el comprobante en Drive.') }
         }
+        // Apartado de un producto EN CAMINO: la compra libre pasa sola a este pedido.
+        try {
+          const n = await convertirComprasEnCamino(codigo, grupo)
+          if (n) toast.success(`${n === 1 ? 'Era un producto en camino' : `${n} productos eran en camino`}: la compra libre pasó al pedido ${codigo} (en tránsito, con su costo y fotos).`, { duration: 8000 })
+        } catch { toast.error('El pedido se creó, pero no se pudo pasar la compra en camino. Hacelo desde Compras libres → Apartar.') }
         // Modal con el pedido: mensaje para el PROVEEDOR (ORDER/PRODUCT/SIZE) y aviso al cliente.
         setResultado({ codigo, grupo, comprobante: !!comprobante })
         toast.success(`Pedido ${codigo} creado con ${grupo.length} ${grupo.length === 1 ? 'producto' : 'productos'}${comprobante ? ' y comprobante archivado' : ''}.`)
@@ -180,7 +188,7 @@ export function SolicitudesPage() {
 
     {loading ? <div className="mt-5 h-64 animate-pulse rounded-2xl border border-line bg-panel" /> : pendientes.length === 0 ? <EmptyState /> : <div className="mt-6 space-y-3">
       {grupos.map((grupo) => grupo.length === 1
-        ? <SolicitudCard key={grupo[0].id} s={grupo[0]} busy={busy === grupo[0].id} onConfirm={() => setConfirmando(grupo)} onDiscard={() => void descartar(grupo[0])} />
+        ? <SolicitudCard key={grupo[0].id} s={grupo[0]} enCamino={emparejarEnCamino([grupo[0]], enCamino).size > 0} busy={busy === grupo[0].id} onConfirm={() => setConfirmando(grupo)} onDiscard={() => void descartar(grupo[0])} />
         : <GrupoCard key={claveCliente(grupo[0])} grupo={grupo} busy={busy === grupo[0].id} onConfirm={() => setConfirmando(grupo)} onDiscard={(s) => void descartar(s)} onDiscardAll={() => void descartarGrupo(grupo)} />)}
     </div>}
 
@@ -327,7 +335,7 @@ function CuponChip({ grupo }: { grupo: Solicitud[] }) {
   return <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent"><Ticket size={10} /> {codigos.length ? `Cupón ${codigos.join(', ')}` : 'Promo'} · −{usd(desc)}</span>
 }
 
-function SolicitudCard({ s, busy, onConfirm, onDiscard }: { s: Solicitud; busy: boolean; onConfirm: () => void; onDiscard: () => void }) {
+function SolicitudCard({ s, busy, onConfirm, onDiscard, enCamino }: { s: Solicitud; busy: boolean; onConfirm: () => void; onDiscard: () => void; enCamino?: boolean }) {
   const { esAdmin } = useAuth()
   const t = tiempoRestante(s.vence_at)
   const urgente = t.tono === 'crit'
@@ -345,7 +353,7 @@ function SolicitudCard({ s, busy, onConfirm, onDiscard }: { s: Solicitud; busy: 
       <div className="flex items-start gap-3">
         <span className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/[0.04] text-muted">{resolverImagenCatalogo(s.imagen) ? <img src={resolverImagenCatalogo(s.imagen)} alt="" className="size-full object-cover" /> : <PackagePlus size={20} />}</span>
         <div>
-          <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm font-bold">{s.codigo}</span><span className="rounded-full bg-[#8ec5ff]/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#8ec5ff]">Web</span>{rapido && <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300"><Zap size={10} /> Rápido</span>}{s.pago_reportado_at && <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-300">💰 Reportó pago</span>}<CuponChip grupo={[s]} /></div>
+          <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm font-bold">{s.codigo}</span><span className="rounded-full bg-[#8ec5ff]/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#8ec5ff]">Web</span>{enCamino && <span className="rounded-full bg-amber-300/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-200" title="Al confirmar, la compra libre en camino pasa sola a este pedido">En camino · compra libre</span>}{rapido && <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300"><Zap size={10} /> Rápido</span>}{s.pago_reportado_at && <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-300">💰 Reportó pago</span>}<CuponChip grupo={[s]} /></div>
           <p className="mt-1 text-sm font-semibold">{s.cliente_nombre}</p>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted"><span className="inline-flex items-center gap-1"><MessageCircle size={11} /> {s.cliente_whatsapp}</span>{s.cliente_correo && <span className="inline-flex items-center gap-1"><Mail size={11} /> {s.cliente_correo}</span>}{s.cliente_ciudad && <span className="inline-flex items-center gap-1"><MapPin size={11} /> {s.cliente_ciudad}</span>}</p>
           <p className="mt-1 inline-flex items-center gap-1 text-[10px] text-muted"><Clock3 size={10} /> Recibido {fechaCorta(s.created_at)}</p>
