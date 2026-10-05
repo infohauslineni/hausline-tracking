@@ -1,11 +1,14 @@
 // RESPALDO SEMANAL en Google Drive: un Excel (.xlsx) con TODA la información del negocio
 // (pedidos, productos de cada pedido, clientes, pagos, gastos, cuentas, encargos, cupones…),
-// una hoja por tabla. Se guarda en  HAUSLINE Facturas / <mes> / RESPALDOS / Respaldo HAUSLINE <fecha>.xlsx
+// una hoja por tabla. Se guarda en  HAUSLINE Facturas / ADMINISTRACION / RESPALDOS / Respaldo HAUSLINE <fecha>.xlsx
+// (todos juntos, ya no repartidos en la carpeta de cada mes con las facturas).
 // Corre solo los LUNES a las 5 a. m. (Nicaragua) dentro de la tarea de 15 min, y también a mano
 // desde el panel (Configuración → "Hacer respaldo ahora").
 import ExcelJS from 'exceljs'
 import { ESTADO_LABEL } from './_correo.js'
-import { mesCarpeta, subirArchivoDrive } from './_drive.js'
+import { subirArchivoDrive } from './_drive.js'
+
+const CARPETA_ADMIN = 'ADMINISTRACION'
 
 // Tablas a respaldar (hoja → tabla). Las que no existan se saltan solas.
 const TABLAS = [
@@ -83,7 +86,7 @@ export async function hacerRespaldo(db) {
 
   const buffer = Buffer.from(await libro.xlsx.writeBuffer())
   const filename = `Respaldo HAUSLINE ${fecha}.xlsx`
-  const drive = await subirArchivoDrive({ codigo: 'RESPALDOS', fecha, filename, data: buffer, mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  const drive = await subirArchivoDrive({ carpeta: CARPETA_ADMIN, codigo: 'RESPALDOS', fecha, filename, data: buffer, mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
   if (drive?.skipped) throw new Error(`Drive: ${drive.skipped}`)
-  return { filename, filas: total, kb: Math.round(buffer.length / 1024), carpeta: `HAUSLINE Facturas / ${mesCarpeta(fecha)} / RESPALDOS` }
+  return { filename, filas: total, kb: Math.round(buffer.length / 1024), carpeta: `HAUSLINE Facturas / ${CARPETA_ADMIN} / RESPALDOS` }
 }

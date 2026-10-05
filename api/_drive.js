@@ -42,7 +42,8 @@ export function mesCarpeta(fecha) {
 //   HAUSLINE Facturas / <mes> / <codigo> / <filename>
 // Es la misma carpeta del pedido, así la factura y las fotos de control de calidad
 // quedan juntas. Devuelve el JSON del script, o { skipped } si no hay config o data.
-export async function subirArchivoDrive({ codigo, fecha, filename, data, mime }) {
+// `carpeta` reemplaza al mes (p. ej. "ADMINISTRACION" para los respaldos, fuera de los meses).
+export async function subirArchivoDrive({ codigo, fecha, filename, data, mime, carpeta }) {
   const url = process.env.DRIVE_WEBHOOK_URL
   const secret = process.env.DRIVE_WEBHOOK_SECRET
   if (!url || !secret) return { skipped: 'Falta configuración de Drive' }
@@ -50,7 +51,7 @@ export async function subirArchivoDrive({ codigo, fecha, filename, data, mime })
 
   const body = {
     secret,
-    mes: mesCarpeta(fecha),
+    mes: carpeta || mesCarpeta(fecha),
     codigo: String(codigo ?? 'SIN-CODIGO').trim() || 'SIN-CODIGO',
     filename: filename || String(codigo ?? 'archivo'),
     mime: mime || 'application/octet-stream',
