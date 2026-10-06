@@ -28,7 +28,7 @@ export const ESTADO_LABEL = {
 }
 
 export const ESTADO_NOTA = {
-  pedido_confirmado: 'Gracias por su compra. Confirmamos su pedido y ya comenzamos a prepararlo. Le avisaremos en cada etapa. El tiempo de entrega incluye unos días de preparación (aprox. 4-5 en envío estándar y 3-4 en rápido; algunos productos tardan más) y el resto es tránsito, que empieza a contar cuando su pedido sale en camino. Las fechas son aproximadas, no exactas: muchas veces las paqueterías retrasan los envíos.',
+  pedido_confirmado: 'Gracias por su compra. Confirmamos su pedido y ya comenzamos a prepararlo. Le avisaremos en cada etapa. El tiempo de entrega incluye unos días de preparación (aprox. 4 a 5 días, o lo que indique el producto; es igual en estándar y en rápido) y el resto es tránsito, que empieza a contar cuando su pedido sale en camino. Las fechas son aproximadas, no exactas: muchas veces las paqueterías retrasan los envíos.',
   en_preparacion: 'Estamos preparando y revisando su pedido antes de enviarlo.',
   control_calidad: 'Su pedido está pasando por control de calidad antes de despacharlo. Revise bien las fotos: tiene 48 horas para avisarnos si el producto no coincide con lo que pidió o no cumple sus expectativas. Pasado ese plazo, el pedido sigue su camino.',
   etiqueta_creada: 'Su pedido va en tránsito rumbo a Nicaragua. Desde ahora empieza a contar el tiempo de tránsito; la fecha de entrega es aproximada y a veces las paqueterías retrasan los envíos.',

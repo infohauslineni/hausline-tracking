@@ -29,7 +29,7 @@ export function TerminosPage() {
         <li><strong className="text-white">Envío estándar:</strong> 20 a 25 días, sin costo adicional.</li>
         <li><strong className="text-white">Envío rápido:</strong> 15 a 20 días, con un costo adicional de $15 por producto.</li>
         <li><strong className="text-white">Entrega inmediata:</strong> los productos disponibles en stock se entregan sin espera.</li>
-        <li>Los días incluyen la preparación del pedido (aprox. 4 a 5 días en estándar y 3 a 4 en rápido; algunos productos tardan más). El resto es tiempo de tránsito, que empieza a contar cuando el pedido sale en camino.</li>
+        <li>Los días incluyen la preparación del pedido (aprox. 4 a 5 días, o lo que indique el producto; es la misma en estándar y en rápido, el envío rápido solo acorta el tránsito). El resto es tiempo de tránsito, que empieza a contar cuando el pedido sale en camino.</li>
         <li>Las fechas de entrega son aproximadas, no exactas: pueden variar por la logística internacional, aduanas o fechas festivas, y muchas veces las paqueterías retrasan los envíos.</li>
       </ul>
       <p>
