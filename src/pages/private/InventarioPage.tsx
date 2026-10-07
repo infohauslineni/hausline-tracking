@@ -115,7 +115,8 @@ export function InventarioPage() {
     navigate('/pedidos/nuevo', { state: { prefill: {
       // En camino → el pedido arranca en tránsito; ya en Nicaragua → listo para entregar.
       estadoPedido: item.estado === 'en_transito' ? 'transito_internacional' : 'disponible_entrega',
-      abono: Math.round(precio * 0.5 * 100) / 100,
+      // Igual que la tienda: el 50% se redondea hacia arriba al dólar (155 → abono 78).
+      abono: Math.ceil(precio * 0.5),
       inversionId: item.id,
       producto: item.producto,
       marca: item.marca ?? '',
