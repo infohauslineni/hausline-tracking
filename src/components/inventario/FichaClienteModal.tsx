@@ -24,7 +24,7 @@ export function FichaClienteModal({ item, onClose }: { item: Inversion; onClose:
       const enCamino = item.estado === 'en_transito'
       const venta = Number(item.precio_venta_estimado) || 0
       const [tienda, fotos, llegada] = await Promise.all([
-        codigo ? precioTienda(codigo).catch(() => null) : Promise.resolve(null),
+        codigo ? precioTienda(codigo, !enCamino).catch(() => null) : Promise.resolve(null),
         listarFotosInversion(item.id).catch(() => []),
         enCamino && codigo && supabase
           ? supabase.rpc('en_camino_llegada', { p_codigo: codigo }).then(({ data }) => (data && (data as { desde?: string }).desde ? data as { desde: string; hasta: string } : null), () => null)
@@ -53,9 +53,11 @@ export function FichaClienteModal({ item, onClose }: { item: Inversion; onClose:
     datos.enCamino
       ? `Este par ya está comprado y en preparación con nuestro proveedor, así que le llega más rápido que un encargo nuevo: aproximadamente ${datos.llegada ? (datos.llegada.desde === datos.llegada.hasta ? 'el ' : 'entre el ') + textoLlegada(datos.llegada).replace(' – ', ' y el ') : 'en pocos días'}.`
       : 'Ya está en Nicaragua, listo para entregar.',
-    `El precio es de $${datos.precio}. Puede apartarlo con el 50% ($${Math.ceil(datos.precio / 2)}) y el resto lo cancela cuando lo reciba. Se lo reservamos apenas recibamos su abono.`,
-    datos.fotosCalidad.length ? 'Ya tenemos las fotos de control de calidad: se las comparto.' : 'Apenas el proveedor nos envíe las fotos de control de calidad, se las compartimos.',
-    `Puede apartarlo aquí: https://hauslineshopni.es/${datos.enCamino ? '?coleccion=en-camino' : `p/${codigo}/`}`,
+    datos.enCamino
+      ? `El precio es de ${datos.precio}. Puede apartarlo con el 50% (${Math.ceil(datos.precio / 2)}) y el resto lo cancela cuando lo reciba. Se lo reservamos apenas recibamos su abono.`
+      : `El precio es de ${datos.precio} y es compra inmediata: se cancela completo y se lo entregamos de una vez. Se lo reservamos apenas recibamos su pago.`,
+    ...(datos.enCamino ? [datos.fotosCalidad.length ? 'Ya tenemos las fotos de control de calidad: se las comparto.' : 'Apenas el proveedor nos envíe las fotos de control de calidad, se las compartimos.'] : []),
+    `${datos.enCamino ? 'Puede apartarlo aquí' : 'Puede verlo aquí'}: https://hauslineshopni.es/${datos.enCamino ? '?coleccion=en-camino' : `p/${codigo}/`}`,
   ].join('\n\n') : ''
 
   async function compartir() {

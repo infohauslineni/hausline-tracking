@@ -117,13 +117,16 @@ export async function generarFichaCliente(d: DatosFicha): Promise<Blob> {
 
   y += 34
   let x = px
-  x += pastilla(ctx, x, y, 'DISPONIBLE PARA APARTAR', LIMA, true) + 12
+  // Ya en Nicaragua = compra inmediata: se paga completo, sin apartado del 50%.
+  x += pastilla(ctx, x, y, d.enCamino ? 'DISPONIBLE PARA APARTAR' : 'DISPONIBLE · COMPRA INMEDIATA', LIMA, true) + 12
   if (d.enCamino) pastilla(ctx, x, y, 'EN CAMINO', AMBAR)
 
   // Números: precio · abono · llegada.
   y += 80
   const col = pw / 3
-  const datos: [string, string, string][] = [['Precio', usd(d.precio), TEXTO], ['Aparta con el 50%', usd(Math.ceil(d.precio / 2)), LIMA], [d.enCamino ? 'Llega aprox.' : 'Entrega', d.enCamino ? textoLlegada(d.llegada) : 'Inmediata', d.enCamino ? AMBAR : TEXTO]]
+  const datos: [string, string, string][] = d.enCamino
+    ? [['Precio', usd(d.precio), TEXTO], ['Aparta con el 50%', usd(Math.ceil(d.precio / 2)), LIMA], ['Llega aprox.', textoLlegada(d.llegada), AMBAR]]
+    : [['Precio', usd(d.precio), TEXTO], ['Pago', 'Completo', LIMA], ['Entrega', 'Inmediata', TEXTO]]
   ctx.strokeStyle = LINEA; ctx.lineWidth = 2
   redondo(ctx, px, y, pw, 122, 20); ctx.stroke()
   datos.forEach(([et, val, color], i) => {
@@ -155,13 +158,13 @@ export async function generarFichaCliente(d: DatosFicha): Promise<Blob> {
   ctx.textAlign = 'center'; ctx.font = `600 21px ${SANS}`; ctx.fillStyle = TENUE
   ctx.fillText('ESTADO EN EL SISTEMA', W / 2, y + 98)
   ctx.font = `800 30px ${SANS}`; ctx.fillStyle = LIMA
-  ctx.fillText('Esperando ser apartado', W / 2, y + 134); ctx.textAlign = 'left'
+  ctx.fillText(d.enCamino ? 'Esperando ser apartado' : 'Listo para entregar', W / 2, y + 134); ctx.textAlign = 'left'
 
   // Pie: el aviso de las fotos de calidad solo mientras todavía no hay (con fotos, la etapa ya sale hecha).
   ctx.textAlign = 'center'
-  if (!hayQC) { ctx.font = `500 23px ${SANS}`; ctx.fillStyle = TENUE; ctx.fillText('Le compartimos las fotos de control de calidad apenas el proveedor las envíe.', W / 2, H - 70) }
+  if (d.enCamino && !hayQC) { ctx.font = `500 23px ${SANS}`; ctx.fillStyle = TENUE; ctx.fillText('Le compartimos las fotos de control de calidad apenas el proveedor las envíe.', W / 2, H - 70) }
   ctx.font = `700 25px ${SANS}`; ctx.fillStyle = TEXTO
-  ctx.fillText('Se reserva con el primer abono confirmado · hauslineshopni.es', W / 2, hayQC ? H - 50 : H - 32)
+  ctx.fillText(d.enCamino ? 'Se reserva con el primer abono confirmado · hauslineshopni.es' : 'Compra inmediata: ya está en Nicaragua · hauslineshopni.es', W / 2, d.enCamino && !hayQC ? H - 32 : H - 50)
   ctx.textAlign = 'left'
 
   return new Promise((resolve, reject) => cv.toBlob((b) => (b ? resolve(b) : reject(new Error('No se pudo generar la imagen'))), 'image/png'))

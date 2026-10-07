@@ -141,10 +141,12 @@ export async function borrarVentaLibre(v: VentaLibre) {
 
 // Precio con el que la TIENDA vende un producto (admin de la tienda → catalogo_web). Es el que paga
 // el cliente al apartar desde la web; puede diferir del "precio de venta" de una compra libre.
-export async function precioTienda(codigo: string): Promise<number | null> {
+// Con `inmediata`, usa el precio de Entrega inmediata del producto si lo tiene (es el que cobra la tienda ahí).
+export async function precioTienda(codigo: string, inmediata = false): Promise<number | null> {
   const c = codigo.trim().toUpperCase()
   if (!c) return null
   const { data } = await catalogo().from('catalogo_web').select('datos').eq('codigo', c).maybeSingle()
-  const precio = Number((data?.datos as { precio?: unknown } | undefined)?.precio)
+  const datos = (data?.datos ?? {}) as { precio?: unknown; precioEntregaInmediata?: unknown }
+  const precio = Number((inmediata && Number(datos.precioEntregaInmediata) > 0 ? datos.precioEntregaInmediata : datos.precio))
   return precio > 0 ? precio : null
 }
