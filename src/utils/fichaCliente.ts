@@ -157,12 +157,11 @@ export async function generarFichaCliente(d: DatosFicha): Promise<Blob> {
   ctx.font = `800 30px ${SANS}`; ctx.fillStyle = LIMA
   ctx.fillText('Esperando ser apartado', W / 2, y + 134); ctx.textAlign = 'left'
 
-  // Pie: control de calidad + cómo apartar.
+  // Pie: el aviso de las fotos de calidad solo mientras todavía no hay (con fotos, la etapa ya sale hecha).
   ctx.textAlign = 'center'
-  ctx.font = `500 23px ${SANS}`; ctx.fillStyle = TENUE
-  ctx.fillText(hayQC ? 'Las fotos de control de calidad ya están listas: se las compartimos.' : 'Le compartimos las fotos de control de calidad apenas el proveedor las envíe.', W / 2, H - 70)
+  if (!hayQC) { ctx.font = `500 23px ${SANS}`; ctx.fillStyle = TENUE; ctx.fillText('Le compartimos las fotos de control de calidad apenas el proveedor las envíe.', W / 2, H - 70) }
   ctx.font = `700 25px ${SANS}`; ctx.fillStyle = TEXTO
-  ctx.fillText('Se reserva con el primer abono confirmado · hauslineshopni.es', W / 2, H - 32)
+  ctx.fillText('Se reserva con el primer abono confirmado · hauslineshopni.es', W / 2, hayQC ? H - 50 : H - 32)
   ctx.textAlign = 'left'
 
   return new Promise((resolve, reject) => cv.toBlob((b) => (b ? resolve(b) : reject(new Error('No se pudo generar la imagen'))), 'image/png'))
