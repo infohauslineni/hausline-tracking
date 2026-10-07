@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { ESTADOS_PEDIDO, estadoLabel, estadoTone, etapaBase } from '../../constants/orders'
 import { DEMO_PEDIDOS } from '../../data/demo'
 import { isSupabaseConfigured } from '../../lib/supabase'
-import { eliminarPedido, listarPedidos, recargarPedidos, suscribirPedidos } from '../../services/pedidos.service'
+import { eliminarPedido, esLineaEnvio, listarPedidos, recargarPedidos, suscribirPedidos } from '../../services/pedidos.service'
 import { CancelarPedidoModal } from '../../components/pedidos/CancelarPedidoModal'
 import { useAuth } from '../../contexts/AuthContext'
 import type { EstadoPedido, Pedido } from '../../types/domain'
@@ -106,8 +106,10 @@ const MINI_TONE = { blue: 'text-sky-300', emerald: 'text-emerald-300', danger: '
 function MiniMetric({ label, value, icon: Icon, tone }: { label: string; value: number; icon: typeof Boxes; tone?: keyof typeof MINI_TONE }) { return <div className="flex items-center gap-3 rounded-xl border border-line bg-panel p-3 sm:p-4"><span className={`grid size-9 shrink-0 place-items-center rounded-lg bg-white/[0.04] ${tone ? MINI_TONE[tone] : 'text-muted'}`}><Icon size={18} /></span><div><strong className="block text-xl">{value}</strong><span className="text-[11px] text-muted">{label}</span></div></div> }
 
 // Primer producto del pedido y su nombre para la lista (con "+N" si hay varios).
-const primerItem = (p: Pedido) => p.pedido_items?.[0]
-const nombreProducto = (p: Pedido) => { const items = p.pedido_items ?? []; if (!items.length) return 'Sin productos'; return items.length > 1 ? `${items[0].producto} +${items.length - 1}` : items[0].producto }
+// Solo productos reales: el envío rápido / delivery es un cargo, no cuenta como producto (+1).
+const productosDe = (p: Pedido) => (p.pedido_items ?? []).filter((i) => !esLineaEnvio(i))
+const primerItem = (p: Pedido) => productosDe(p)[0]
+const nombreProducto = (p: Pedido) => { const items = productosDe(p); if (!items.length) return 'Sin productos'; return items.length > 1 ? `${items[0].producto} +${items.length - 1}` : items[0].producto }
 
 // Mes (YYYY-MM) al que pertenece el pedido (por fecha del pedido) y utilidades para el selector.
 const mesDe = (p: Pedido) => String(p.fecha_pedido || p.created_at || '').slice(0, 7)
@@ -168,7 +170,7 @@ function exportarCSV(pedidos: Pedido[]) {
 export function Status({ estado }: { estado: EstadoPedido }) { return <span className={`status-badge status-${estadoTone(estado)}`}>{estadoLabel(estado)}</span> }
 // Miniatura del primer producto con foto (del catálogo); si no hay, muestra un ícono.
 function ProductThumb({ pedido, size = 44 }: { pedido: Pedido; size?: number }) {
-  const item = pedido.pedido_items?.find((i) => i.imagen) ?? pedido.pedido_items?.[0]
+  const item = productosDe(pedido).find((i) => i.imagen) ?? productosDe(pedido)[0]
   const cantidad = pedido.pedido_items?.reduce((sum, i) => sum + Number(i.cantidad || 1), 0) ?? 0
   const style = { width: size, height: size }
   const foto = resolverImagenCatalogo(item?.imagen)

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { comprimirImagen, eliminarArchivo, listarArchivos, marcaParaTipo, marcarPrincipal, subirArchivo } from '../../services/archivos.service'
-import { avanzarADisponiblePorRecibido, avanzarAEmpaquetadoPorFoto, marcarQcEnviado, reenviarFotosEtapa } from '../../services/pedidos.service'
+import { avanzarADisponiblePorRecibido, avanzarAEmpaquetadoPorFoto, esLineaEnvio, marcarQcEnviado, reenviarFotosEtapa } from '../../services/pedidos.service'
 import { ESTADOS_PEDIDO, etapaBase } from '../../constants/orders'
 import type { ArchivoPedido, EstadoPedido, Pedido, PedidoItem, TipoArchivo } from '../../types/domain'
 
@@ -223,7 +223,7 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], qcG
       <span className="font-semibold text-muted">¿De cuál producto es esta foto? <span className="font-normal">(para el seguimiento por producto)</span></span>
       <select value={itemQC} onChange={(event) => setItemQC(event.target.value)} className="rounded-lg border border-line bg-white/[0.02] px-2.5 py-2 text-sm">
         <option value="">Todo el pedido (sin producto específico)</option>
-        {items.filter((item) => item.id).map((item) => <option key={item.id} value={item.id!}>{item.producto}{item.codigo_producto ? ` · ${item.codigo_producto}` : ''}</option>)}
+        {items.filter((item) => item.id && !esLineaEnvio(item)).map((item) => <option key={item.id} value={item.id!}>{item.producto}{item.codigo_producto ? ` · ${item.codigo_producto}` : ''}</option>)}
       </select>
     </label>}
     <button type="button" disabled={uploading} onClick={() => inputRef.current?.click()} onDragEnter={(event) => { event.preventDefault(); setDragging(true) }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); void cargar(event.dataTransfer.files) }} className={`mt-4 flex min-h-36 w-full flex-col items-center justify-center rounded-xl border border-dashed px-5 py-6 text-center transition ${dragging ? 'border-accent bg-accent/[0.07]' : 'border-white/15 bg-white/[0.015] hover:border-white/30'}`}>

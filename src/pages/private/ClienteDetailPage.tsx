@@ -7,7 +7,7 @@ import { isSupabaseConfigured } from '../../lib/supabase'
 import { listarAvataresClientes, listarClientes, lugarCliente } from '../../services/clientes.service'
 import { ClienteAvatar } from '../../components/clientes/ClienteAvatar'
 import { listarPagos, obtenerTipoCambio } from '../../services/comercial.service'
-import { listarPedidos } from '../../services/pedidos.service'
+import { esLineaEnvio, listarPedidos } from '../../services/pedidos.service'
 import type { Cliente, Pago, Pedido } from '../../types/domain'
 import { estadoPago } from '../../utils/pedidoCosto'
 import { whatsappUrl } from '../../utils/whatsapp'
@@ -105,7 +105,7 @@ export function ClienteDetailPage() {
         <div className="panel-heading"><div><h2 className="flex items-center gap-2"><ShoppingBag size={17} className="text-accent" /> Historial de pedidos</h2><p>Todos los pedidos de este cliente</p></div></div>
         <div className="mt-4 hidden grid-cols-[.8fr_.7fr_.6fr_.6fr_.6fr] gap-3 px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-muted sm:grid"><span>Pedido</span><span>Fecha</span><span className="text-right">Total</span><span className="text-right">Pagado</span><span className="text-right">Saldo</span></div>
         <div className="divide-y divide-line">{misPedidos.length === 0 ? <p className="py-8 text-center text-xs text-muted">Sin pedidos todavía.</p> : misPedidos.map((p) => <Link key={p.id} to={`/pedidos/${p.id}`} className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 rounded-lg px-2 py-3 transition hover:bg-white/[0.03] sm:grid-cols-[.8fr_.7fr_.6fr_.6fr_.6fr]">
-          <div className="min-w-0"><div className="flex items-center gap-2"><strong className="text-sm">{p.codigo}</strong><span className={`status-badge status-${estadoTone(p.estado)}`}>{estadoLabel(p.estado)}</span></div><p className="mt-0.5 truncate text-xs text-muted">{p.pedido_items?.[0]?.producto ?? 'Producto'}</p></div>
+          <div className="min-w-0"><div className="flex items-center gap-2"><strong className="text-sm">{p.codigo}</strong><span className={`status-badge status-${estadoTone(p.estado)}`}>{estadoLabel(p.estado)}</span></div><p className="mt-0.5 truncate text-xs text-muted">{p.pedido_items?.find((i) => !esLineaEnvio(i))?.producto ?? 'Producto'}</p></div>
           <span className="hidden text-xs text-muted sm:block">{formatDate(p.fecha_pedido)}</span>
           <strong className="text-right text-sm tabular-nums">${money(Number(p.total))}</strong>
           <strong className="hidden text-right text-sm tabular-nums text-emerald-300 sm:block">${money(Number(p.abono))}</strong>
