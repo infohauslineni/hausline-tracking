@@ -3,11 +3,14 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { supabase } from '../../lib/supabase'
 import { listarFotosInversion } from '../../services/archivos.service'
-import { precioTienda } from '../../services/ventaLibre.service'
+import { obtenerTipoCambio } from '../../services/comercial.service'
+import { datosTienda } from '../../services/ventaLibre.service'
 import type { Inversion } from '../../types/domain'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
-import { generarFichaCliente, textoLlegada, type DatosFicha } from '../../utils/fichaCliente'
+import { cordobas, generarFichaCliente, textoLlegada, type DatosFicha } from '../../utils/fichaCliente'
 import { Modal } from '../ui/Modal'
+
+const normal = (t: string) => t.toUpperCase().replace(/[^A-Z0-9]/g, '')
 
 // "Ficha para el cliente": imagen con el look del panel (sin costo ni ganancia) que muestra que el
 // producto está en el sistema esperando ser apartado, + el mensaje de WhatsApp listo para copiar.
@@ -23,18 +26,22 @@ export function FichaClienteModal({ item, onClose }: { item: Inversion; onClose:
     void (async () => {
       const enCamino = item.estado === 'en_transito'
       const venta = Number(item.precio_venta_estimado) || 0
-      const [tienda, fotos, llegada] = await Promise.all([
-        codigo ? precioTienda(codigo, !enCamino).catch(() => null) : Promise.resolve(null),
+      const [cat, fotos, llegada, tipoCambio] = await Promise.all([
+        codigo ? datosTienda(codigo, !enCamino).catch(() => ({ precio: null, tallas: [] as string[] })) : Promise.resolve({ precio: null, tallas: [] as string[] }),
         listarFotosInversion(item.id).catch(() => []),
         enCamino && codigo && supabase
           ? supabase.rpc('en_camino_llegada', { p_codigo: codigo }).then(({ data }) => (data && (data as { desde?: string }).desde ? data as { desde: string; hasta: string } : null), () => null)
           : Promise.resolve(null),
+        obtenerTipoCambio().catch(() => 37),
       ])
       // El cliente paga el precio de la TIENDA al apartar; se usa ese para que todo cuadre.
+      const tienda = cat.precio
       const precio = tienda ?? venta
+      // Talla: la de la compra; si no la tiene, la que la tienda muestra para ese producto.
+      const talla = (item.talla_color ?? '').trim() || cat.tallas.join(', ') || null
       if (tienda && venta && Math.abs(tienda - venta) >= 0.5) setAviso(`En la tienda este producto cuesta $${tienda} y en esta compra libre pusiste $${venta}. La ficha usa $${tienda}, que es lo que el cliente paga al apartar. Si querés cobrar $${venta}, cambiá el precio en el admin de la tienda.`)
       const d: DatosFicha = {
-        codigo, producto: item.producto, marca: item.marca, talla: item.talla_color, unidades: Number(item.cantidad) || 1, precio, enCamino,
+        codigo, producto: item.producto, marca: item.marca, talla, unidades: Number(item.cantidad) || 1, precio, enCamino, tipoCambio,
         llegada: llegada ?? (item.llega_aprox ? { desde: item.llega_aprox, hasta: item.llega_aprox } : null),
         imagen: item.imagen ? resolverImagenCatalogo(item.imagen) : null,
         fotosCalidad: fotos.map((f) => f.signed_url).filter((u): u is string => !!u),
@@ -49,13 +56,14 @@ export function FichaClienteModal({ item, onClose }: { item: Inversion; onClose:
 
   const nombreArchivo = `HAUSLINE ${codigo || 'producto'} disponible.png`
   const mensaje = datos ? [
-    `Buen día. Ya revisé nuestro inventario y tenemos disponible el ${datos.producto}${datos.marca ? ` de ${datos.marca}` : ''}${datos.talla ? ` en talla ${datos.talla}` : ''}.`,
+    // La marca solo si el nombre no la trae ya ("T-SHIRT ALL-SAINTS de ALL-SAINTS" sonaba repetido).
+    `Buen día. Ya revisé nuestro inventario y tenemos disponible el ${datos.producto}${datos.marca && !normal(datos.producto).includes(normal(datos.marca)) ? ` de ${datos.marca}` : ''}${datos.talla ? ` en talla ${datos.talla}` : ''}.`,
     datos.enCamino
       ? `Este par ya está comprado y en preparación con nuestro proveedor, así que le llega más rápido que un encargo nuevo: aproximadamente ${datos.llegada ? (datos.llegada.desde === datos.llegada.hasta ? 'el ' : 'entre el ') + textoLlegada(datos.llegada).replace(' – ', ' y el ') : 'en pocos días'}.`
       : 'Ya está en Nicaragua, listo para entregar.',
     datos.enCamino
-      ? `El precio es de ${datos.precio}. Puede apartarlo con el 50% (${Math.ceil(datos.precio / 2)}) y el resto lo cancela cuando lo reciba. Se lo reservamos apenas recibamos su abono.`
-      : `El precio es de ${datos.precio} y es compra inmediata: se cancela completo y se lo entregamos de una vez. Se lo reservamos apenas recibamos su pago.`,
+      ? `El precio es de $${datos.precio} (${cordobas(datos.precio, datos.tipoCambio)}). Puede apartarlo con el 50%: $${Math.ceil(datos.precio / 2)} (${cordobas(Math.ceil(datos.precio / 2), datos.tipoCambio)}), y el resto lo cancela cuando lo reciba. Se lo reservamos apenas recibamos su abono.`
+      : `El precio es de $${datos.precio} (${cordobas(datos.precio, datos.tipoCambio)}) y es compra inmediata: se cancela completo y se lo entregamos de una vez. Se lo reservamos apenas recibamos su pago.`,
     ...(datos.enCamino ? [datos.fotosCalidad.length ? 'Ya tenemos las fotos de control de calidad: se las comparto.' : 'Apenas el proveedor nos envíe las fotos de control de calidad, se las compartimos.'] : []),
     `${datos.enCamino ? 'Puede apartarlo aquí' : 'Puede verlo aquí'}: https://hauslineshopni.es/${datos.enCamino ? '?coleccion=en-camino' : `p/${codigo}/`}`,
   ].join('\n\n') : ''

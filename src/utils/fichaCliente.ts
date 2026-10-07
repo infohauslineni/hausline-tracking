@@ -13,6 +13,8 @@ export type DatosFicha = {
   llegada: { desde: string; hasta: string } | null
   imagen: string | null
   fotosCalidad: string[]
+  // Tipo de cambio del tracking (Configuración → moneda) para mostrar también en córdobas.
+  tipoCambio: number
 }
 
 const FONDO = '#080a09', PANEL = '#0f1311', LINEA = 'rgba(255,255,255,.09)', TEXTO = '#ffffff', TENUE = '#8c948f', LIMA = '#b7ff00', AMBAR = '#fcd34d'
@@ -76,6 +78,9 @@ function recortar(ctx: CanvasRenderingContext2D, t: string, max: number) {
 const usd = (n: number) => '$' + (Number.isInteger(n) ? n.toLocaleString('en-US') : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
 const fechaCorta = (iso: string) => new Date(iso + 'T12:00:00').toLocaleDateString('es-NI', { day: 'numeric', month: 'short' }).replace('.', '')
 
+// Córdobas como en el resto del sistema: se redondea hacia arriba al múltiplo de 10.
+export const cordobas = (usdMonto: number, tc: number) => 'C$' + (Math.ceil((usdMonto * tc) / 10) * 10).toLocaleString('en-US')
+
 export function textoLlegada(l: DatosFicha['llegada']) {
   if (!l) return 'Por confirmar'
   return l.desde === l.hasta ? fechaCorta(l.desde) : `${fechaCorta(l.desde)} – ${fechaCorta(l.hasta)}`
@@ -124,16 +129,19 @@ export async function generarFichaCliente(d: DatosFicha): Promise<Blob> {
   // Números: precio · abono · llegada.
   y += 80
   const col = pw / 3
-  const datos: [string, string, string][] = d.enCamino
-    ? [['Precio', usd(d.precio), TEXTO], ['Aparta con el 50%', usd(Math.ceil(d.precio / 2)), LIMA], ['Llega aprox.', textoLlegada(d.llegada), AMBAR]]
-    : [['Precio', usd(d.precio), TEXTO], ['Pago', 'Completo', LIMA], ['Entrega', 'Inmediata', TEXTO]]
+  // [etiqueta, valor, color, valor en córdobas (opcional)]
+  const datos: [string, string, string, string?][] = d.enCamino
+    ? [['Precio', usd(d.precio), TEXTO, cordobas(d.precio, d.tipoCambio)], ['Aparta con el 50%', usd(Math.ceil(d.precio / 2)), LIMA, cordobas(Math.ceil(d.precio / 2), d.tipoCambio)], ['Llega aprox.', textoLlegada(d.llegada), AMBAR]]
+    : [['Precio', usd(d.precio), TEXTO, cordobas(d.precio, d.tipoCambio)], ['Pago', 'Completo', LIMA], ['Entrega', 'Inmediata', TEXTO]]
   ctx.strokeStyle = LINEA; ctx.lineWidth = 2
-  redondo(ctx, px, y, pw, 122, 20); ctx.stroke()
-  datos.forEach(([et, val, color], i) => {
+  redondo(ctx, px, y, pw, 132, 20); ctx.stroke()
+  datos.forEach(([et, val, color, cs], i) => {
     const xx = px + i * col
-    if (i) { ctx.beginPath(); ctx.moveTo(xx, y + 18); ctx.lineTo(xx, y + 104); ctx.stroke() }
-    ctx.textAlign = 'center'; ctx.font = `600 19px ${SANS}`; ctx.fillStyle = TENUE; ctx.fillText(et.toUpperCase(), xx + col / 2, y + 44)
-    ctx.font = `800 36px ${SANS}`; ctx.fillStyle = color; ctx.fillText(val, xx + col / 2, y + 92); ctx.textAlign = 'left'
+    if (i) { ctx.beginPath(); ctx.moveTo(xx, y + 18); ctx.lineTo(xx, y + 114); ctx.stroke() }
+    ctx.textAlign = 'center'; ctx.font = `600 19px ${SANS}`; ctx.fillStyle = TENUE; ctx.fillText(et.toUpperCase(), xx + col / 2, y + 40)
+    ctx.font = `800 36px ${SANS}`; ctx.fillStyle = color; ctx.fillText(val, xx + col / 2, cs ? y + 84 : y + 94)
+    if (cs) { ctx.font = `600 21px ${SANS}`; ctx.fillStyle = TENUE; ctx.fillText(cs, xx + col / 2, y + 114) }
+    ctx.textAlign = 'left'
   })
 
   // Etapas: comprado → preparación → control de calidad → en camino/Nicaragua.

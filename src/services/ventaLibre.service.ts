@@ -143,10 +143,17 @@ export async function borrarVentaLibre(v: VentaLibre) {
 // el cliente al apartar desde la web; puede diferir del "precio de venta" de una compra libre.
 // Con `inmediata`, usa el precio de Entrega inmediata del producto si lo tiene (es el que cobra la tienda ahí).
 export async function precioTienda(codigo: string, inmediata = false): Promise<number | null> {
+  return (await datosTienda(codigo, inmediata)).precio
+}
+
+// Precio y tallas con que la tienda muestra el producto: en Entrega inmediata (`inmediata`) usa su
+// precio y sus tallas de EI; si no, el precio normal y las tallas que vienen en camino.
+export async function datosTienda(codigo: string, inmediata = false): Promise<{ precio: number | null; tallas: string[] }> {
   const c = codigo.trim().toUpperCase()
-  if (!c) return null
+  if (!c) return { precio: null, tallas: [] }
   const { data } = await catalogo().from('catalogo_web').select('datos').eq('codigo', c).maybeSingle()
-  const datos = (data?.datos ?? {}) as { precio?: unknown; precioEntregaInmediata?: unknown }
+  const datos = (data?.datos ?? {}) as { precio?: unknown; precioEntregaInmediata?: unknown; tallasEntregaInmediata?: unknown; tallasEnCamino?: unknown }
   const precio = Number((inmediata && Number(datos.precioEntregaInmediata) > 0 ? datos.precioEntregaInmediata : datos.precio))
-  return precio > 0 ? precio : null
+  const lista = inmediata ? datos.tallasEntregaInmediata : datos.tallasEnCamino
+  return { precio: precio > 0 ? precio : null, tallas: Array.isArray(lista) ? lista.map(String).filter(Boolean) : [] }
 }
