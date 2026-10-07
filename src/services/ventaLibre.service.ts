@@ -138,3 +138,13 @@ export async function borrarVentaLibre(v: VentaLibre) {
   const { error } = await catalogo().from('catalogo_web').delete().eq('id', v.id)
   lanzar(error, 'No se pudo borrar')
 }
+
+// Precio con el que la TIENDA vende un producto (admin de la tienda → catalogo_web). Es el que paga
+// el cliente al apartar desde la web; puede diferir del "precio de venta" de una compra libre.
+export async function precioTienda(codigo: string): Promise<number | null> {
+  const c = codigo.trim().toUpperCase()
+  if (!c) return null
+  const { data } = await catalogo().from('catalogo_web').select('datos').eq('codigo', c).maybeSingle()
+  const precio = Number((data?.datos as { precio?: unknown } | undefined)?.precio)
+  return precio > 0 ? precio : null
+}

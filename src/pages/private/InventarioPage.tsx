@@ -11,6 +11,7 @@ import { enviarReciboStockCorreo, imprimirReciboStock } from '../../utils/recibo
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { contarFotosInversiones, ponerEntregaInmediataCompra, quitarEntregaInmediata } from '../../services/archivos.service'
 import { FotosCompraModal } from '../../components/inventario/FotosCompraModal'
+import { FichaClienteModal } from '../../components/inventario/FichaClienteModal'
 import { CompraCard, CompraFila } from '../../components/inventario/CompraCard'
 import { LibresTabs } from '../../components/layout/LibresTabs'
 import { ProductoImg } from '../../components/ui/ProductoImg'
@@ -43,6 +44,7 @@ export function InventarioPage() {
   // Fotos de control de calidad por compra (cuántas tiene cada una) y la compra abierta.
   const [fotosCount, setFotosCount] = useState<Record<string, number>>({})
   const [fotosDe, setFotosDe] = useState<Inversion | null>(null)
+  const [fichaDe, setFichaDe] = useState<Inversion | null>(null)
   // Ficha "Ver detalles" de una compra (se lee de la lista para que refleje los cambios).
   const [detalleId, setDetalleId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -137,7 +139,7 @@ export function InventarioPage() {
           onDetalles={() => setDetalleId(item.id)} />
       })}
     </div>
-    {detalle && !preview && !fotosDe && !poniendoEI && !selling && !paying && !open && (() => {
+    {detalle && !preview && !fotosDe && !fichaDe && !poniendoEI && !selling && !paying && !open && (() => {
       const item = detalle
       const cod = (item.codigo ?? '').trim().toUpperCase()
       // Las ventanas que se abren desde aquí tapan la ficha; al cerrarlas se vuelve a Detalles.
@@ -150,7 +152,7 @@ export function InventarioPage() {
           onEstado={(estado) => void updateStatus(item, estado)} onVer={luego(() => setPreview(item))} onEditar={luego(() => { setEditing(item); setOpen(true) })}
           onEliminar={luego(() => void remove(item))} onPagar={luego(() => setPaying(item))} onFotos={luego(() => setFotosDe(item))} onEntregaInmediata={luego(() => setPoniendoEI(item))}
           onQuitarEI={() => void quitarEI((item.codigo ?? '').trim(), item.producto)} onVender={luego(() => setSelling(item))} onApartar={saliendo(() => apartar(item))}
-          onVerPedido={saliendo(() => navigate(`/pedidos/${item.pedido_id}`))} onImprimir={() => void imprimirVendido(item)} />
+          onVerPedido={saliendo(() => navigate(`/pedidos/${item.pedido_id}`))} onImprimir={() => void imprimirVendido(item)} onFicha={luego(() => setFichaDe(item))} />
       </Modal>
     })()}
     {!items.length && <div className="mt-6 rounded-2xl border border-dashed border-line p-10 text-center text-sm text-muted">Todavía no hay compras libres. Registrá lo que compraste por tu cuenta para vender, esté pagado o no.</div>}
@@ -159,6 +161,7 @@ export function InventarioPage() {
     <SellModal item={selling} onClose={() => setSelling(null)} onSold={(item) => { setItems((all) => all.map((current) => current.id === item.id ? item : current)); setSelling(null); void listarVentasStock().then(setVentas).catch(() => undefined) }} />
     <PayModal item={paying} onClose={() => setPaying(null)} onPaid={(item) => { setItems((all) => all.map((current) => current.id === item.id ? item : current)); setPaying(null) }} />
     <ClientPreview item={preview} onClose={() => setPreview(null)} />
+    {fichaDe && <FichaClienteModal item={fichaDe} onClose={() => setFichaDe(null)} />}
     {fotosDe && <FotosCompraModal item={fotosDe} onClose={() => setFotosDe(null)} onCambio={(n) => setFotosCount((c) => ({ ...c, [fotosDe.id]: n }))} />}
     <EntregaInmediataModal key={poniendoEI?.id ?? 'ninguna'} item={poniendoEI} enTienda={(ei ?? []).find((p) => p.codigo.toUpperCase() === (poniendoEI?.codigo ?? '').trim().toUpperCase()) ?? null} coloresProducto={coloresTienda[(poniendoEI?.codigo ?? '').trim().toUpperCase()] ?? []} onClose={() => setPoniendoEI(null)} onListo={() => { setPoniendoEI(null); setTimeout(cargarEI, 2500) }} />
   </div>
