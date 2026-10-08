@@ -90,3 +90,27 @@ export async function marcarCuentaRevisada(userId: string, motivo: MotivoAyuda):
   const { error } = await supabase.from('salud_cuentas_revisadas').upsert({ user_id: userId, motivo }, { onConflict: 'user_id,motivo', ignoreDuplicates: true })
   if (error) throw error
 }
+
+// Elimina la cuenta de la tienda de un cliente (vía /api/eliminar-usuario, solo admin). Es
+// permanente: se borran su usuario, perfil, direcciones y favoritos; sus pedidos se conservan.
+export async function eliminarCuentaCliente(userId: string): Promise<void> {
+  if (!supabase) throw new Error('Sin conexión')
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  if (!token) throw new Error('Sesión no disponible.')
+  const res = await fetch('/api/eliminar-usuario', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ id: userId, cuentaCliente: true }) })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok || !json.ok) throw new Error(json.error || 'No se pudo eliminar la cuenta.')
+}
+
+// Correo con el dominio mal escrito (gmail.con, gmial.com, hotmail.co…): devuelve la sugerencia.
+const DOMINIOS = ['gmail.com', 'hotmail.com', 'outlook.com', 'yahoo.com', 'icloud.com', 'live.com']
+// Dominios reales parecidos a los de arriba que NO hay que corregir.
+const VALIDOS = new Set(['hotmail.es', 'yahoo.es', 'outlook.es', 'live.es', 'yahoo.com.mx', 'hotmail.com.mx', 'live.com.mx', 'outlook.com.mx', 'me.com', 'msn.com', 'mac.com', 'aol.com', 'gmx.com', 'mail.com', 'proton.me', 'protonmail.com', 'ymail.com', 'hotmail.co.uk', 'yahoo.co.uk'])
+export function sugerenciaCorreo(correo: string): string | null {
+  const [usuario, dominio] = correo.trim().toLowerCase().split('@')
+  if (!usuario || !dominio || DOMINIOS.includes(dominio) || VALIDOS.has(dominio)) return null
+  const dist = (a: string, b: string) => { const m = a.length, n = b.length, d = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]); for (let j = 1; j <= n; j++) d[0][j] = j; for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[m][n] }
+  const mejor = DOMINIOS.map((d) => [d, dist(dominio, d)] as const).sort((a, b) => a[1] - b[1])[0]
+  return mejor && mejor[1] <= 2 ? `${usuario}@${mejor[0]}` : null
+}

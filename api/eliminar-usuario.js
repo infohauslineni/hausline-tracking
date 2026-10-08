@@ -69,6 +69,21 @@ export default async function handler(request, response) {
   if (!id) return response.status(400).json({ ok: false, error: 'Falta el usuario a eliminar.' })
   if (id === solicitante.id) return response.status(400).json({ ok: false, error: 'No podés eliminar tu propia cuenta.' })
 
+  // Cuenta de un CLIENTE de la tienda (Salud de clientes → eliminar, p. ej. una cuenta con el
+  // correo mal escrito). Nunca una del equipo por esta vía. Igual que cuando el cliente borra la
+  // suya: se va el usuario, su perfil, direcciones y favoritos; sus PEDIDOS se conservan.
+  if (body.cuentaCliente === true) {
+    const { data: esEquipo } = await admin.from('perfiles').select('id').eq('id', id).maybeSingle()
+    if (esEquipo) return response.status(403).json({ ok: false, error: 'Esa es una cuenta del equipo: se elimina desde Equipo.' })
+    try {
+      const { data: archivos } = await admin.storage.from('avatares').list(id)
+      if (archivos?.length) await admin.storage.from('avatares').remove(archivos.map((f) => `${id}/${f.name}`))
+    } catch (e) { console.error('eliminar-usuario: fotos de cliente', e?.message) }
+    const { error } = await admin.auth.admin.deleteUser(id)
+    if (error) return response.status(400).json({ ok: false, error: error.message })
+    return response.status(200).json({ ok: true })
+  }
+
   try {
     const { error } = await admin.auth.admin.deleteUser(id)
     if (error) return response.status(400).json({ ok: false, error: error.message })

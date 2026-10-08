@@ -11,9 +11,11 @@ import { enviarReciboStockCorreo, imprimirReciboStock } from '../../utils/recibo
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { contarFotosInversiones, ponerEntregaInmediataCompra, quitarEntregaInmediata } from '../../services/archivos.service'
 import { clienteParaVenta } from '../../services/clientes.service'
+import { sugerenciaCorreo } from '../../services/saludClientes.service'
 import { venderInmediatoComoPedido } from '../../services/pedidos.service'
 import { FotosCompraModal } from '../../components/inventario/FotosCompraModal'
 import { FichaClienteModal } from '../../components/inventario/FichaClienteModal'
+import { LinkPagoModal } from '../../components/inventario/LinkPagoModal'
 import { CompraCard, CompraFila } from '../../components/inventario/CompraCard'
 import { LibresTabs } from '../../components/layout/LibresTabs'
 import { ProductoImg } from '../../components/ui/ProductoImg'
@@ -47,6 +49,7 @@ export function InventarioPage() {
   const [fotosCount, setFotosCount] = useState<Record<string, number>>({})
   const [fotosDe, setFotosDe] = useState<Inversion | null>(null)
   const [fichaDe, setFichaDe] = useState<Inversion | null>(null)
+  const [linkDe, setLinkDe] = useState<Inversion | null>(null)
   // Ficha "Ver detalles" de una compra (se lee de la lista para que refleje los cambios).
   const [detalleId, setDetalleId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -142,7 +145,7 @@ export function InventarioPage() {
           onDetalles={() => setDetalleId(item.id)} />
       })}
     </div>
-    {detalle && !preview && !fotosDe && !fichaDe && !poniendoEI && !selling && !paying && !open && (() => {
+    {detalle && !preview && !fotosDe && !fichaDe && !linkDe && !poniendoEI && !selling && !paying && !open && (() => {
       const item = detalle
       const cod = (item.codigo ?? '').trim().toUpperCase()
       // Las ventanas que se abren desde aquí tapan la ficha; al cerrarlas se vuelve a Detalles.
@@ -155,7 +158,7 @@ export function InventarioPage() {
           onEstado={(estado) => void updateStatus(item, estado)} onVer={luego(() => setPreview(item))} onEditar={luego(() => { setEditing(item); setOpen(true) })}
           onEliminar={luego(() => void remove(item))} onPagar={luego(() => setPaying(item))} onFotos={luego(() => setFotosDe(item))} onEntregaInmediata={luego(() => setPoniendoEI(item))}
           onQuitarEI={() => void quitarEI((item.codigo ?? '').trim(), item.producto)} onVender={luego(() => setSelling(item))} onApartar={saliendo(() => apartar(item))}
-          onVerPedido={saliendo(() => navigate(`/pedidos/${item.pedido_id}`))} onImprimir={() => void imprimirVendido(item)} onFicha={luego(() => setFichaDe(item))} />
+          onVerPedido={saliendo(() => navigate(`/pedidos/${item.pedido_id}`))} onImprimir={() => void imprimirVendido(item)} onFicha={luego(() => setFichaDe(item))} onLinkPago={luego(() => setLinkDe(item))} />
       </Modal>
     })()}
     {!items.length && <div className="mt-6 rounded-2xl border border-dashed border-line p-10 text-center text-sm text-muted">Todavía no hay compras libres. Registrá lo que compraste por tu cuenta para vender, esté pagado o no.</div>}
@@ -165,6 +168,7 @@ export function InventarioPage() {
     <PayModal item={paying} onClose={() => setPaying(null)} onPaid={(item) => { setItems((all) => all.map((current) => current.id === item.id ? item : current)); setPaying(null) }} />
     <ClientPreview item={preview} onClose={() => setPreview(null)} />
     {fichaDe && <FichaClienteModal item={fichaDe} onClose={() => setFichaDe(null)} />}
+    {linkDe && <LinkPagoModal item={linkDe} onClose={() => setLinkDe(null)} onMarcada={(nuevo) => { setItems((all) => all.map((x) => x.id === nuevo.id ? nuevo : x)); setLinkDe(nuevo) }} />}
     {fotosDe && <FotosCompraModal item={fotosDe} onClose={() => setFotosDe(null)} onCambio={(n) => setFotosCount((c) => ({ ...c, [fotosDe.id]: n }))} />}
     <EntregaInmediataModal key={poniendoEI?.id ?? 'ninguna'} item={poniendoEI} enTienda={(ei ?? []).find((p) => p.codigo.toUpperCase() === (poniendoEI?.codigo ?? '').trim().toUpperCase()) ?? null} coloresProducto={coloresTienda[(poniendoEI?.codigo ?? '').trim().toUpperCase()] ?? []} onClose={() => setPoniendoEI(null)} onListo={() => { setPoniendoEI(null); setTimeout(cargarEI, 2500) }} />
   </div>
@@ -247,7 +251,7 @@ function SellModal({ item, onClose, onSold }: { item: Inversion | null; onClose:
       <Field label="Fecha de venta"><input type="date" value={form.fecha} onChange={(event) => setForm({ ...form, fecha: event.target.value })} /></Field>
       <Field label="Cliente (opcional)"><input value={form.cliente} onChange={(event) => setForm({ ...form, cliente: event.target.value })} placeholder="Nombre del cliente" /></Field>
       <Field label="WhatsApp del cliente"><input type="tel" inputMode="tel" autoComplete="off" value={form.whatsapp} onChange={(event) => setForm({ ...form, whatsapp: event.target.value })} placeholder="8888 8888" /></Field>
-      <Field label="Correo del cliente (para enviarle la factura)"><input type="email" inputMode="email" autoComplete="off" value={form.correo} onChange={(event) => setForm({ ...form, correo: event.target.value })} placeholder="cliente@gmail.com" /></Field>
+      <Field label="Correo del cliente (para enviarle la factura)"><input type="email" inputMode="email" autoComplete="off" value={form.correo} onChange={(event) => setForm({ ...form, correo: event.target.value })} placeholder="cliente@gmail.com" />{sugerenciaCorreo(form.correo) && <button type="button" className="mt-1.5 text-left text-[11px] font-semibold text-amber-300 hover:underline" onClick={() => setForm({ ...form, correo: sugerenciaCorreo(form.correo)! })}>¿Quiso decir {sugerenciaCorreo(form.correo)}? Tocá para corregir</button>}</Field>
       <Field label="Precio de venta (total)"><input type="number" min="0" step=".01" value={form.precio_venta} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setForm({ ...form, precio_venta: event.target.value })} /></Field>
       <Field label="Monto recibido"><input type="number" min="0" step=".01" value={form.monto_recibido} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setForm({ ...form, monto_recibido: event.target.value })} /></Field>
       <Field label="Método de pago"><input value={form.metodo} onChange={(event) => setForm({ ...form, metodo: event.target.value })} /></Field>

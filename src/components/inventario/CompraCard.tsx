@@ -42,6 +42,8 @@ type Props = {
   onImprimir: () => void
   // Imagen "está disponible, esperando ser apartado" para mandar al cliente (sin costo ni ganancia).
   onFicha?: () => void
+  // Link de pago del checkout (compra inmediata, ya en Nicaragua).
+  onLinkPago?: () => void
 }
 
 const usd = (n: number) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -130,6 +132,7 @@ export function CompraCard(p: Props) {
         {item.estado !== 'en_inventario' && <button className={`${item.estado === 'en_transito' ? 'primary-button' : 'subtle-button'} justify-center py-2.5`} style={{ fontSize: 13 }} onClick={p.onApartar}><Bookmark size={15} /> Apartar (50%)</button>}
       </div>}
       {(item.estado === 'en_transito' || item.estado === 'en_inventario') && p.onFicha && <button className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-line py-2.5 text-xs font-semibold text-white/85 transition hover:border-white/20 hover:bg-white/[.04]" onClick={p.onFicha}><Send size={14} /> Ficha para el cliente</button>}
+      {item.estado === 'en_inventario' && p.onLinkPago && <button className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-accent/30 bg-accent/[.06] py-2.5 text-xs font-semibold text-accent transition hover:bg-accent/[.12]" onClick={p.onLinkPago}><Link2 size={14} /> Enviar link de pago{(item.notas ?? '').includes('[LINK_PAGO]') ? ' · ya enviado' : ''}</button>}
       {item.estado === 'vendido' && <div className="grid grid-cols-2 gap-2">
         {item.pedido_id
           ? <button className="flex items-center justify-center gap-1.5 rounded-xl border border-green-400/25 bg-green-400/[.07] py-2.5 text-xs font-semibold text-green-300 hover:bg-green-400/[.12]" onClick={p.onVerPedido}><ExternalLink size={14} /> Pedido {item.pedidos?.codigo ?? ''}</button>

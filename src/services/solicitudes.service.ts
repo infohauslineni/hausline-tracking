@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase'
 import { invalidateComercial } from '../utils/queryCache'
+import type { EstadoPedido } from '../types/domain'
 
 // Encargos hechos por clientes desde el catálogo público. Viven aparte de los pedidos:
 // se confirman (→ crean el pedido HS real) o se descartan; si no, se vencen solas.
@@ -197,10 +198,32 @@ export function emparejarEnCamino(grupo: Solicitud[], compras: CompraEnCamino[])
 }
 
 export async function convertirComprasEnCamino(codigoPedido: string, grupo: Solicitud[]): Promise<number> {
+  // Ya está comprado y viajando: el pedido salta a "En tránsito internacional" (sin pasar por
+  // "En preparación", así no se pide registrar el pago al proveedor).
+  return pasarComprasAlPedido(codigoPedido, emparejarEnCamino(grupo, await comprasEnCamino()), grupo, () => 'transito_internacional')
+}
+
+// ── Link de pago de ENTREGA INMEDIATA ──────────────────────────────────────────────────────
+// Compras libres → "Enviar link de pago" marca la compra (ya en Nicaragua) con esta etiqueta en
+// sus notas. Cuando el cliente paga por el checkout y se confirma su encargo, esa compra (mismo
+// código y talla) pasa sola al pedido: vendida, con su costo y fotos, y el pedido queda "Pagado"
+// (o "Disponible para entrega" si no pagó todo). No se le compra nada al proveedor.
+export const MARCA_LINK_PAGO = '[LINK_PAGO]'
+export async function comprasConLinkPago(): Promise<CompraEnCamino[]> {
+  if (!supabase) return []
+  const { data, error } = await supabase.from('inversiones').select('id, codigo, talla_color, cantidad, costo_unitario, gastos_adicionales').eq('estado', 'en_inventario').ilike('notas', `%${MARCA_LINK_PAGO}%`)
+  if (error) throw error
+  return (data ?? []) as CompraEnCamino[]
+}
+export async function convertirComprasInmediatas(codigoPedido: string, grupo: Solicitud[]): Promise<number> {
+  return pasarComprasAlPedido(codigoPedido, emparejarEnCamino(grupo, await comprasConLinkPago()), grupo, (saldo) => (saldo > 0.01 ? 'disponible_entrega' : 'pagado'))
+}
+
+// Pasa las compras libres emparejadas al pedido recién creado y lo lleva al estado indicado.
+async function pasarComprasAlPedido(codigoPedido: string, pares: Map<string, CompraEnCamino>, grupo: Solicitud[], estadoFinal: (saldo: number) => EstadoPedido): Promise<number> {
   const client = requireSupabase()
-  const pares = emparejarEnCamino(grupo, await comprasEnCamino())
   if (!pares.size) return 0
-  const { data: pedido, error } = await client.from('pedidos').select('id, pedido_items(id, codigo_producto, talla)').eq('codigo', codigoPedido).single()
+  const { data: pedido, error } = await client.from('pedidos').select('id, saldo, pedido_items(id, codigo_producto, talla)').eq('codigo', codigoPedido).single()
   if (error) throw error
   const items = ((pedido as { pedido_items?: { id: string; codigo_producto: string | null; talla: string | null }[] }).pedido_items ?? [])
   const itemsUsados = new Set<string>()
@@ -215,13 +238,14 @@ export async function convertirComprasEnCamino(codigoPedido: string, grupo: Soli
       const costo = Math.round(((Number(compra.costo_unitario) * unidades + Number(compra.gastos_adicionales || 0)) / unidades) * 100) / 100
       await client.from('pedido_item_costos').upsert({ item_id: item.id, precio_compra: costo }, { onConflict: 'item_id' })
     }
-    await client.from('inversiones').update({ estado: 'vendido', pedido_id: pedido.id }).eq('id', compra.id)
+    // Vendida y ligada al pedido; se le quita la marca del link de pago (si la tenía).
+    const { data: inv } = await client.from('inversiones').select('notas').eq('id', compra.id).maybeSingle()
+    const notas = String((inv as { notas?: string | null } | null)?.notas ?? '').split(MARCA_LINK_PAGO).join('').trim() || null
+    await client.from('inversiones').update({ estado: 'vendido', pedido_id: pedido.id, notas }).eq('id', compra.id)
     try { await copiarFotosInversionAPedido(compra.id, pedido.id) } catch { /* las fotos se pueden pasar luego desde Compras libres */ }
   }
-  // Ya está comprado y viajando: el pedido salta a "En tránsito internacional" (sin pasar por
-  // "En preparación", así no se pide registrar el pago al proveedor).
   const { actualizarEstadoPedido } = await import('./pedidos.service')
-  await actualizarEstadoPedido(pedido.id, 'transito_internacional')
+  await actualizarEstadoPedido(pedido.id, estadoFinal(Number((pedido as { saldo?: number }).saldo ?? 0)))
   invalidateComercial()
   return pares.size
 }

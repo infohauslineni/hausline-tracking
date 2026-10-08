@@ -1,9 +1,10 @@
-import { AlertTriangle, BadgeCheck, Check, CheckCircle2, ChevronDown, Eye, HeartPulse, LogIn, MailCheck, MapPin, MessageCircle, RefreshCw, Search, Send, ShoppingBag, Users, X } from 'lucide-react'
+import { AlertTriangle, BadgeCheck, Check, CheckCircle2, ChevronDown, Eye, HeartPulse, LogIn, MailCheck, MapPin, MessageCircle, RefreshCw, Search, Send, ShoppingBag, Trash2, Users, X } from 'lucide-react'
+import { Modal } from '../../components/ui/Modal'
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
-import { activarCuentaCliente, listarCuentasClientes, listarCuentasRevisadas, listarEventosClientes, marcarCuentaRevisada, marcarEventosRevisados, reenviarConfirmacion, type CuentaCliente, type CuentaRevisada, type EventoCliente, type MotivoAyuda } from '../../services/saludClientes.service'
+import { activarCuentaCliente, eliminarCuentaCliente, sugerenciaCorreo, listarCuentasClientes, listarCuentasRevisadas, listarEventosClientes, marcarCuentaRevisada, marcarEventosRevisados, reenviarConfirmacion, type CuentaCliente, type CuentaRevisada, type EventoCliente, type MotivoAyuda } from '../../services/saludClientes.service'
 import { whatsappUrl } from '../../utils/whatsapp'
 import { DireccionesClienteCard } from '../../components/clientes/DireccionesClienteCard'
 import { ClienteAvatar } from '../../components/clientes/ClienteAvatar'
@@ -77,6 +78,9 @@ type GrupoError = { clave: string; nombre: string; mensaje: string | null; orige
 // tienda anota sola, para enterarse de un problema aunque el cliente no lo reporte.
 export function SaludClientesPage() {
   const [cuentas, setCuentas] = useState<CuentaCliente[]>([])
+  // Cuenta a eliminar (se pide confirmación en una ventana antes de borrarla).
+  const [borrar, setBorrar] = useState<CuentaCliente | null>(null)
+  const [borrando, setBorrando] = useState(false)
   const [eventos, setEventos] = useState<EventoCliente[]>([])
   const [rango, setRango] = useState<Rango>(7)
   const [loading, setLoading] = useState(isSupabaseConfigured)
@@ -307,7 +311,7 @@ export function SaludClientesPage() {
             <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-panel">
               <table className="w-full min-w-[720px] text-left text-sm">
                 <thead className="bg-white/[0.02] text-[10.5px] uppercase tracking-wider text-muted"><tr className="border-b border-line">
-                  <th className="px-4 py-3 font-semibold">Cliente</th><th className="px-3 py-3 font-semibold">Correo</th><th className="px-3 py-3 font-semibold">Creada</th><th className="px-3 py-3 font-semibold">Último ingreso</th><th className="px-3 py-3 font-semibold">Direcciones</th><th className="px-4 py-3 text-right font-semibold">Pedidos</th>
+                  <th className="px-4 py-3 font-semibold">Cliente</th><th className="px-3 py-3 font-semibold">Correo</th><th className="px-3 py-3 font-semibold">Creada</th><th className="px-3 py-3 font-semibold">Último ingreso</th><th className="px-3 py-3 font-semibold">Direcciones</th><th className="px-4 py-3 text-right font-semibold">Pedidos</th><th className="px-2 py-3"><span className="sr-only">Acciones</span></th>
                 </tr></thead>
                 <tbody>
                   {tablaCuentasVista.map((c) => {
@@ -315,17 +319,18 @@ export function SaludClientesPage() {
                     const abiertaCuenta = cuentaAbierta === c.user_id
                     return <Fragment key={c.user_id}>
                     <tr className="border-b border-line/60 transition last:border-0 hover:bg-white/[0.015]">
-                      <td className="px-4 py-3"><div className="flex items-center gap-3"><ClienteAvatar nombre={c.nombre || c.correo} url={avatares[c.user_id]} size={36} /><div className="min-w-0"><p className="truncate font-semibold">{c.nombre || 'Sin nombre'}</p><p className="truncate text-[11px] text-muted">{c.correo}</p></div>{c.telefono && <a className="ml-auto grid size-7 shrink-0 place-items-center rounded-lg text-muted hover:bg-white/[0.05] hover:text-accent" href={whatsappUrl(c.telefono)} target="_blank" rel="noreferrer" title={`WhatsApp ${c.telefono}`}><MessageCircle size={14} /></a>}</div></td>
+                      <td className="px-4 py-3"><div className="flex items-center gap-3"><ClienteAvatar nombre={c.nombre || c.correo} url={avatares[c.user_id]} size={36} /><div className="min-w-0"><p className="truncate font-semibold">{c.nombre || 'Sin nombre'}</p><p className="truncate text-[11px] text-muted">{c.correo}</p>{sugerenciaCorreo(c.correo) && <p className="mt-0.5 text-[10.5px] font-semibold text-amber-300">¿Mal escrito? Quizás {sugerenciaCorreo(c.correo)}</p>}</div>{c.telefono && <a className="ml-auto grid size-7 shrink-0 place-items-center rounded-lg text-muted hover:bg-white/[0.05] hover:text-accent" href={whatsappUrl(c.telefono)} target="_blank" rel="noreferrer" title={`WhatsApp ${c.telefono}`}><MessageCircle size={14} /></a>}</div></td>
                       <td className="px-3 py-3 text-[12px]">{c.confirmada_at ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/10 px-2 py-0.5 font-semibold text-emerald-300"><Check size={11} /> Confirmado</span> : <span className="rounded-full bg-amber-400/10 px-2 py-0.5 font-semibold text-amber-300">Sin confirmar</span>}</td>
                       <td className="px-3 py-3 text-[12px] text-muted">{fechaHora(c.creada_at)}</td>
                       <td className="px-3 py-3 text-[12px] text-muted">{hace(c.ultimo_ingreso_at)}</td>
                       <td className="px-3 py-3 text-[12px]">{nDir ? <button className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-semibold transition ${abiertaCuenta ? 'bg-accent text-black' : 'bg-accent/10 text-accent hover:bg-accent/20'}`} onClick={() => setCuentaAbierta(abiertaCuenta ? null : c.user_id)}><MapPin size={12} /> {nDir} {abiertaCuenta ? '· ocultar' : nDir === 1 ? 'dirección' : 'direcciones'}</button> : <span className="text-muted">—</span>}</td>
                       <td className="px-4 py-3 text-right"><span className={`inline-grid min-w-8 place-items-center rounded-lg px-2 py-1 text-xs font-bold ${c.pedidos ? 'bg-white/[0.06] text-white' : 'text-muted'}`}>{c.pedidos}</span></td>
+                      <td className="px-2 py-3 text-right"><button className="table-action table-action-danger" onClick={() => setBorrar(c)} aria-label={`Eliminar la cuenta de ${c.correo}`} title="Eliminar cuenta"><Trash2 size={15} /></button></td>
                     </tr>
-                    {abiertaCuenta && <tr className="border-b border-line/60 bg-black/20"><td colSpan={6} className="px-4 pb-4"><DireccionesClienteCard userId={c.user_id} /></td></tr>}
+                    {abiertaCuenta && <tr className="border-b border-line/60 bg-black/20"><td colSpan={7} className="px-4 pb-4"><DireccionesClienteCard userId={c.user_id} /></td></tr>}
                     </Fragment>
                   })}
-                  {tablaCuentasVista.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-muted">Ninguna cuenta coincide con “{busca}”.</td></tr>}
+                  {tablaCuentasVista.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-muted">Ninguna cuenta coincide con “{busca}”.</td></tr>}
                 </tbody>
               </table>
               {!busca.trim() && cuentas.length > 15 && <button className="w-full border-t border-line py-3 text-xs font-semibold text-accent hover:bg-white/[0.02]" onClick={() => setVerTodas((v) => !v)}>{verTodas ? 'Ver menos' : `Ver las ${cuentas.length} cuentas`}</button>}
@@ -333,6 +338,27 @@ export function SaludClientesPage() {
           )}
         </section>
       </>}
+      <Modal open={!!borrar} onClose={() => { if (!borrando) setBorrar(null) }} title="¿Eliminar esta cuenta?" description="Esto no se puede deshacer.">
+        {borrar && <div className="space-y-4 text-sm">
+          <div className="rounded-xl border border-line bg-white/[0.02] p-4">
+            <p className="font-semibold">{borrar.nombre || 'Sin nombre'}</p>
+            <p className="mt-0.5 text-muted">{borrar.correo}</p>
+            {sugerenciaCorreo(borrar.correo) && <p className="mt-1 text-xs font-semibold text-amber-300">El correo parece mal escrito: quizás {sugerenciaCorreo(borrar.correo)}</p>}
+            <p className="mt-2 text-xs text-muted">{borrar.confirmada_at ? 'Cuenta confirmada' : 'Nunca confirmó su correo'} · {borrar.pedidos} {borrar.pedidos === 1 ? 'pedido' : 'pedidos'}</p>
+          </div>
+          <p className="leading-6 text-muted">Se borran su usuario y contraseña, su perfil, sus direcciones y sus favoritos. {borrar.pedidos > 0 ? 'Sus pedidos se conservan en el panel.' : 'No tiene pedidos.'} Si después quiere entrar, tendrá que crear una cuenta nueva.</p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button className="subtle-button" disabled={borrando} onClick={() => setBorrar(null)}>Cancelar</button>
+            <button className="primary-button !bg-red-500 !text-white hover:!bg-red-400" disabled={borrando} onClick={() => {
+              const c = borrar; setBorrando(true)
+              void eliminarCuentaCliente(c.user_id)
+                .then(() => { setCuentas((todas) => todas.filter((x) => x.user_id !== c.user_id)); toast.success(`Cuenta ${c.correo} eliminada.`); setBorrar(null) })
+                .catch((e) => toast.error(e instanceof Error ? e.message : 'No se pudo eliminar la cuenta.'))
+                .finally(() => setBorrando(false))
+            }}><Trash2 size={15} /> {borrando ? 'Eliminando…' : 'Sí, eliminar la cuenta'}</button>
+          </div>
+        </div>}
+      </Modal>
     </div>
   )
 }
