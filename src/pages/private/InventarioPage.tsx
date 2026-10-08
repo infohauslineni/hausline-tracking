@@ -119,7 +119,10 @@ export function InventarioPage() {
     const precio = Number(item.precio_venta_estimado) || 0
     navigate('/pedidos/nuevo', { state: { prefill: {
       // En camino → el pedido arranca en tránsito; ya en Nicaragua → listo para entregar.
-      estadoPedido: item.estado === 'en_transito' ? 'transito_internacional' : 'disponible_entrega',
+      // En camino → arranca en su etapa real: en preparación (con fotos de calidad pasa sola a
+      // Control de calidad y le llega el correo); si ya tiene tracking y no hay fotos, en tránsito.
+      // Ya en Nicaragua → listo para entregar.
+      estadoPedido: item.estado === 'en_transito' ? ((fotosCount[item.id] ?? 0) === 0 && (item.tracking ?? '').trim() ? 'transito_internacional' : 'en_preparacion') : 'disponible_entrega',
       // Igual que la tienda: el 50% se redondea hacia arriba al dólar (155 → abono 78).
       abono: Math.ceil(precio * 0.5),
       inversionId: item.id,

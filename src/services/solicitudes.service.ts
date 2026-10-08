@@ -168,7 +168,7 @@ export const linkPagoEncargo = (codigo: string) => `https://hauslineshopni.es/ch
 // código y talla) se convierte solo: la compra queda vendida y ligada al pedido, el pedido
 // arranca en "En tránsito internacional" con el costo real de la compra y le pasan las fotos
 // de control de calidad. Así no hay que volver a comprarlo ni pagarle al proveedor.
-type CompraEnCamino = { id: string; codigo: string | null; talla_color: string | null; cantidad: number; costo_unitario: number; gastos_adicionales: number }
+type CompraEnCamino = { id: string; codigo: string | null; talla_color: string | null; cantidad: number; costo_unitario: number; gastos_adicionales: number; tracking?: string | null }
 
 // "42", "M BLACK" → "M", "S · Negro" → "S"
 export function tallaDeCompra(t: string | null | undefined) {
@@ -178,7 +178,7 @@ export function tallaDeCompra(t: string | null | undefined) {
 
 export async function comprasEnCamino(): Promise<CompraEnCamino[]> {
   if (!supabase) return []
-  const { data, error } = await supabase.from('inversiones').select('id, codigo, talla_color, cantidad, costo_unitario, gastos_adicionales').eq('estado', 'en_transito')
+  const { data, error } = await supabase.from('inversiones').select('id, codigo, talla_color, cantidad, costo_unitario, gastos_adicionales, tracking').eq('estado', 'en_transito')
   if (error) throw error
   return (data ?? []) as CompraEnCamino[]
 }
@@ -198,9 +198,15 @@ export function emparejarEnCamino(grupo: Solicitud[], compras: CompraEnCamino[])
 }
 
 export async function convertirComprasEnCamino(codigoPedido: string, grupo: Solicitud[]): Promise<number> {
-  // Ya está comprado y viajando: el pedido salta a "En tránsito internacional" (sin pasar por
-  // "En preparación", así no se pide registrar el pago al proveedor).
-  return pasarComprasAlPedido(codigoPedido, emparejarEnCamino(grupo, await comprasEnCamino()), grupo, () => 'transito_internacional')
+  // "En camino" en la web no siempre significa que ya viaja: muchas veces sigue en preparación
+  // con el proveedor. El pedido arranca en la etapa REAL para que el cliente reciba sus fotos:
+  //   · con fotos de control de calidad → Control de calidad (sale el correo con las fotos; a las
+  //     48 h pasa solo a En tránsito)
+  //   · sin fotos y con tracking (ya despachado) → En tránsito internacional
+  //   · sin fotos ni tracking → En preparación (al subirle las fotos se pasa a Control de calidad)
+  const pares = emparejarEnCamino(grupo, await comprasEnCamino())
+  const conTracking = [...pares.values()].some((c) => (c.tracking ?? '').trim())
+  return pasarComprasAlPedido(codigoPedido, pares, grupo, (_saldo, fotos) => (fotos > 0 ? 'control_calidad' : conTracking ? 'transito_internacional' : 'en_preparacion'))
 }
 
 // ── Link de pago de ENTREGA INMEDIATA ──────────────────────────────────────────────────────
@@ -220,7 +226,7 @@ export async function convertirComprasInmediatas(codigoPedido: string, grupo: So
 }
 
 // Pasa las compras libres emparejadas al pedido recién creado y lo lleva al estado indicado.
-async function pasarComprasAlPedido(codigoPedido: string, pares: Map<string, CompraEnCamino>, grupo: Solicitud[], estadoFinal: (saldo: number) => EstadoPedido): Promise<number> {
+async function pasarComprasAlPedido(codigoPedido: string, pares: Map<string, CompraEnCamino>, grupo: Solicitud[], estadoFinal: (saldo: number, fotos: number) => EstadoPedido): Promise<number> {
   const client = requireSupabase()
   if (!pares.size) return 0
   const { data: pedido, error } = await client.from('pedidos').select('id, saldo, pedido_items(id, codigo_producto, talla)').eq('codigo', codigoPedido).single()
@@ -228,6 +234,7 @@ async function pasarComprasAlPedido(codigoPedido: string, pares: Map<string, Com
   const items = ((pedido as { pedido_items?: { id: string; codigo_producto: string | null; talla: string | null }[] }).pedido_items ?? [])
   const itemsUsados = new Set<string>()
   const { copiarFotosInversionAPedido } = await import('./archivos.service')
+  let fotos = 0
   for (const s of grupo) {
     const compra = pares.get(s.id)
     if (!compra) continue
@@ -242,10 +249,10 @@ async function pasarComprasAlPedido(codigoPedido: string, pares: Map<string, Com
     const { data: inv } = await client.from('inversiones').select('notas').eq('id', compra.id).maybeSingle()
     const notas = String((inv as { notas?: string | null } | null)?.notas ?? '').split(MARCA_LINK_PAGO).join('').trim() || null
     await client.from('inversiones').update({ estado: 'vendido', pedido_id: pedido.id, notas }).eq('id', compra.id)
-    try { await copiarFotosInversionAPedido(compra.id, pedido.id) } catch { /* las fotos se pueden pasar luego desde Compras libres */ }
+    try { fotos += await copiarFotosInversionAPedido(compra.id, pedido.id) } catch { /* las fotos se pueden pasar luego desde Compras libres */ }
   }
   const { actualizarEstadoPedido } = await import('./pedidos.service')
-  await actualizarEstadoPedido(pedido.id, estadoFinal(Number((pedido as { saldo?: number }).saldo ?? 0)))
+  await actualizarEstadoPedido(pedido.id, estadoFinal(Number((pedido as { saldo?: number }).saldo ?? 0), fotos))
   invalidateComercial()
   return pares.size
 }

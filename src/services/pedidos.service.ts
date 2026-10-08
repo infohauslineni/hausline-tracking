@@ -580,7 +580,13 @@ export async function crearPedido(input: NuevoPedidoInput, caja?: CajaPedido, op
     const { error: invError } = await client.from('inversiones').update({ estado: 'vendido', pedido_id: created.id }).eq('id', opts.desdeInversion)
     if (invError) console.error('No se pudo marcar la inversión como vendida:', invError)
     // Las fotos de control de calidad que ya tenía la compra pasan al pedido (las ve el cliente).
-    try { await copiarFotosInversionAPedido(opts.desdeInversion, created.id) } catch (e) { console.error('No se pudieron copiar las fotos de la compra:', e) }
+    let fotos = 0
+    try { fotos = await copiarFotosInversionAPedido(opts.desdeInversion, created.id) } catch (e) { console.error('No se pudieron copiar las fotos de la compra:', e) }
+    // Apartado de una compra en preparación que YA tiene fotos de control de calidad: pasa a
+    // Control de calidad para que al cliente le llegue el correo con sus fotos.
+    if (fotos > 0 && input.estado === 'en_preparacion') {
+      try { await actualizarEstadoPedido(created.id, 'control_calidad') } catch (e) { console.error('No se pudo pasar a control de calidad:', e) }
+    }
   }
 
   invalidateComercial()
