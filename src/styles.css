@@ -366,3 +366,7 @@ html:has(.hsc) { background:#fbfbfa; }
 
 /* iOS: 16px en campos para evitar el zoom automático al enfocar */
 @media(max-width:640px) { .hs-portal input, .hs-portal select, .hs-portal textarea { font-size:16px; } }
+
+/* Opciones de los <select> legibles: en Windows la lista desplegable salía con letra blanca sobre fondo blanco. */
+select option, select optgroup { background-color:#101311; color:#fff; }
+.hs-portal select option, .hsc-field select option { background-color:#fff; color:#111; }

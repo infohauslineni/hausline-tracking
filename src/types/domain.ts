@@ -190,7 +190,7 @@ export type Trayecto = {
   activo: boolean
   created_at: string
   updated_at: string
-  pedidos?: Pick<Pedido, 'codigo' | 'estado'> & { clientes?: Pick<Cliente, 'nombre'> | null }
+  pedidos?: Pick<Pedido, 'codigo' | 'estado'> & { clientes?: Pick<Cliente, 'nombre'> | null; pedido_items?: Pick<PedidoItem, 'imagen' | 'producto' | 'notas'>[] }
   transportistas?: Transportista | null
   tracking_eventos?: TrackingEvento[]
 }

@@ -53,7 +53,7 @@ async function sincronizarPedido(trayecto: Trayecto, estado: EstadoTrayecto, des
 
 export async function listarTrayectos() {
   const { data, error } = await requireSupabase().from('trayectos')
-    .select('*, pedidos(codigo, estado, clientes(nombre)), transportistas(*), tracking_eventos(*)')
+    .select('*, pedidos(codigo, estado, clientes(nombre), pedido_items(imagen, producto, notas)), transportistas(*), tracking_eventos(*)')
     .order('updated_at', { ascending: false })
   if (error) throw error
   return data as unknown as Trayecto[]

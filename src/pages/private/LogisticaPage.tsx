@@ -13,6 +13,8 @@ import { eliminarTrayecto, guardarTrayecto, listarTransportistas, listarTrayecto
 import { listarPedidos } from '../../services/pedidos.service'
 import type { Inversion, Pedido, Transportista, Trayecto } from '../../types/domain'
 import { trayectoEstancado } from '../../utils/alertas'
+import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
+import { esLineaEnvio } from '../../services/pedidos.service'
 
 const trackingSchema = z.object({
   destino_tipo: z.enum(['pedido', 'stock']),
@@ -128,7 +130,10 @@ function RouteCard({ route, onEdit, onDelete, onDelivered, onReopen }: { route: 
   const carrierName = route.transportistas?.nombre ?? 'Sin paquetería'
   const estancado = trayectoEstancado(route)
   const border = route.estado === 'entregado' ? 'border-emerald-300/20' : estancado ? 'border-amber-300/45' : 'border-line'
-  return <article className={`rounded-2xl border bg-panel p-4 sm:p-5 ${border}`}><div className="flex items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><strong className="tracking-wide">{route.pedidos?.codigo}</strong>{route.estado === 'entregado' && <span className="status-badge status-success">Recibido en USA</span>}{estancado && <span className="status-badge status-preparacion">Sin novedad</span>}</div><p className="mt-1 text-xs">Pedido · <span className="font-semibold text-sky-300">{route.pedidos?.clientes?.nombre}</span></p></div><CardActions onEdit={onEdit} onDelete={onDelete} /></div><TrackingBox tracking={route.tracking ?? ''} carrier={carrierName} /><EnvioInfo route={route} /><div className="mt-5 flex flex-wrap gap-2 border-t border-line pt-4"><TrackingButtons tracking={route.tracking ?? ''} />{route.estado !== 'entregado' ? <DeliveredButton onClick={onDelivered} label="Recibido en USA" /> : <button className="subtle-button ml-auto text-amber-200" onClick={onReopen}>Corregir entrega</button>}</div></article>
+  // Foto del producto (el primero que no sea envío) para reconocer el pedido sin abrirlo.
+  const producto = (route.pedidos?.pedido_items ?? []).find((it) => !esLineaEnvio(it) && it.imagen) ?? (route.pedidos?.pedido_items ?? []).find((it) => !esLineaEnvio(it))
+  const foto = producto?.imagen ? resolverImagenCatalogo(producto.imagen) : ''
+  return <article className={`rounded-2xl border bg-panel p-4 sm:p-5 ${border}`}><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-white">{foto ? <img src={foto} alt={producto?.producto ?? 'Producto'} className="h-full w-full object-contain" loading="lazy" /> : <Package size={18} className="text-black/40" />}</span><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong className="tracking-wide">{route.pedidos?.codigo}</strong>{route.estado === 'entregado' && <span className="status-badge status-success">Recibido en USA</span>}{estancado && <span className="status-badge status-preparacion">Sin novedad</span>}</div><p className="mt-1 text-xs">Pedido · <span className="font-semibold text-sky-300">{route.pedidos?.clientes?.nombre}</span></p></div></div><CardActions onEdit={onEdit} onDelete={onDelete} /></div><TrackingBox tracking={route.tracking ?? ''} carrier={carrierName} /><EnvioInfo route={route} /><div className="mt-5 flex flex-wrap gap-2 border-t border-line pt-4"><TrackingButtons tracking={route.tracking ?? ''} />{route.estado !== 'entregado' ? <DeliveredButton onClick={onDelivered} label="Recibido en USA" /> : <button className="subtle-button ml-auto text-amber-200" onClick={onReopen}>Corregir entrega</button>}</div></article>
 }
 
 function EnvioInfo({ route }: { route: Trayecto }) {
