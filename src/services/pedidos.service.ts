@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase'
 import { notaPublicaEstado, type MotivoCancelacion } from '../constants/orders'
-import type { EstadoItem, EstadoPedido, Moneda, Pedido, PedidoItem } from '../types/domain'
+import type { EstadoItem, EstadoPedido, Inversion, Moneda, Pedido, PedidoItem } from '../types/domain'
 import { cachedQuery, invalidateCache, invalidateComercial } from '../utils/queryCache'
 import { etiquetaCargoBodega } from '../utils/bodega'
 import { ajustarSaldoCuenta } from './cuentas.service'
@@ -755,4 +755,25 @@ export async function pagarProveedorPedido(pedidoId: string, input: PagoProveedo
 
   if (deltaCuenta) await ajustarSaldoCuenta(cuentaId!, deltaCuenta)
   invalidateComercial()
+}
+
+// Marca de los pedidos creados al vender un producto de entrega inmediata (ver
+// venderInmediatoComoPedido): el aviso automático NO le manda al cliente el correo de "pedido
+// registrado", porque ya se lo llevó y recibe su factura aparte.
+export const MARCA_VENTA_INMEDIATA = '[VENTA_INMEDIATA]'
+
+// Venta inmediata de una compra libre a un cliente con ficha: queda como un pedido ya
+// ENTREGADO y pagado a su nombre (le aparece en Mi cuenta, sale de "Todavía no compran" y
+// cuenta para reseña y volver a comprar). Usa el mismo camino que "Apartar": el costo ya se
+// pagó al traerlo (no se descuenta otra vez) y el cobro entra UNA sola vez a la cuenta elegida.
+export async function venderInmediatoComoPedido(item: Inversion, venta: { clienteId: string; fecha: string; precioTotal: number; recibido: number; metodo: string; observaciones: string }, destino: { cuentaId: string | null; montoCuenta: number }) {
+  const unidades = Math.max(1, Number(item.cantidad) || 1)
+  const costoUnit = Math.round(((Number(item.costo_unitario) * unidades + Number(item.gastos_adicionales || 0)) / unidades) * 100) / 100
+  return crearPedido({
+    cliente_id: venta.clienteId, estado: 'entregado', fecha_pedido: venta.fecha, fecha_estimada: null,
+    abono: Math.min(venta.precioTotal, Math.max(0, venta.recibido)), metodo_pago: venta.metodo || null,
+    notas_internas: `${MARCA_VENTA_INMEDIATA} Venta de entrega inmediata desde Compras libres${venta.observaciones ? ` · ${venta.observaciones}` : ''}`,
+    notas_publicas: 'Compra inmediata: entregada.',
+    items: [{ producto: item.producto, marca: item.marca, talla: item.talla_color, cantidad: unidades, precio_unitario: Math.round((venta.precioTotal / unidades) * 100) / 100, precio_compra: costoUnit, codigo_producto: item.codigo, producto_id: item.producto_id, imagen: item.imagen ?? null, categoria: null, color: null, notas: null, proveedor_id: null }],
+  }, { abono: destino }, { desdeInversion: item.id })
 }

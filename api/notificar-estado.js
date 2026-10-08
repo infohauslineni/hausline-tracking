@@ -814,6 +814,9 @@ async function procesarAvisoPedido(body, response) {
   // En INSERT no hay estado anterior: se avisa que el pedido quedó registrado.
   // En UPDATE solo se avisa si el estado realmente cambió.
   if (!estado) return response.status(200).json({ ok: true, skipped: 'sin estado' })
+  // Venta de entrega inmediata registrada como pedido ya entregado: el cliente ya tiene su
+  // producto y recibe la factura aparte, así que no se le manda "pedido registrado".
+  if (esNuevo && (estado === 'entregado' || String(record.notas_internas ?? '').includes('[VENTA_INMEDIATA]'))) return response.status(200).json({ ok: true, skipped: 'venta inmediata' })
   if (!esNuevo && estado === oldRecord.estado) return response.status(200).json({ ok: true, skipped: 'sin cambio de estado' })
   if (!ESTADO_LABEL[estado]) return response.status(200).json({ ok: true, skipped: 'estado no notificable' })
   // Estados que se manejan a mano: NO se envía correo automático al cliente.

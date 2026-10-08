@@ -57,3 +57,31 @@ export function lugarCliente(c: Pick<Cliente, 'ciudad' | 'departamento'>): strin
   const partes = [c.ciudad, c.departamento].map((v) => String(v ?? '').trim()).filter(Boolean)
   return partes.filter((v, i) => partes.findIndex((x) => x.toLowerCase() === v.toLowerCase()) === i).join(', ')
 }
+
+// Venta inmediata a un cliente: busca su ficha por correo (así su cuenta de la tienda ve la
+// compra) o por WhatsApp; si no existe y hay WhatsApp, la crea. Si la ficha no tenía correo, se
+// le agrega. Devuelve null si no hay datos suficientes para ligar la compra a un cliente.
+export async function clienteParaVenta(datos: { nombre: string; correo: string; whatsapp: string }): Promise<Cliente | null> {
+  const client = requireSupabase()
+  const correo = datos.correo.trim().toLowerCase()
+  const whatsapp = datos.whatsapp.trim() ? normalizarTelefonoNicaragua(datos.whatsapp) : ''
+  let encontrado: Cliente | null = null
+  if (correo) {
+    const { data } = await client.from('clientes').select('*').ilike('correo', correo).order('created_at').limit(1)
+    encontrado = (data?.[0] as Cliente | undefined) ?? null
+  }
+  if (!encontrado && whatsapp) {
+    const { data } = await client.from('clientes').select('*').eq('whatsapp', whatsapp).order('created_at').limit(1)
+    encontrado = (data?.[0] as Cliente | undefined) ?? null
+  }
+  if (encontrado) {
+    if (correo && !(encontrado.correo ?? '').trim()) {
+      const { data } = await client.from('clientes').update({ correo }).eq('id', encontrado.id).select().single()
+      if (data) encontrado = data as Cliente
+      invalidateCache('clientes')
+    }
+    return encontrado
+  }
+  if (!whatsapp || !datos.nombre.trim()) return null
+  return guardarCliente({ nombre: datos.nombre.trim(), whatsapp, correo: correo || null, departamento: null, ciudad: null, direccion: null, referencia: null, notas: 'Creado al venderle un producto de entrega inmediata' })
+}
