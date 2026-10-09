@@ -74,7 +74,7 @@ export type Pedido = {
   activo: boolean
   created_at: string
   updated_at: string
-  clientes?: Pick<Cliente, 'nombre' | 'whatsapp' | 'departamento' | 'ciudad'> | null
+  clientes?: Pick<Cliente, 'nombre' | 'whatsapp' | 'departamento' | 'ciudad' | 'costo_envio'> | null
   pedido_items?: PedidoItem[]
   gastos?: Gasto[]
 }

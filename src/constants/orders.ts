@@ -79,7 +79,7 @@ export const notaPublicaEstado = (estado: EstadoPedido) => ({
   incidencia: 'Estamos gestionando una incidencia con su pedido.',
 }[estado])
 
-export function mensajeWhatsAppEstado(estado: EstadoPedido, data: { nombre?: string | null; codigo: string; url: string; saldo: number; fotosCalidad?: boolean; tipoCambio?: number; departamento?: string | null; ciudad?: string | null }) {
+export function mensajeWhatsAppEstado(estado: EstadoPedido, data: { nombre?: string | null; codigo: string; url: string; saldo: number; fotosCalidad?: boolean; tipoCambio?: number; departamento?: string | null; ciudad?: string | null; envio?: { costo: number; incluido: boolean } | null }) {
   const saludo = `Hola${data.nombre ? `, ${data.nombre}` : ''}.`
   const seguimiento = `Puede consultar el seguimiento aquí: ${data.url}`
   const saldoUsd = Math.max(0, data.saldo)
@@ -88,6 +88,7 @@ export function mensajeWhatsAppEstado(estado: EstadoPedido, data: { nombre?: str
   // quede un número raro (ej. 2928 → 2930).
   const cordobas = Math.ceil((saldoUsd * tc) / 10) * 10
   const saldoLinea = `US$ ${saldoUsd.toFixed(2)} (≈ C$ ${cordobas})`
+  const montoLinea = (usd: number) => `US$ ${usd.toFixed(2)} (≈ C$ ${Math.ceil((usd * tc) / 10) * 10})`
   // Si el pedido ya está pagado por completo (saldo 0), NO mandamos números de cuenta:
   // lo único pendiente es el envío, así que solo pedimos que nos digan a dónde lo quieren.
   const pagado = saldoUsd <= 0.01
@@ -99,6 +100,24 @@ export function mensajeWhatsAppEstado(estado: EstadoPedido, data: { nombre?: str
     : tieneUbicacion(data.departamento, data.ciudad)
       ? 'Para su departamento el envío es por *bus* (C$160) o por *Cargotrans* (C$100 + la tarifa según el peso y su departamento). Indíquenos cuál prefiere y compártanos su dirección.'
       : 'Opciones de envío:\n• Bus / departamento: C$160.\n• Cargotrans: C$100 + la tarifa según el peso y su departamento.\n• Managua: delivery a domicilio con costo adicional.\nIndíquenos a dónde desea el envío y compártanos su dirección para calcularlo.'
+  // Si ya sabemos cuánto cuesta el envío (el que confirmó el cliente, la línea de envío del
+  // pedido o el predeterminado de su ficha), el aviso de disponible lo dice y suma lo que debe.
+  const envio = data.envio && data.envio.costo > 0 ? data.envio : null
+  const managua = esManagua(data.departamento, data.ciudad)
+  const nombreEnvio = managua ? 'Delivery a domicilio' : 'Envío a su departamento'
+  const disponibleConEnvio = (() => {
+    if (!envio) return null
+    const encabezado = `${saludo} Su pedido ${data.codigo} ya está *disponible para entrega*.`
+    const comoEnvio = managua ? 'Como usted está en *Managua*, se lo llevamos con *delivery a domicilio*.' : 'Se lo enviamos a su departamento.'
+    // La línea de envío ya está sumada en el saldo: se muestra el desglose sin volver a sumarla.
+    const aPagar = envio.incluido ? saldoUsd : saldoUsd + envio.costo
+    const productoPendiente = envio.incluido ? Math.max(0, saldoUsd - envio.costo) : saldoUsd
+    const desglose = productoPendiente > 0.01
+      ? `Saldo pendiente del pedido: ${montoLinea(productoPendiente)}\n${nombreEnvio}: ${montoLinea(envio.costo)}\n*Total a pagar: ${montoLinea(aPagar)}*`
+      : `Su pedido *ya está pagado por completo*. Solo falta el envío:\n*${nombreEnvio}: ${montoLinea(envio.costo)}*`
+    const bodega = productoPendiente > 0.01 ? '\n\n*Tiene 2 días* para confirmar o cancelar su pedido sin costo. Después de esos 2 días se cobra *US$ 5 por cada día* que el pedido permanezca en bodega.' : ''
+    return `${encabezado}\n\n${comoEnvio}\n\n${desglose}${bodega}\n\n¿Nos confirma la dirección y el horario en que podemos entregárselo?\n\nCuentas para el pago:\n\n${cuentasTexto()}\n\nCuando realice el depósito, envíenos el comprobante por aquí.`
+  })()
   const mensajes: Record<EstadoPedido, string> = {
     pedido_confirmado: `${saludo} Confirmamos su orden ${data.codigo}. Ya quedó registrada y le avisaremos cada avance. ${seguimiento}`,
     en_preparacion: `${saludo} Su pedido ${data.codigo} está en preparación. Estamos coordinando el producto antes de enviarlo. ${seguimiento}`,
@@ -109,9 +128,9 @@ export function mensajeWhatsAppEstado(estado: EstadoPedido, data: { nombre?: str
     recibido_estados_unidos: `${saludo} Su pedido ${data.codigo} está en tránsito internacional. ${seguimiento}`,
     transito_nicaragua: `${saludo} Su pedido ${data.codigo} está en tránsito internacional. ${seguimiento}`,
     llego_nicaragua: `${saludo} Su pedido ${data.codigo} ya llegó al país de destino y está siendo procesado. ${seguimiento}`,
-    disponible_entrega: pagado
-      ? `${saludo} Su pedido ${data.codigo} ya está *disponible para entrega*.\n\nSu pedido *ya está pagado por completo* ✅. Lo único que faltaría es el *costo del envío*; indíquenos a dónde lo desea y coordinamos la entrega.\n\n${envioTexto}`
-      : `${saludo} Su pedido ${data.codigo} ya está *disponible para entrega*.\n\n*Saldo pendiente: ${saldoLinea}*\n\n*Tiene 2 días* para confirmar o cancelar su pedido sin costo. Después de esos 2 días se cobra *US$ 5 por cada día* que el pedido permanezca en bodega.\n\n${envioTexto}\n\nCuentas para el pago:\n\n${cuentasTexto()}\n\nCuando realice el depósito, envíenos el comprobante por aquí.`,
+    disponible_entrega: disponibleConEnvio ?? (pagado
+      ? `${saludo} Su pedido ${data.codigo} ya está *disponible para entrega*.\n\nSu pedido *ya está pagado por completo*. Lo único que faltaría es el *costo del envío*; indíquenos a dónde lo desea y coordinamos la entrega.\n\n${envioTexto}`
+      : `${saludo} Su pedido ${data.codigo} ya está *disponible para entrega*.\n\n*Saldo pendiente: ${saldoLinea}*\n\n*Tiene 2 días* para confirmar o cancelar su pedido sin costo. Después de esos 2 días se cobra *US$ 5 por cada día* que el pedido permanezca en bodega.\n\n${envioTexto}\n\nCuentas para el pago:\n\n${cuentasTexto()}\n\nCuando realice el depósito, envíenos el comprobante por aquí.`),
     pagado: `${saludo} Confirmamos el pago de su pedido ${data.codigo}. ✅ Ya no se acumula ningún cargo por bodega. Coordinamos la entrega y le avisamos. ${seguimiento}`,
     empaquetado: `${saludo} ¡Buenas noticias! Su pedido ${data.codigo} ya está *empaquetado y listo para envío*. ${esManagua(data.departamento, data.ciudad) ? 'Sale con nuestro delivery a domicilio.' : 'Ya va en camino a su departamento.'} Le enviamos una foto de su paquete para que lo tenga presente. ${seguimiento}`,
     entregado: `${saludo} Su pedido ${data.codigo} fue entregado. Gracias por comprar en Hausline.`,

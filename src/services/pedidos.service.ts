@@ -194,7 +194,7 @@ export async function listarPedidos(onFresh?: (value: Pedido[]) => void) {
   return cachedQuery('pedidos', async () => {
     const { data, error } = await requireSupabase()
       .from('pedidos')
-      .select('*, clientes(nombre, whatsapp, departamento, ciudad), pedido_items(*, pedido_item_costos(*)), gastos(id, monto, categoria)')
+      .select('*, clientes(nombre, whatsapp, departamento, ciudad, costo_envio), pedido_items(*, pedido_item_costos(*)), gastos(id, monto, categoria)')
       .order('created_at', { ascending: false })
     if (error) throw error
     const pedidos = data as unknown as Pedido[]
@@ -224,7 +224,7 @@ export function suscribirPedidos(onChange: () => void) {
 export async function obtenerPedido(id: string) {
   const { data, error } = await requireSupabase()
     .from('pedidos')
-    .select('*, clientes(nombre, whatsapp, departamento, ciudad), pedido_items(*, pedido_item_costos(*)), gastos(*)')
+    .select('*, clientes(nombre, whatsapp, departamento, ciudad, costo_envio), pedido_items(*, pedido_item_costos(*)), gastos(*)')
     .eq('id', id)
     .single()
   if (error) throw error

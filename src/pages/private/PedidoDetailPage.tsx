@@ -269,7 +269,12 @@ export function PedidoDetailPage() {
   }
   const publicUrl = urlSeguimientoCliente(pedido.codigo)
   const qualityMessageReady = pedido.estado === 'control_calidad' && qualityPhotosReady
-  const whatsappMessage = mensajeWhatsAppEstado(pedido.estado, { nombre: pedido.clientes?.nombre, codigo: pedido.codigo, url: publicUrl, saldo: Number(pedido.saldo), fotosCalidad: qualityMessageReady, tipoCambio, departamento: pedido.clientes?.departamento, ciudad: pedido.clientes?.ciudad })
+  // Costo del envío para el aviso de disponible: la línea de envío del pedido (ya va sumada en el
+  // saldo), si no el que confirmó el cliente desde la tienda, si no el predeterminado de su ficha.
+  const lineaEnvio = pedido.pedido_items?.find((it) => it.producto === 'Envío / delivery')
+  const costoEnvioConocido = lineaEnvio ? Number(lineaEnvio.precio_unitario) * Number(lineaEnvio.cantidad || 1) : pedido.entrega_costo != null ? Number(pedido.entrega_costo) : pedido.clientes?.costo_envio != null ? Number(pedido.clientes.costo_envio) : null
+  const envioAviso = costoEnvioConocido != null && costoEnvioConocido > 0 ? { costo: costoEnvioConocido, incluido: Boolean(lineaEnvio) } : null
+  const whatsappMessage = mensajeWhatsAppEstado(pedido.estado, { nombre: pedido.clientes?.nombre, codigo: pedido.codigo, url: publicUrl, saldo: Number(pedido.saldo), fotosCalidad: qualityMessageReady, tipoCambio, departamento: pedido.entrega_direccion?.departamento || pedido.clientes?.departamento, ciudad: pedido.entrega_direccion?.ciudad || pedido.clientes?.ciudad, envio: envioAviso })
   const costoReal = costoRealPedido(pedido)
   // El envío que paga el cliente no es ganancia (se le entrega al mensajero): se descuenta.
   const envioCliente = envioClientePasaLargo(pedido)
