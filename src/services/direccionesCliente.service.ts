@@ -80,6 +80,30 @@ export function costoDelivery(d: DireccionCliente, tarifas: TarifaDelivery[]): C
   return t ? { costo: Number(t.costo), moneda: t.moneda, fuente: 'zona', zona: t.zona } : null
 }
 
+// Costo del envío de un pedido, con el MISMO orden en el panel, el WhatsApp y el correo:
+//   1. la línea "Envío / delivery" del pedido (ya va sumada en el saldo → incluido),
+//   2. el que el cliente confirmó desde la tienda (pedidos.entrega_costo),
+//   3. el fijado para su dirección principal de Mi cuenta,
+//   4. el predeterminado de su ficha (clientes.costo_envio),
+//   5. la tarifa de la zona de su dirección.
+export type CostoEnvioPedido = { costo: number; incluido: boolean; fuente: 'pedido' | 'tienda' | 'direccion' | 'cliente' | 'zona' }
+export function costoEnvioPedido(
+  pedido: { pedido_items?: { producto: string; precio_unitario: number; cantidad: number }[] | null; entrega_costo?: number | null; clientes?: { costo_envio?: number | null } | null },
+  direcciones: DireccionCliente[], tarifas: TarifaDelivery[], tipoCambio: number,
+): CostoEnvioPedido | null {
+  const linea = pedido.pedido_items?.find((it) => it.producto === 'Envío / delivery')
+  if (linea) return { costo: Number(linea.precio_unitario) * Number(linea.cantidad || 1), incluido: true, fuente: 'pedido' }
+  const principal = direcciones.find((d) => d.predeterminada) ?? direcciones[0]
+  const dir = principal ? costoDelivery(principal, tarifas) : null
+  const tc = tipoCambio > 0 ? tipoCambio : 37
+  const zonaUsd = dir?.fuente === 'zona' ? (dir.moneda === 'NIO' ? Math.round((dir.costo / tc) * 100) / 100 : dir.costo) : null
+  const candidatos: [number | null | undefined, CostoEnvioPedido['fuente']][] = [
+    [pedido.entrega_costo, 'tienda'], [dir?.fuente === 'direccion' ? dir.costo : null, 'direccion'], [pedido.clientes?.costo_envio, 'cliente'], [zonaUsd, 'zona'],
+  ]
+  const hallado = candidatos.find(([v]) => v != null && Number(v) > 0)
+  return hallado ? { costo: Number(hallado[0]), incluido: false, fuente: hallado[1] } : null
+}
+
 export function lineasDireccion(d: Pick<DireccionCliente, 'direccion' | 'referencia' | 'ciudad' | 'departamento' | 'pais' | 'codigo_postal'>) {
   const ciudad = [d.ciudad, d.departamento && sinAcento(d.departamento) !== sinAcento(d.ciudad) ? d.departamento : null].filter(Boolean).join(', ')
   return [d.direccion, d.referencia, `${ciudad}, ${d.pais}`, d.codigo_postal ? `CP: ${d.codigo_postal}` : null].filter(Boolean) as string[]

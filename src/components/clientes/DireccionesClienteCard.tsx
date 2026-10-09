@@ -10,12 +10,14 @@ const precio = (c: CostoDelivery) => `${c.moneda === 'NIO' ? 'C$' : 'US$'} ${c.c
 // delivery que ve él. Desde aquí se fija un costo propio por dirección y, en el pedido, se
 // usa para agregar el envío (onUsar abre el modal "Agregar envío" ya lleno).
 // Se usa con clienteId (ficha / pedido) o con userId (una cuenta web que todavía no compró).
-export function DireccionesClienteCard({ clienteId, userId, compacto = false, tipoCambio = 37, onUsar }: {
+export function DireccionesClienteCard({ clienteId, userId, compacto = false, tipoCambio = 37, onUsar, onCambio }: {
   clienteId?: string
   userId?: string
   compacto?: boolean
   tipoCambio?: number
   onUsar?: (costoUsd: number | null, detalle: string) => void
+  /** Se llama después de cambiar el costo de una dirección (para recalcular el aviso). */
+  onCambio?: () => void
 }) {
   const [datos, setDatos] = useState<{ tieneCuenta: boolean; direcciones: DireccionCliente[] } | null>(null)
   const [tarifas, setTarifas] = useState<TarifaDelivery[]>([])
@@ -45,7 +47,7 @@ export function DireccionesClienteCard({ clienteId, userId, compacto = false, ti
     try {
       await fijarCostoDireccion(d.id, costo)
       toast.success(costo == null ? 'Listo: usa la tarifa de su zona.' : `Costo fijado: US$ ${costo.toFixed(2)}. El cliente lo ve en Mi cuenta.`)
-      setEditando(null); await cargar()
+      setEditando(null); await cargar(); onCambio?.()
     } catch { toast.error('No se pudo guardar el costo.') }
   }
   const copiar = (d: DireccionCliente) => {

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Modal } from '../ui/Modal'
 import { supabase } from '../../lib/supabase'
-import { direccionesDeCliente, lineasDireccion, urlMapa, type DireccionCliente } from '../../services/direccionesCliente.service'
+import { costoEnvioPedido, direccionesDeCliente, lineasDireccion, urlMapa, type DireccionCliente } from '../../services/direccionesCliente.service'
 import type { Cliente, Pedido } from '../../types/domain'
 import { whatsappUrl } from '../../utils/whatsapp'
 
@@ -56,6 +56,10 @@ export function DatosEntregaCliente({ pedido, mostrarSaldo = true }: { pedido: P
   const lista = lugares(pedido, cliente ?? (pedido.clientes as unknown as Cliente | null) ?? null, direcciones)
   const principal = lista[0] ?? null
   const saldo = Math.max(0, Number(pedido.saldo || 0))
+  // Mismo costo que usa el WhatsApp de disponible (si la línea de envío ya está en el pedido, el saldo ya la incluye).
+  const envio = costoEnvioPedido({ ...pedido, clientes: { costo_envio: cliente?.costo_envio ?? pedido.clientes?.costo_envio ?? null } }, direcciones, [], 0)
+  const origenEnvio = envio ? { pedido: 'Envío agregado al pedido', tienda: 'Envío confirmado por el cliente', direccion: 'Envío fijado para su dirección', cliente: 'Envío predeterminado del cliente', zona: 'Tarifa de su zona' }[envio.fuente] : ''
+  const totalConEnvio = envio ? (envio.incluido ? saldo : saldo + envio.costo) : saldo
 
   const copiar = async (texto: string, ok: string) => { try { await navigator.clipboard.writeText(texto); toast.success(ok) } catch { toast.error('No se pudo copiar.') } }
   // Bloque listo para mandarle al delivery / pegar en la guía del bus.
@@ -91,7 +95,7 @@ export function DatosEntregaCliente({ pedido, mostrarSaldo = true }: { pedido: P
       </div>}
 
     {principal && <p className="flex items-center gap-2 rounded-xl border border-line bg-white/[.02] px-3 py-2 text-xs text-muted"><Truck size={15} className="shrink-0 text-accent" />{esManagua(principal) ? <span>Es de <b className="text-white">Managua</b>: entrega por <b className="text-white">delivery</b>.</span> : <span>Es de <b className="text-white">{principal.departamento || principal.ciudad || 'fuera de Managua'}</b>: envío por <b className="text-white">bus / Cargotrans</b>.</span>}</p>}
-    {(pedido.entrega_costo != null || cliente?.costo_envio != null) && <p className="rounded-xl border border-line bg-white/[.02] px-3 py-2 text-xs text-muted">{pedido.entrega_costo != null ? 'Envío confirmado por el cliente' : 'Envío predeterminado del cliente'}: <b className="font-mono text-white">US$ {Number(pedido.entrega_costo ?? cliente?.costo_envio).toFixed(2)}</b>{mostrarSaldo && saldo > 0.01 ? <> · total con envío <b className="font-mono text-white">US$ {(saldo + Number(pedido.entrega_costo ?? cliente?.costo_envio)).toFixed(2)}</b></> : null}</p>}
+    {envio && <p className="rounded-xl border border-line bg-white/[.02] px-3 py-2 text-xs text-muted">{origenEnvio}: <b className="font-mono text-white">US$ {envio.costo.toFixed(2)}</b>{mostrarSaldo && totalConEnvio > 0.01 ? <> · total con envío <b className="font-mono text-white">US$ {totalConEnvio.toFixed(2)}</b></> : null}</p>}
     {mostrarSaldo && saldo > 0.01 && <p className="rounded-xl border border-line bg-white/[.02] px-3 py-2 text-xs text-muted">Saldo a cobrar al entregar: <b className="font-mono text-white">US$ {saldo.toFixed(2)}</b></p>}
 
     <button className="primary-button w-full" onClick={() => void copiar(textoEntrega, 'Datos de entrega copiados. Pegalos al delivery o en la guía.')}><Copy size={16} /> Copiar datos de entrega</button>

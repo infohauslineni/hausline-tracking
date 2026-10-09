@@ -789,7 +789,8 @@ async function datosEntregaCorreo(codigo, factura) {
   const cs = (usd) => `C$ ${(Math.ceil((Number(usd) * tc) / 10) * 10).toLocaleString('es-NI')}`
   const us = (usd) => `US$${Number(usd).toFixed(2)}`
   const envio = d.costo_envio != null ? Number(d.costo_envio) : null
-  const saldo = factura?.variante === 'saldo' ? Number(factura.saldo) || 0 : Number(d.saldo) || 0
+  // d.saldo ya viene SIN la línea de envío del pedido (si la hay), para no sumarla dos veces.
+  const saldo = d.saldo != null ? Number(d.saldo) || 0 : factura?.variante === 'saldo' ? Number(factura.saldo) || 0 : 0
   const lugar = [d.direccion, d.departamento].filter(Boolean).join(', ')
   const filas = [
     lugar ? `📍 <strong>Entrega en:</strong> ${esc(lugar)}${d.referencia ? ` (${esc(d.referencia)})` : ''}` : '📍 <strong>Todavía no tenemos su dirección de entrega.</strong>',
