@@ -59,7 +59,7 @@ function desde(historial, estado) {
 async function recordatorioSaldo(db) {
   if (!horarioCliente()) return 0
   const { data, error } = await db.from('pedidos')
-    .select('codigo, saldo, clientes(nombre, correo), historial_pedidos(estado_nuevo, created_at)')
+    .select('codigo, saldo, notas_internas, clientes(nombre, correo), historial_pedidos(estado_nuevo, created_at)')
     .eq('estado', 'disponible_entrega').gt('saldo', 0.01).limit(200)
   if (error) throw new Error(error.message)
   let tc = 37
@@ -68,6 +68,8 @@ async function recordatorioSaldo(db) {
   let cuentas = null
   let n = 0
   for (const p of data ?? []) {
+    // "Paga al recibir" (marca del panel): ya confirmó que paga al entregar, sin recordatorio.
+    if (String(p.notas_internas ?? '').includes('[PAGA_AL_RECIBIR]')) continue
     const cli = uno(p.clientes)
     const correo = String(cli?.correo ?? '').trim()
     const inicio = desde(p.historial_pedidos, 'disponible_entrega')

@@ -768,6 +768,20 @@ export async function pagarProveedorPedido(pedidoId: string, input: PagoProveedo
 // registrado", porque ya se lo llevó y recibe su factura aparte.
 export const MARCA_VENTA_INMEDIATA = '[VENTA_INMEDIATA]'
 
+// "Paga al recibir": el cliente ya confirmó que paga el saldo cuando le entregan. Con esta marca
+// en notas_internas NO le llegan los correos automáticos de saldo (disponible 1 h, recordatorio
+// del día 2, cargo por bodega) y la bodega no se cobra (ya confirmó la entrega).
+export const MARCA_PAGA_AL_RECIBIR = '[PAGA_AL_RECIBIR]'
+export const esPagaAlRecibir = (pedido: Pick<Pedido, 'notas_internas'> | null | undefined) => (pedido?.notas_internas ?? '').includes(MARCA_PAGA_AL_RECIBIR)
+export async function marcarPagaAlRecibir(pedido: Pick<Pedido, 'id' | 'notas_internas'>, activo: boolean) {
+  const client = requireSupabase()
+  const limpio = (pedido.notas_internas ?? '').split(MARCA_PAGA_AL_RECIBIR).join('').trim()
+  const notas = activo ? `${MARCA_PAGA_AL_RECIBIR} ${limpio}`.trim() : (limpio || null)
+  const { error } = await client.from('pedidos').update({ notas_internas: notas }).eq('id', pedido.id)
+  if (error) throw error
+  return notas
+}
+
 // Venta inmediata de una compra libre a un cliente con ficha: queda como un pedido ya
 // ENTREGADO y pagado a su nombre (le aparece en Mi cuenta, sale de "Todavía no compran" y
 // cuenta para reseña y volver a comprar). Usa el mismo camino que "Apartar": el costo ya se

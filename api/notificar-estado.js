@@ -746,7 +746,7 @@ async function disponiblesProgramados() {
   const client = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
   const ahora = Date.now()
   const { data, error } = await client.from('historial_pedidos')
-    .select('estado_anterior, created_at, pedidos!inner(codigo, estado, clientes(correo, nombre))')
+    .select('estado_anterior, created_at, pedidos!inner(codigo, estado, notas_internas, clientes(correo, nombre))')
     .eq('estado_nuevo', 'disponible_entrega')
     .lte('created_at', new Date(ahora - 3_600_000).toISOString())
     .gte('created_at', new Date(ahora - 48 * 3_600_000).toISOString())
@@ -758,6 +758,8 @@ async function disponiblesProgramados() {
     const p = Array.isArray(h.pedidos) ? h.pedidos[0] : h.pedidos
     if (!p || p.estado !== 'disponible_entrega' || vistos.has(p.codigo)) continue
     vistos.add(p.codigo)
+    // "Paga al recibir" (marca del panel): no se le manda el correo de saldo pendiente.
+    if (String(p.notas_internas ?? '').includes('[PAGA_AL_RECIBIR]')) continue
     const cli = Array.isArray(p.clientes) ? p.clientes[0] : p.clientes
     if (!String(cli?.correo ?? '').trim()) continue
     // El candado anti-duplicados (email_eventos) evita mandarlo otra vez en la próxima vuelta.

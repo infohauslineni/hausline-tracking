@@ -18,7 +18,7 @@ async function enviarRecordatoriosBodega(client) {
   if (!process.env.SMTP_USER || !process.env.SMTP_PASS) return 0
   const { data: pedidos, error } = await client
     .from('pedidos')
-    .select('id, codigo, bodega_aviso_at, clientes(nombre, correo), historial_pedidos(created_at, estado_nuevo)')
+    .select('id, codigo, bodega_aviso_at, notas_internas, clientes(nombre, correo), historial_pedidos(created_at, estado_nuevo)')
     .eq('estado', 'disponible_entrega')
     .limit(300)
   if (error) { console.error('cron: leyendo pedidos bodega', error.message); return 0 }
@@ -34,6 +34,8 @@ async function enviarRecordatoriosBodega(client) {
   const ahora = Date.now()
   let enviados = 0
   for (const p of pedidos ?? []) {
+    // "Paga al recibir" (marca del panel): ya confirmó la entrega, no se cobra bodega.
+    if (String(p.notas_internas ?? '').includes('[PAGA_AL_RECIBIR]')) continue
     const correo = String(p.clientes?.correo ?? '').trim()
     if (!correo) continue
     const inicios = (Array.isArray(p.historial_pedidos) ? p.historial_pedidos : [])
