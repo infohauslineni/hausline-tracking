@@ -67,6 +67,8 @@ export type Pedido = {
   // Cuándo se enviaron al cliente las fotos de control de calidad del pedido completo (para
   // que el botón quede en "ya enviadas" aunque se recargue el panel).
   qc_general_enviado_at?: string | null
+  // Cuándo se le avisó por WhatsApp que su pedido está disponible ("ya le avisé").
+  aviso_disponible_at?: string | null
   // Solicitud de envío hecha por el cliente desde su cuenta (panel del cliente).
   entrega_solicitada_at?: string | null
   entrega_direccion?: { nombre: string; direccion: string; referencia?: string | null; ciudad: string; departamento?: string | null; pais: string; codigo_postal?: string | null; lat?: number | null; lng?: number | null } | null

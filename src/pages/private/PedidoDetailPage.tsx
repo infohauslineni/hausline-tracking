@@ -1,6 +1,6 @@
 import { AlertTriangle, ArrowLeft, Ban, Banknote, Boxes, CalendarDays, Check, CheckCircle2, Clipboard, FileText, FolderUp, ImageUp, MessageCircle, Package, PackageCheck, Pencil, Share2, Ticket, Truck, UserRound, Wallet, MapPin, X, Zap } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { PedidoArchivos } from '../../components/pedidos/PedidoArchivos'
 import { EditarPedidoModal } from '../../components/pedidos/EditarPedidoModal'
@@ -30,6 +30,7 @@ import { CARGO_BODEGA_DIARIO, DIAS_GRACIA_BODEGA, calcularCargoBodega, type Carg
 import { Status } from './PedidosPage'
 import { urlSeguimientoCliente } from '../../utils/seguimientoUrl'
 import { DireccionesClienteCard } from '../../components/clientes/DireccionesClienteCard'
+import { haceCuanto, marcarAvisoDisponible } from '../../services/entregas.service'
 import { costoEnvioPedido, direccionesDeCliente, tarifasDelivery, type DireccionCliente, type TarifaDelivery } from '../../services/direccionesCliente.service'
 
 // Arma las líneas de la factura desde los ítems del pedido. Si el TOTAL del pedido es
@@ -52,6 +53,8 @@ function facturaItemsDePedido(pedido: Pedido): FacturaData['items'] {
 export function PedidoDetailPage() {
   const { esAdmin } = useAuth()
   const { id = '' } = useParams()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const cobroAbierto = useRef(false)
   const [pedido, setPedido] = useState<Pedido | null>(DEMO_PEDIDOS.find((item) => item.id === id) ?? DEMO_PEDIDOS[0])
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [estadoSeleccionado, setEstadoSeleccionado] = useState<EstadoPedido>(pedido?.estado ?? 'pedido_confirmado')
@@ -90,6 +93,20 @@ export function PedidoDetailPage() {
   useEffect(() => { if (isSupabaseConfigured) void obtenerPedido(id).then(setPedido).catch(() => toast.error('No se pudo cargar el pedido.')).finally(() => setLoading(false)) }, [id])
   useEffect(() => { if (isSupabaseConfigured) void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined) }, [])
   useEffect(() => { if (pedido) setEstadoSeleccionado(pedido.estado) }, [pedido])
+  // Desde la pantalla Entregas ("Entregar y cobrar"): /pedidos/:id?cobrar=entregado abre el cobro de una vez.
+  useEffect(() => {
+    const destino = searchParams.get('cobrar')
+    if (!pedido || loading || cobroAbierto.current || (destino !== 'entregado' && destino !== 'pagado')) return
+    cobroAbierto.current = true
+    setSearchParams({}, { replace: true })
+    if (!esAdmin || pedido.estado === 'entregado' || pedido.estado === 'cancelado') return
+    void (async () => {
+      const desde = pedido.estado === 'disponible_entrega' && isSupabaseConfigured ? await obtenerDisponibleDesde(pedido.id).catch(() => null) : null
+      const c = esPagaAlRecibir(pedido) ? 0 : calcularCargoBodega(desde)?.cargo ?? 0
+      const totalUsd = Math.max(0, Math.max(0, Number(pedido.saldo)) + c)
+      setCobrarDestino(destino); setCobrarBodega(c > 0); setIngresoCobro({ cuentaId: null, moneda: 'USD', montoUsd: totalUsd, montoCuenta: totalUsd }); setComprobante(null); setPaymentOpen(true)
+    })()
+  }, [pedido, loading, searchParams, setSearchParams, esAdmin])
   useEffect(() => {
     if (!isSupabaseConfigured || !pedido?.cliente_id) return
     let vivo = true
@@ -112,6 +129,11 @@ export function PedidoDetailPage() {
       toast.success(activo ? 'Paga al recibir: ya no le llegan correos de saldo ni de bodega.' : 'Listo: vuelven los recordatorios de saldo.')
       return true
     } catch { toast.error('No se pudo guardar.'); return false }
+  }
+  // "Ya le avisé": al tocar Avisar disponibilidad queda anotado cuándo se le escribió.
+  const anotarAviso = () => {
+    if (!isSupabaseConfigured || pedido.estado !== 'disponible_entrega') return
+    void marcarAvisoDisponible(pedido.id).then((cuando) => setPedido((current) => current ? { ...current, aviso_disponible_at: cuando } : current)).catch(() => undefined)
   }
   const copy = async (text: string, message: string) => { await navigator.clipboard.writeText(text); toast.success(message) }
   // Lo que se cobra en dólares (reduce el saldo). Sale del bloque de cuenta del cobro.
@@ -312,7 +334,7 @@ export function PedidoDetailPage() {
     <Link to="/pedidos" className="mb-5 inline-flex items-center gap-2 text-xs text-muted hover:text-white"><ArrowLeft size={16} /> Volver a pedidos</Link>
     <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
       <div><div className="flex flex-wrap items-center gap-3"><h1 className="text-3xl font-semibold tracking-tight">{pedido.codigo}</h1><Status estado={pedido.estado} />{pedido.envio_rapido && <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2.5 py-1 text-[11px] font-semibold text-accent"><Zap size={12} /> Envío rápido</span>}</div><p className="mt-2 text-sm text-muted">Creado el {new Intl.DateTimeFormat('es-NI', { dateStyle: 'long' }).format(new Date(pedido.fecha_pedido + 'T12:00:00'))}</p></div>
-      <div className="flex flex-wrap gap-2"><button className="subtle-button" onClick={() => void copy(pedido.codigo, 'Código copiado.')}><Clipboard size={16} /> Copiar código</button><button className="subtle-button" onClick={() => void copy(publicUrl, 'Enlace público copiado.')}><Check size={16} /> Copiar enlace</button><button className={['disponible_entrega', 'pagado', 'empaquetado'].includes(pedido.estado) ? 'primary-button px-4' : 'subtle-button px-4'} onClick={() => setDatosEntregaOpen(true)}><MapPin size={16} /> Datos de entrega</button>{pedido.clientes?.whatsapp && <a className="primary-button px-4" href={whatsappUrl(pedido.clientes.whatsapp, whatsappMessage)} target="_blank" rel="noreferrer"><MessageCircle size={17} /> {pedido.estado === 'disponible_entrega' ? 'Avisar disponibilidad' : qualityMessageReady ? 'Avisar control de calidad' : 'WhatsApp'}</a>}{pedido.estado === 'entregado' && <button className="subtle-button px-4" onClick={() => setHistoriaOpen(true)}><Share2 size={16} /> Compartir en historia</button>}{esAdmin && pedido.estado !== 'cancelado' && pedido.estado !== 'entregado' && <button className="subtle-button px-4 text-red-300 hover:text-red-200" onClick={() => setCancelOpen(true)}><Ban size={16} /> Cancelar</button>}</div>
+      <div className="flex flex-wrap gap-2"><button className="subtle-button" onClick={() => void copy(pedido.codigo, 'Código copiado.')}><Clipboard size={16} /> Copiar código</button><button className="subtle-button" onClick={() => void copy(publicUrl, 'Enlace público copiado.')}><Check size={16} /> Copiar enlace</button><button className={['disponible_entrega', 'pagado', 'empaquetado'].includes(pedido.estado) ? 'primary-button px-4' : 'subtle-button px-4'} onClick={() => setDatosEntregaOpen(true)}><MapPin size={16} /> Datos de entrega</button>{pedido.clientes?.whatsapp && <a className="primary-button px-4" href={whatsappUrl(pedido.clientes.whatsapp, whatsappMessage)} target="_blank" rel="noreferrer" onClick={anotarAviso} title={pedido.aviso_disponible_at ? `Ya le avisaste ${haceCuanto(pedido.aviso_disponible_at)}` : undefined}><MessageCircle size={17} /> {pedido.estado === 'disponible_entrega' ? (pedido.aviso_disponible_at ? `Volver a avisar · avisado ${haceCuanto(pedido.aviso_disponible_at)}` : 'Avisar disponibilidad') : qualityMessageReady ? 'Avisar control de calidad' : 'WhatsApp'}</a>}{pedido.estado === 'entregado' && <button className="subtle-button px-4" onClick={() => setHistoriaOpen(true)}><Share2 size={16} /> Compartir en historia</button>}{esAdmin && pedido.estado !== 'cancelado' && pedido.estado !== 'entregado' && <button className="subtle-button px-4 text-red-300 hover:text-red-200" onClick={() => setCancelOpen(true)}><Ban size={16} /> Cancelar</button>}</div>
     </div>
     {pedido.estado === 'cancelado' && <ReaparicionPanel pedido={pedido} whatsapp={pedido.clientes?.whatsapp} stockSaving={stockSaving} onStock={() => void pasarAStock()} />}
     {pedido.estado === 'disponible_entrega' && cargoBodega && <BodegaAviso info={cargoBodega} cordobas={cordobasBodega} whatsapp={pedido.clientes?.whatsapp} mensaje={recordatorioBodega} />}

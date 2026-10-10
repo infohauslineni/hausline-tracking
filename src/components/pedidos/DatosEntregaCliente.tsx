@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Modal } from '../ui/Modal'
 import { supabase } from '../../lib/supabase'
-import { costoEnvioPedido, direccionesDeCliente, lineasDireccion, urlMapa, type DireccionCliente } from '../../services/direccionesCliente.service'
+import { costoEnvioPedido, direccionesDeCliente, type DireccionCliente } from '../../services/direccionesCliente.service'
+import { esManaguaLugar, lugaresEntrega } from '../../services/entregas.service'
 import type { Cliente, Pedido } from '../../types/domain'
 import { whatsappUrl } from '../../utils/whatsapp'
 
@@ -14,10 +15,6 @@ import { whatsappUrl } from '../../utils/whatsapp'
 //   3. Lo que quedó en su ficha de cliente (departamento / ciudad / dirección del registro).
 // Si no hay ninguna, lo avisa y ofrece pedirle la dirección por WhatsApp.
 
-type Lugar = { titulo: string; lineas: string[]; mapa: string | null; departamento: string | null; ciudad: string | null }
-
-const sinAcento = (v: string | null | undefined) => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase()
-const esManagua = (l: Lugar | null) => !!l && (sinAcento(l.departamento) === 'managua' || (!l.departamento && sinAcento(l.ciudad) === 'managua'))
 
 function useDatosCliente(pedido: Pedido) {
   const [cliente, setCliente] = useState<Cliente | null>(null)
@@ -36,24 +33,13 @@ function useDatosCliente(pedido: Pedido) {
   return { cliente, direcciones, cargando }
 }
 
-function lugares(pedido: Pedido, cliente: Cliente | null, direcciones: DireccionCliente[]): Lugar[] {
-  const out: Lugar[] = []
-  const e = pedido.entrega_direccion
-  if (e) out.push({ titulo: 'Pidió el envío a esta dirección', lineas: [e.nombre, ...lineasDireccion({ direccion: e.direccion, referencia: e.referencia ?? null, ciudad: e.ciudad, departamento: e.departamento ?? null, pais: e.pais, codigo_postal: e.codigo_postal ?? null })], mapa: urlMapa({ lat: e.lat ?? null, lng: e.lng ?? null }), departamento: e.departamento ?? null, ciudad: e.ciudad })
-  for (const d of direcciones) out.push({ titulo: `Guardada en Mi cuenta${d.predeterminada ? ' · principal' : ''}`, lineas: [d.nombre, ...lineasDireccion(d)], mapa: urlMapa(d), departamento: d.departamento, ciudad: d.ciudad })
-  if (cliente && (cliente.direccion || cliente.ciudad || cliente.departamento)) {
-    const ciudad = [cliente.ciudad, cliente.departamento && sinAcento(cliente.departamento) !== sinAcento(cliente.ciudad) ? cliente.departamento : null].filter(Boolean).join(', ')
-    out.push({ titulo: 'De su ficha de cliente', lineas: [cliente.direccion, cliente.referencia, ciudad].filter(Boolean) as string[], mapa: null, departamento: cliente.departamento, ciudad: cliente.ciudad })
-  }
-  return out
-}
 
 export function DatosEntregaCliente({ pedido, mostrarSaldo = true }: { pedido: Pedido; mostrarSaldo?: boolean }) {
   const { cliente, direcciones, cargando } = useDatosCliente(pedido)
   const nombre = cliente?.nombre ?? pedido.clientes?.nombre ?? 'Cliente'
   const telefono = cliente?.whatsapp ?? pedido.clientes?.whatsapp ?? ''
   // Si no se pudo leer la ficha completa, se usa lo que trae el pedido (departamento / ciudad).
-  const lista = lugares(pedido, cliente ?? (pedido.clientes as unknown as Cliente | null) ?? null, direcciones)
+  const lista = lugaresEntrega(pedido, cliente ?? (pedido.clientes as unknown as Cliente | null) ?? null, direcciones)
   const principal = lista[0] ?? null
   const saldo = Math.max(0, Number(pedido.saldo || 0))
   // Mismo costo que usa el WhatsApp de disponible (si la línea de envío ya está en el pedido, el saldo ya la incluye).
@@ -67,7 +53,7 @@ export function DatosEntregaCliente({ pedido, mostrarSaldo = true }: { pedido: P
     `Pedido ${pedido.codigo}`,
     `Cliente: ${nombre}`,
     telefono && `Teléfono: ${telefono}`,
-    ...(principal ? principal.lineas.slice(principal.titulo.startsWith('De su ficha') ? 0 : 1).map((l, i) => i === 0 ? `Dirección: ${l}` : l) : []),
+    ...(principal ? principal.lineas.slice(principal.deFicha ? 0 : 1).map((l, i) => i === 0 ? `Dirección: ${l}` : l) : []),
     principal?.mapa && `Ubicación: ${principal.mapa}`,
     mostrarSaldo && saldo > 0.01 && `Cobrar: US$ ${saldo.toFixed(2)}`,
   ].filter(Boolean).join('\n')
@@ -94,7 +80,7 @@ export function DatosEntregaCliente({ pedido, mostrarSaldo = true }: { pedido: P
         {telefono && <a className="subtle-button mt-2.5 inline-flex px-3 py-1.5 text-xs" href={whatsappUrl(telefono, pedirDireccion)} target="_blank" rel="noreferrer"><MessageCircle size={14} /> Pedirle la dirección por WhatsApp</a>}
       </div>}
 
-    {principal && <p className="flex items-center gap-2 rounded-xl border border-line bg-white/[.02] px-3 py-2 text-xs text-muted"><Truck size={15} className="shrink-0 text-accent" />{esManagua(principal) ? <span>Es de <b className="text-white">Managua</b>: entrega por <b className="text-white">delivery</b>.</span> : <span>Es de <b className="text-white">{principal.departamento || principal.ciudad || 'fuera de Managua'}</b>: envío por <b className="text-white">bus / Cargotrans</b>.</span>}</p>}
+    {principal && <p className="flex items-center gap-2 rounded-xl border border-line bg-white/[.02] px-3 py-2 text-xs text-muted"><Truck size={15} className="shrink-0 text-accent" />{esManaguaLugar(principal) ? <span>Es de <b className="text-white">Managua</b>: entrega por <b className="text-white">delivery</b>.</span> : <span>Es de <b className="text-white">{principal.departamento || principal.ciudad || 'fuera de Managua'}</b>: envío por <b className="text-white">bus / Cargotrans</b>.</span>}</p>}
     {envio && <p className="rounded-xl border border-line bg-white/[.02] px-3 py-2 text-xs text-muted">{origenEnvio}: <b className="font-mono text-white">US$ {envio.costo.toFixed(2)}</b>{mostrarSaldo && totalConEnvio > 0.01 ? <> · total con envío <b className="font-mono text-white">US$ {totalConEnvio.toFixed(2)}</b></> : null}</p>}
     {mostrarSaldo && saldo > 0.01 && <p className="rounded-xl border border-line bg-white/[.02] px-3 py-2 text-xs text-muted">Saldo a cobrar al entregar: <b className="font-mono text-white">US$ {saldo.toFixed(2)}</b></p>}
 

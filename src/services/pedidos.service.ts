@@ -83,7 +83,7 @@ function conLineaEnvioRapido(items: PedidoItem[], envioRapido?: boolean): Pedido
 // propia del ítem. Complementa al trigger productos_sincronizar_imagen, que solo
 // alcanza a los ítems ya enlazados por producto_id (no a los que se registraron
 // cuando el producto aún no estaba en el catálogo).
-async function adjuntarFotosCatalogo(items: PedidoItem[]) {
+export async function adjuntarFotosCatalogo(items: PedidoItem[]) {
   if (!supabase || !items.length) return
   const norm = (valor: unknown) => String(valor ?? '').trim().toUpperCase()
   const sinFoto = items.filter((item) => !item.imagen)

@@ -1,4 +1,4 @@
-import { ArrowUpRight, BarChart3, Bell, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, MoreHorizontal, PackagePlus, PackageSearch, Plus, ReceiptText, RotateCcw, Settings, ShoppingBag, Star, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
+import { ArrowUpRight, BarChart3, Bell, Bike, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, MoreHorizontal, PackagePlus, PackageSearch, Plus, ReceiptText, RotateCcw, Settings, ShoppingBag, Star, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -41,6 +41,8 @@ async function calcularEstado(): Promise<{ badges: Badges; alertas: Alerta[] }> 
     '/configuracion': erroresClientes,
     '/pagos': pedidos.filter((p) => (p.estado === 'disponible_entrega' || p.estado === 'entregado') && Number(p.saldo) > 0.01).length,
     '/logistica': pedidos.filter((p) => p.estado === 'incidencia').length,
+    // Disponibles a los que todavía no se les avisó por WhatsApp.
+    '/entregas': pedidos.filter((p) => p.estado === 'disponible_entrega' && !p.aviso_disponible_at).length,
   }
   // Trayectos para las alertas de "tracking sin novedad" (best-effort).
   const trayectos = await (async () => { try { const { listarTrayectos } = await import('../../services/logistica.service'); return await listarTrayectos() } catch { return [] } })()
@@ -73,6 +75,7 @@ const finanzas: NavItem[] = [
 ]
 const logistica: NavItem[] = [
   { to: '/logistica', label: 'Logística', icon: Truck },
+  { to: '/entregas', label: 'Entregas', icon: Bike, nuevo: true },
 ]
 // Opciones administrativas (agrupadas aparte; se pueden ocultar por rol más adelante).
 const administracion: NavItem[] = [
@@ -88,7 +91,7 @@ const navGroups = [
 // Rutas que ve el OPERADOR (empleado): su trabajo operativo, sin nada de dinero. Todo lo
 // demás (finanzas, productos/stock, reportes, cupones, reseñas, configuración, resumen) es
 // solo para el admin. La seguridad real está en el servidor (RLS); esto es la capa visual.
-const RUTAS_OPERADOR = new Set(['/pedidos', '/solicitudes', '/logistica'])
+const RUTAS_OPERADOR = new Set(['/pedidos', '/solicitudes', '/logistica', '/entregas'])
 // Barra inferior en móvil (admin): Resumen · Pedidos · (+) · Ventas · Más.
 const mobileLinks = [operaciones[0], operaciones[1], operaciones[2]]
 // Barra inferior en móvil (operador): Pedidos · Encargos · Logística · Más (sin botón "+").
