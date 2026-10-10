@@ -12,6 +12,19 @@ export interface Suscriptor {
   created_at: string
 }
 
+// Campaña "síganos en Instagram y TikTok" (api/notificar-estado, solo admin):
+//   'estado' = cómo va · 'prueba' = solo a mi correo · 'iniciar' = lanzarla a los suscriptores.
+export type EstadoCampanaRedes = { suscriptores: number; prueba?: string; campana: { id: string; activa: boolean; completa: boolean; creada?: string; completada?: string; enviados?: number; total?: number } | null }
+export async function campanaRedes(accion: 'estado' | 'prueba' | 'iniciar'): Promise<EstadoCampanaRedes> {
+  const { data: sessionData } = await client().auth.getSession()
+  const token = sessionData.session?.access_token
+  if (!token) throw new Error('Sesión no disponible.')
+  const res = await fetch('/api/notificar-estado', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token }, body: JSON.stringify({ campanaRedes: accion }) })
+  const j = await res.json().catch(() => ({})) as Partial<EstadoCampanaRedes> & { ok?: boolean; error?: string }
+  if (!res.ok || !j.ok) throw new Error(j.error || 'No se pudo (HTTP ' + res.status + ').')
+  return { suscriptores: j.suscriptores ?? 0, prueba: j.prueba, campana: j.campana ?? null }
+}
+
 // Suscriptores ACTIVOS y con consentimiento: los que aceptaron recibir promociones y no se
 // dieron de baja. Es la lista que se exporta para las campañas de Brevo. Del más nuevo al viejo.
 export async function listarSuscriptores(): Promise<Suscriptor[]> {

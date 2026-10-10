@@ -324,7 +324,8 @@ function bloqueResena(codigo) {
           </table>`
 }
 
-export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, urlSeguimiento, esNuevo, factura, fotos, ctaTexto, ctaUrl, pedirResena }) {
+// `kicker` y `pie`: textos del encabezado y del pie para correos que NO son de un pedido (campañas).
+export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, urlSeguimiento, esNuevo, factura, fotos, ctaTexto, ctaUrl, pedirResena, kicker: kickerPropio, pie }) {
   const btnUrl = ctaUrl || urlSeguimiento
   const btnTxt = ctaTexto || 'Ver mi pedido'
   const esEntregado = (ETAPA_BASE[estado] || estado) === 'entregado'
@@ -341,7 +342,7 @@ export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, url
   const anio = new Date().getFullYear()
   // Sin etapa (recordatorios, cupones, carrito…): el titular es la etiqueta propia del correo.
   const titulo = estado ? tituloEstado(estado) : (estadoLabel || tituloEstado(estado))
-  const kicker = esNuevo ? 'Confirmación de pedido' : 'Actualización de pedido'
+  const kicker = kickerPropio || (esNuevo ? 'Confirmación de pedido' : 'Actualización de pedido')
   const correoContacto = process.env.CONTACT_EMAIL || 'alerta@hauslineshopni.es'
   const telContacto = process.env.CONTACT_PHONE || '+505 7899 5116'
 
@@ -453,7 +454,7 @@ export function plantillaCorreo({ nombre, codigo, estado, estadoLabel, nota, url
             <td class="t-primary" style="font-size:13px;font-weight:800;letter-spacing:3px;color:#0b0f19;">HAUSLINE</td>
             <td style="text-align:right;font-size:11px;color:#9aa0ab;line-height:1.6;">${esc(correoContacto)}<br>${esc(telContacto)}</td>
           </tr></table>
-          <p style="margin:14px 0 0;font-size:10px;color:#c4c9d0;">© ${anio} Hausline · King of Shoes · Aviso automático de su pedido</p>
+          <p style="margin:14px 0 0;font-size:10px;color:#c4c9d0;">© ${anio} Hausline · King of Shoes · ${esc(pie || 'Aviso automático de su pedido')}</p>
         </td></tr>
 
       </table>

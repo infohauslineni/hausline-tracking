@@ -11,7 +11,7 @@
 // A los CLIENTES solo se les escribe de 9 a. m. a 8 p. m. (hora de Nicaragua).
 import { createClient } from '@supabase/supabase-js'
 import { ESTADO_LABEL } from './_correo.js'
-import { enviarCorreoBajaPrecio, enviarCorreoCarritoAbandonado, enviarCorreoNovedades, enviarCorreoRecompra, enviarCorreoRecordatorioResena, enviarCorreoRecordatorioSaldo, enviarCorreoReporteDiario } from './_correo-auto.js'
+import { enviarCorreoBajaPrecio, enviarCorreoCarritoAbandonado, enviarCorreoNovedades, enviarCorreoRedes, enviarCorreoRecompra, enviarCorreoRecordatorioResena, enviarCorreoRecordatorioSaldo, enviarCorreoReporteDiario } from './_correo-auto.js'
 import { cerrarEmail, reservarEmail } from './_email-eventos.js'
 import { hacerRespaldo } from './_respaldo.js'
 import { obtenerCatalogoMergeado } from './_catalogo.js'
@@ -294,6 +294,36 @@ async function novedades(db) {
   return enviados
 }
 
+// CAMPAÑA DE REDES: cuando el dueño la lanza desde el panel (configuracion.campana_redes.activa),
+// se manda a los suscriptores con consentimiento, de a 25 por vuelta y solo en horario de cliente.
+// Un correo por persona y campaña (candado en email_eventos); al terminar se marca completa.
+async function campanaRedes(db) {
+  if (!horarioCliente()) return 0
+  const { data: cfg } = await db.from('configuracion').select('valor_json').eq('clave', 'campana_redes').maybeSingle()
+  const c = cfg?.valor_json
+  if (!c?.id || !c.activa || c.completa) return 0
+  const { data: subs, error } = await db.from('suscriptores').select('correo, nombre').eq('activo', true).eq('consentimiento', true).limit(5000)
+  if (error) throw new Error(error.message)
+  const base = (process.env.CATALOGO_BASE_URL ?? 'https://hauslineshopni.es/').replace(/\/$/, '')
+  let enviados = 0, quedan = false
+  for (const s of subs ?? []) {
+    const correo = String(s.correo ?? '').trim().toLowerCase()
+    if (!correo) continue
+    if (enviados >= NOV_POR_VUELTA) { quedan = true; break }
+    const reserva = await reservarEmail({ clave: `campana:${c.id}:${correo}`, tipo: 'campana_redes', destinatario: correo })
+    if (reserva.duplicado) continue
+    try {
+      const { data: tok, error: eTok } = await db.rpc('token_baja_suscriptor', { p_correo: correo })
+      if (eTok || !tok) throw new Error(eTok?.message || 'sin código de baja') // sin enlace de baja no se manda
+      await enviarCorreoRedes({ correo, nombre: s.nombre, urlBaja: `${base}/baja/?e=${encodeURIComponent(correo)}&t=${tok}` })
+      await cerrarEmail(reserva.id); enviados++
+    } catch (e) { await cerrarEmail(reserva.id, e?.message || 'error'); console.error('auto campaña redes: falló', correo, e?.message); quedan = true; break }
+  }
+  const total = Number(c.enviados || 0) + enviados
+  await db.from('configuracion').upsert({ clave: 'campana_redes', valor_json: quedan ? { ...c, enviados: total } : { ...c, enviados: total, activa: false, completa: true, completada: new Date().toISOString() } }, { onConflict: 'clave' })
+  return enviados
+}
+
 // Productos de la tienda que se ven mal: sin foto, o de ropa/calzado sin tallas. Para el reporte.
 async function productosIncompletos() {
   try {
@@ -371,5 +401,6 @@ export async function automatizaciones() {
   await paso('baja_precio', bajaPrecioFavoritos)
   await paso('respaldo', respaldoSemanal)
   await paso('novedades', novedades)
+  await paso('campana_redes', campanaRedes)
   return res
 }

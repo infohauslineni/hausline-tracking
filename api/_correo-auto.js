@@ -124,6 +124,38 @@ export async function enviarCorreoNovedades({ correo, nombre, tipo, productos, u
   })
 }
 
+// CAMPAÑA "síganos en redes": invita a los suscriptores a seguir Instagram y TikTok. Se manda
+// una sola vez por campaña (la lanza el dueño desde el panel). Mismo pie de baja que Novedades.
+export const REDES = {
+  instagram: { usuario: '@hausline.ni', url: 'https://instagram.com/hausline.ni' },
+  tiktok: { usuario: '@hausline.niof', url: 'https://tiktok.com/@hausline.niof' },
+}
+export async function enviarCorreoRedes({ correo, nombre, urlBaja }) {
+  const base = baseTienda()
+  // Las clases btn / t-body son las de la plantilla: en modo oscuro se invierten solas.
+  const boton = (red, etiqueta) => `<tr><td style="padding:6px 0"><a class="btn" href="${esc(red.url)}" target="_blank" style="display:block;background-color:#050505;color:#ffffff;text-decoration:none;text-align:center;font-size:15px;font-weight:700;letter-spacing:.3px;padding:15px 18px;border-radius:6px">${etiqueta} &nbsp;·&nbsp; ${esc(red.usuario)}</a></td></tr>`
+  const punto = (t) => `<tr><td class="t-body" style="padding:3px 0;font-size:14px;line-height:1.5;color:#3a352f">— ${t}</td></tr>`
+  const nota = 'En nuestras redes publicamos primero todo lo que pasa en HAUSLINE. Si nos sigue, se entera antes que nadie de:'
+    + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:10px 0 4px">`
+    + punto('Los productos nuevos, el mismo día que llegan.')
+    + punto('Las tallas disponibles para entrega inmediata.')
+    + punto('Promociones y cupones que solo salen ahí.')
+    + punto('Fotos y videos reales de los pedidos que entregamos.')
+    + `</table>`
+    + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px">`
+    + boton(REDES.instagram, 'Seguir en Instagram') + boton(REDES.tiktok, 'Seguir en TikTok')
+    + `</table>`
+    + `<p class="t-body" style="margin:14px 0 0;font-size:13px;line-height:1.5;color:#6b655c">Son dos toques y nos ayuda muchísimo a seguir creciendo. ¡Gracias por ser parte de HAUSLINE!</p>`
+    + `<p style="margin:14px 0 0;font-size:11px;line-height:1.5;color:#9aa0ab">Recibe este correo porque aceptó recibir novedades de HAUSLINE. <a href="${esc(urlBaja)}" style="color:#9aa0ab">Darme de baja</a></p>`
+  const n = primerNombre(nombre)
+  await transporteSmtp().sendMail({
+    from: remitente(), to: correo,
+    subject: `${n ? `${n}, s` : 'S'}íganos en Instagram y TikTok: lo nuevo sale primero ahí`,
+    headers: { 'List-Unsubscribe': `<${urlBaja}>` },
+    html: plantillaCorreo({ nombre, codigo: null, estado: null, estadoLabel: 'Síganos en Instagram y TikTok', nota, urlSeguimiento: base, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Ver la tienda', ctaUrl: base, pedirResena: false, kicker: 'Novedades', pie: 'Novedades de HAUSLINE' }),
+  })
+}
+
 // (3) REPORTE DIARIO al dueño (7 a. m. Nicaragua): lo de ayer + lo que hay que atender hoy.
 export async function enviarCorreoReporteDiario({ to, r }) {
   const appUrl = (process.env.APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')

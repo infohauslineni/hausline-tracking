@@ -5,7 +5,7 @@ import { subirFacturaDrive, subirArchivoDrive, mesCarpeta } from './_drive.js'
 import { cerrarEmail, reservarEmail } from './_email-eventos.js'
 import { automatizaciones } from './_automatico.js'
 import { hacerRespaldo } from './_respaldo.js'
-import { enviarCorreoCuponCliente } from './_correo-auto.js'
+import { enviarCorreoCuponCliente, enviarCorreoRedes } from './_correo-auto.js'
 
 // La tarea de cada 15 min hace varias cosas (avisos, recordatorios, reporte): le damos margen.
 export const config = { maxDuration: 60 }
@@ -259,6 +259,47 @@ async function entregaInmediataDesdeCompra(response, body, authorization) {
   return response.status(200).json({ ok: false, error: MOTIVO[r] || (res && !res.ok ? 'Falta aplicar el SQL del catálogo (marcar_entrega_inmediata).' : 'No se pudo conectar con la tienda.') })
 }
 const CATALOGO_KEY = 'sb_publishable_NwpQth6G3qhpvtnRan3Xfg_8EqPM4Pw' // clave PÚBLICA del catálogo (la protección es la clave secreta)
+
+// Campaña "síganos en Instagram y TikTok" desde el panel. Solo el administrador.
+//   'estado'  → cuántos suscriptores hay y cómo va la campaña.
+//   'prueba'  → manda el correo SOLO al correo del administrador que está en sesión.
+//   'iniciar' → la deja activa: la tarea de 15 min la manda de a 25, en horario de cliente.
+async function campanaRedesPanel(response, body, authorization) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(500).json({ ok: false, error: 'Falta configuración del servidor.' })
+  const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  const token = String(authorization).replace(/^Bearer\s+/i, '').trim()
+  if (!token) return response.status(401).json({ ok: false })
+  const { data: userData } = await admin.auth.getUser(token).catch(() => ({ data: { user: null } }))
+  if (!userData?.user) return response.status(401).json({ ok: false })
+  const { data: perfil } = await admin.from('perfiles').select('rol, activo').eq('id', userData.user.id).maybeSingle()
+  if (!perfil || !perfil.activo || perfil.rol !== 'admin') return response.status(403).json({ ok: false, error: 'Solo el administrador puede enviar campañas.' })
+  try {
+    const { count } = await admin.from('suscriptores').select('correo', { count: 'exact', head: true }).eq('activo', true).eq('consentimiento', true)
+    const { data: cfg } = await admin.from('configuracion').select('valor_json').eq('clave', 'campana_redes').maybeSingle()
+    const actual = cfg?.valor_json ?? null
+    const accion = String(body.campanaRedes)
+    if (accion === 'prueba') {
+      const correo = String(userData.user.email ?? '').trim()
+      if (!correo) return response.status(200).json({ ok: false, error: 'Su usuario no tiene correo.' })
+      const base = (process.env.CATALOGO_BASE_URL ?? 'https://hauslineshopni.es/').replace(/\/$/, '')
+      await enviarCorreoRedes({ correo, nombre: null, urlBaja: `${base}/baja/` })
+      return response.status(200).json({ ok: true, prueba: correo, suscriptores: count ?? 0, campana: actual })
+    }
+    if (accion === 'iniciar') {
+      if (actual?.activa && !actual.completa) return response.status(200).json({ ok: false, error: 'Ya hay una campaña enviándose.', suscriptores: count ?? 0, campana: actual })
+      if (!count) return response.status(200).json({ ok: false, error: 'Todavía no hay suscriptores con consentimiento.', suscriptores: 0, campana: actual })
+      const nueva = { id: `redes-${new Date(Date.now() - 6 * 3_600_000).toISOString().slice(0, 10)}`, activa: true, completa: false, creada: new Date().toISOString(), enviados: 0, total: count }
+      // Misma campaña el mismo día = no se repite a quien ya la recibió (candado por id + correo).
+      const { error } = await admin.from('configuracion').upsert({ clave: 'campana_redes', valor_json: nueva }, { onConflict: 'clave' })
+      if (error) throw new Error(error.message)
+      return response.status(200).json({ ok: true, suscriptores: count, campana: nueva })
+    }
+    return response.status(200).json({ ok: true, suscriptores: count ?? 0, campana: actual })
+  } catch (e) {
+    console.error('campaña redes: falló', e?.message)
+    return response.status(200).json({ ok: false, error: e?.message || 'No se pudo.' })
+  }
+}
 
 async function respaldoManual(response, authorization) {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(500).json({ ok: false, error: 'Falta configuración del servidor.' })
@@ -709,6 +750,8 @@ export default async function handler(request, response) {
   if (body.cuponCliente) return cuponCliente(response, body, authorization)
   // "Hacer respaldo ahora" desde Configuración (JWT del admin): Excel completo a Drive.
   if (body.respaldoAhora) return respaldoManual(response, authorization)
+  // Campaña "síganos en redes" (JWT del admin): prueba al propio correo, lanzar o ver cómo va.
+  if (body.campanaRedes) return campanaRedesPanel(response, body, authorization)
   // "Poner en Entrega inmediata" desde Compras libres (JWT del admin).
   if (body.entregaInmediataCompra) return entregaInmediataDesdeCompra(response, body, authorization)
   // Correo de cancelación desde el panel (también con JWT del usuario).
