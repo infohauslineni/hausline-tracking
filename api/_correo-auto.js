@@ -128,6 +128,8 @@ export async function enviarCorreoNovedades({ correo, nombre, tipo, productos, u
 // una sola vez por campaña (la lanza el dueño desde el panel). Mismo pie de baja que Novedades.
 export const REDES = {
   instagram: { usuario: '@hausline.ni', url: 'https://instagram.com/hausline.ni' },
+  // Segunda cuenta de Instagram (HAUSLINE SECOND).
+  instagram2: { usuario: '@archive.hauslineni', url: 'https://instagram.com/archive.hauslineni' },
   tiktok: { usuario: '@hausline.niof', url: 'https://tiktok.com/@hausline.niof' },
 }
 export async function enviarCorreoRedes({ correo, nombre, urlBaja }) {
@@ -135,17 +137,18 @@ export async function enviarCorreoRedes({ correo, nombre, urlBaja }) {
   // Las clases btn / t-body son las de la plantilla: en modo oscuro se invierten solas.
   const boton = (red, etiqueta) => `<tr><td style="padding:6px 0"><a class="btn" href="${esc(red.url)}" target="_blank" style="display:block;background-color:#050505;color:#ffffff;text-decoration:none;text-align:center;font-size:15px;font-weight:700;letter-spacing:.3px;padding:15px 18px;border-radius:6px">${etiqueta} &nbsp;·&nbsp; ${esc(red.usuario)}</a></td></tr>`
   const punto = (t) => `<tr><td class="t-body" style="padding:3px 0;font-size:14px;line-height:1.5;color:#3a352f">— ${t}</td></tr>`
-  const nota = 'En nuestras redes publicamos primero todo lo que pasa en HAUSLINE. Si nos sigue, se entera antes que nadie de:'
+  const nota = 'En nuestras dos cuentas de Instagram y en TikTok publicamos primero todo lo que pasa en HAUSLINE. Si nos sigue, se entera antes que nadie de:'
     + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:10px 0 4px">`
     + punto('Los productos nuevos, el mismo día que llegan.')
     + punto('Las tallas disponibles para entrega inmediata.')
     + punto('Promociones y cupones que solo salen ahí.')
     + punto('Fotos y videos reales de los pedidos que entregamos.')
     + `</table>`
-    + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px">`
-    + boton(REDES.instagram, 'Seguir en Instagram') + boton(REDES.tiktok, 'Seguir en TikTok')
+    + `<p class="t-primary" style="margin:16px 0 0;font-size:14px;font-weight:700;color:#0b0f19">Toque cada una para seguirnos:</p>`
+    + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:6px">`
+    + boton(REDES.instagram, 'Instagram') + boton(REDES.instagram2, 'Instagram') + boton(REDES.tiktok, 'TikTok')
     + `</table>`
-    + `<p class="t-body" style="margin:14px 0 0;font-size:13px;line-height:1.5;color:#6b655c">Son dos toques y nos ayuda muchísimo a seguir creciendo. ¡Gracias por ser parte de HAUSLINE!</p>`
+    + `<p class="t-body" style="margin:14px 0 0;font-size:13px;line-height:1.5;color:#6b655c">Son tres toques y nos ayuda muchísimo a seguir creciendo. ¡Gracias por ser parte de HAUSLINE!</p>`
     + `<p style="margin:14px 0 0;font-size:11px;line-height:1.5;color:#9aa0ab">Recibe este correo porque aceptó recibir novedades de HAUSLINE. <a href="${esc(urlBaja)}" style="color:#9aa0ab">Darme de baja</a></p>`
   const n = primerNombre(nombre)
   await transporteSmtp().sendMail({

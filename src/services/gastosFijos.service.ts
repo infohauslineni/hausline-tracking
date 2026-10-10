@@ -15,7 +15,7 @@ export type GastoFijo = {
   categoria: string
   monto: number // en `moneda`
   moneda: Moneda
-  dia: number // día del mes en que se registra (1–28)
+  dia: number // día del mes en que se registra (1–31; en meses más cortos, el último día)
   cuentaId: string
   deGanancia: boolean // "lo tomo de mi ganancia"
   activo: boolean
@@ -33,6 +33,12 @@ const hoyNicaragua = () => new Date(Date.now() - 6 * 3_600_000).toISOString().sl
 export const mesDe = (fecha: string) => fecha.slice(0, 7)
 const mesSiguiente = (mes: string) => { const [y, m] = mes.split('-').map(Number); return m === 12 ? `${y + 1}-01` : `${y}-${dos(m + 1)}` }
 export const marcaFijo = (id: string, mes: string) => `[FIJO:${id}:${mes}]`
+// Día en que cae un gasto fijo en un mes dado: el 31 en febrero es el 28 (o 29), el 31 en abril es el 30.
+export function diaEnMes(dia: number, mes: string) {
+  const [y, m] = mes.split('-').map(Number)
+  const ultimo = new Date(Date.UTC(y, m, 0)).getUTCDate()
+  return Math.min(Math.max(1, Math.round(dia) || 1), ultimo)
+}
 
 export async function listarGastosFijos(): Promise<GastoFijo[]> {
   const { data, error } = await db().from('configuracion').select('valor_json').eq('clave', CLAVE).maybeSingle()
@@ -51,7 +57,7 @@ export function mesesPendientes(g: GastoFijo, hoy: string = hoyNicaragua()): str
   const mesHoy = mesDe(hoy)
   const diaHoy = Number(hoy.slice(8, 10))
   // El mes en curso solo cuenta cuando ya llegó su día.
-  const tope = diaHoy >= g.dia ? mesHoy : (() => { const [y, m] = mesHoy.split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${dos(m - 1)}` })()
+  const tope = diaHoy >= diaEnMes(g.dia, mesHoy) ? mesHoy : (() => { const [y, m] = mesHoy.split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${dos(m - 1)}` })()
   let mes = g.ultimo ? mesSiguiente(g.ultimo) : g.desde
   const meses: string[] = []
   while (mes <= tope) { meses.push(mes); mes = mesSiguiente(mes) }
@@ -63,7 +69,7 @@ export function proximoRegistro(g: GastoFijo, hoy: string = hoyNicaragua()): str
   if (!g.activo) return null
   const pendientes = mesesPendientes(g, hoy)
   const mes = pendientes[0] ?? (g.ultimo ? mesSiguiente(g.ultimo) : g.desde)
-  return `${mes}-${dos(g.dia)}`
+  return `${mes}-${dos(diaEnMes(g.dia, mes))}`
 }
 
 let enCurso: Promise<Gasto[]> | null = null
@@ -90,7 +96,7 @@ export function procesarGastosFijos(): Promise<Gasto[]> {
           // Lo que sale de la cuenta va en la moneda de ESA cuenta.
           const montoCuenta = cuenta.moneda === g.moneda ? g.monto : cuenta.moneda === 'NIO' ? Math.round(montoUsd * tc) : montoUsd
           const gasto = await registrarGasto({
-            fecha: `${mes}-${dos(g.dia)}`, categoria: g.categoria, descripcion: g.descripcion, monto: montoUsd, moneda: g.moneda,
+            fecha: `${mes}-${dos(diaEnMes(g.dia, mes))}`, categoria: g.categoria, descripcion: g.descripcion, monto: montoUsd, moneda: g.moneda,
             monto_original: g.monto, tipo_cambio: g.moneda === 'NIO' ? tc : null, pedido_id: null, inversion_id: null, proveedor_id: null,
             metodo_pago: 'Gasto fijo', observaciones: observacionesConMarca(`${marca} Gasto fijo mensual`, g.deGanancia),
           }, { cuentaId: g.cuentaId, montoCuenta })

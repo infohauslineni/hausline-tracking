@@ -7,7 +7,7 @@ import type { CuentaBancaria, Gasto, Moneda } from '../../types/domain'
 import { Modal } from '../ui/Modal'
 
 // Gastos fijos del mes: se definen una vez y el panel los registra solo el día indicado.
-const CATEGORIAS = ['Publicidad', 'Suscripción', 'Empaque', 'Delivery', 'Otro']
+const CATEGORIAS = ['Publicidad', 'Suscripción', 'Empaque', 'Delivery', 'Personal', 'Otro']
 const hoyNic = () => new Date(Date.now() - 6 * 3_600_000).toISOString().slice(0, 10)
 const siguienteMes = (mes: string) => { const [y, m] = mes.split('-').map(Number); return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}` }
 const nombreMes = (mes: string) => new Intl.DateTimeFormat('es-NI', { month: 'long', timeZone: 'UTC' }).format(new Date(`${mes}-01T00:00:00Z`))
@@ -45,7 +45,7 @@ export function GastosFijosModal({ open, onClose, onRegistrados }: { open: boole
   const agregar = (e: FormEvent) => {
     e.preventDefault()
     const monto = Number(form.monto)
-    const dia = Math.min(28, Math.max(1, Math.round(Number(form.dia) || 1)))
+    const dia = Math.min(31, Math.max(1, Math.round(Number(form.dia) || 1)))
     if (!form.descripcion.trim() || !(monto > 0)) return toast.error('Escribí la descripción y el monto.')
     if (!form.cuentaId) return toast.error('Elegí de qué cuenta sale.')
     const nuevo: GastoFijo = {
@@ -86,13 +86,13 @@ export function GastosFijosModal({ open, onClose, onRegistrados }: { open: boole
         <p className="col-span-full text-xs font-semibold uppercase tracking-wide text-muted">Agregar gasto fijo</p>
         <label className="form-field col-span-full"><span>Descripción</span><input value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} placeholder="Ej: Publicidad de Instagram" /></label>
         <label className="form-field"><span>Categoría</span><select value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })}>{CATEGORIAS.map((c) => <option key={c}>{c}</option>)}</select></label>
-        <label className="form-field"><span>Día del mes (1 a 28)</span><input type="number" min="1" max="28" value={form.dia} onChange={(e) => setForm({ ...form, dia: e.target.value })} /></label>
+        <label className="form-field"><span>Día del mes (1 a 31)</span><input type="number" min="1" max="31" value={form.dia} onChange={(e) => setForm({ ...form, dia: e.target.value })} /></label>
         <label className="form-field"><span>Monto</span><input type="number" min="0" step="0.01" value={form.monto} onChange={(e) => setForm({ ...form, monto: e.target.value })} placeholder="0.00" /></label>
         <label className="form-field"><span>Moneda</span><select value={form.moneda} onChange={(e) => setForm({ ...form, moneda: e.target.value as Moneda })}><option value="USD">Dólares (US$)</option><option value="NIO">Córdobas (C$)</option></select></label>
         <label className="form-field"><span>¿De qué cuenta sale?</span><select value={form.cuentaId} onChange={(e) => setForm({ ...form, cuentaId: e.target.value })}><option value="">Elegí una cuenta…</option>{cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre} ({c.moneda === 'NIO' ? 'C$' : 'US$'})</option>)}</select></label>
         <label className="form-field"><span>Empieza</span><select value={form.empieza} onChange={(e) => setForm({ ...form, empieza: e.target.value as 'este' | 'proximo' })}><option value="este">Este mes ({nombreMes(mesActual)})</option><option value="proximo">El próximo ({nombreMes(siguienteMes(mesActual))})</option></select></label>
         <label className="col-span-full flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-white/[.02] p-3"><input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-accent" checked={form.deGanancia} onChange={(e) => setForm({ ...form, deGanancia: e.target.checked })} /><span className="flex flex-col"><span className="text-sm font-medium">Lo tomo de mi ganancia</span><span className="text-[11px] text-muted">Si lo marcás, cada mes se resta de lo que te toca. Si no, es un gasto del negocio.</span></span></label>
-        <p className="col-span-full text-[11px] leading-4 text-muted">Si elegís “este mes” y el día ya pasó, se registra ahora mismo con esa fecha.</p>
+        <p className="col-span-full text-[11px] leading-4 text-muted">Si elegís “este mes” y el día ya pasó, se registra ahora mismo con esa fecha. Si ponés 29, 30 o 31 y el mes es más corto, se registra el último día de ese mes.</p>
         <div className="col-span-full flex justify-end gap-2"><button type="button" className="subtle-button" onClick={onClose}>Cerrar</button><button className="primary-button px-5" disabled={guardando}><Plus size={16} /> {guardando ? 'Guardando…' : 'Agregar'}</button></div>
       </form>
     </>}

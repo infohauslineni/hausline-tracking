@@ -30,7 +30,7 @@ export function CampanaRedesSection() {
 
   return <section className="form-section">
     <h2 className="flex items-center gap-2 font-semibold"><AtSign size={18} className="text-accent" /> Correo: síganos en Instagram y TikTok</h2>
-    <p className="mt-2 text-xs leading-5 text-muted">Invita a seguir <b className="text-white">@hausline.ni</b> en Instagram y <b className="text-white">@hausline.niof</b> en TikTok. Llega solo a quienes aceptaron recibir novedades{estado ? <> (<b className="text-white">{estado.suscriptores}</b> hoy)</> : ''}, con su enlace para darse de baja.</p>
+    <p className="mt-2 text-xs leading-5 text-muted">Invita a seguir las dos cuentas de Instagram (<b className="text-white">@hausline.ni</b> y <b className="text-white">@archive.hauslineni</b>) y <b className="text-white">@hausline.niof</b> en TikTok. Llega solo a quienes aceptaron recibir novedades{estado ? <> (<b className="text-white">{estado.suscriptores}</b> hoy)</> : ''}, con su enlace para darse de baja.</p>
     {c && <p className="mt-2 rounded-lg border border-line bg-white/[.02] px-3 py-2 text-xs text-muted">{enviando ? <>Enviándose: <b className="text-white">{c.enviados ?? 0}</b> de {c.total ?? estado?.suscriptores ?? 0}. Sale de a 25 cada 15 minutos.</> : c.completa ? <>Última campaña: <b className="text-white">{c.enviados ?? 0}</b> correos, terminó el {fecha(c.completada)}.</> : null}</p>}
     <div className="mt-4 grid gap-2">
       <button className="subtle-button" disabled={trabajando !== null} onClick={() => void prueba()}>{trabajando === 'prueba' ? 'Enviando…' : 'Enviarme una prueba'}</button>
