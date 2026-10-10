@@ -159,6 +159,37 @@ export async function enviarCorreoRedes({ correo, nombre, urlBaja }) {
   })
 }
 
+// AVISO DE GASTOS FIJOS: un día antes de cada gasto fijo, al dueño: qué se paga mañana, si el
+// dinero del fondo ya está completo o cuánto falta, y si la cuenta de la que sale tiene saldo.
+export async function enviarCorreoAvisoGastosFijos({ to, fecha, items }) {
+  const appUrl = (process.env.APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
+  const m = (n) => `US$ ${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const enMoneda = (n, moneda) => `${moneda === 'NIO' ? 'C$' : 'US$'} ${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const total = items.reduce((s, i) => s + i.usd, 0)
+  const falta = items.reduce((s, i) => s + i.falta, 0)
+  const dia = new Intl.DateTimeFormat('es-NI', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${fecha}T12:00:00Z`))
+  const tarjeta = (i) => {
+    const estado = i.falta > 0.005
+      ? `<span style="color:#b3261e;font-weight:700">Faltan ${m(i.falta)}</span> (guardado ${m(i.cubierto)} de ${m(i.usd)})`
+      : `<span style="color:#1a7f37;font-weight:700">Completo</span>: los ${m(i.usd)} ya están guardados`
+    const cuenta = !i.cuenta ? '<span style="color:#b3261e">La cuenta de este gasto ya no existe: no se va a registrar.</span>'
+      : `Sale de ${esc(i.cuenta.nombre)} · saldo ${enMoneda(i.cuenta.saldo, i.cuenta.moneda)} ${i.cuenta.alcanza ? '(alcanza)' : `<span style="color:#b3261e;font-weight:700">(no alcanza: necesita ${enMoneda(i.cuenta.necesita, i.cuenta.moneda)})</span>`}`
+    return `<tr><td class="rowline" style="padding:12px 0;border-bottom:1px solid #eef0f2">`
+      + `<div class="t-primary" style="font-size:15px;font-weight:700;color:#0b0f19">${esc(i.descripcion)} · ${m(i.usd)}${i.moneda === 'NIO' ? ` (${enMoneda(i.monto, 'NIO')})` : ''}</div>`
+      + `<div class="t-body" style="margin-top:3px;font-size:12px;color:#5b6472">${i.deGanancia ? 'Sale de tu ganancia' : 'Gasto del negocio'} · ${esc(i.categoria || '')}</div>`
+      + `<div class="t-body" style="margin-top:6px;font-size:13px;color:#3a352f">Fondo: ${estado}</div>`
+      + `<div class="t-body" style="margin-top:3px;font-size:13px;color:#3a352f">${cuenta}</div></td></tr>`
+  }
+  const nota = `Mañana, <strong>${esc(dia)}</strong>, ${items.length === 1 ? 'se registra este gasto fijo' : `se registran estos ${items.length} gastos fijos`}:`
+    + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:8px">${items.map(tarjeta).join('')}</table>`
+    + `<p class="t-body" style="margin:12px 0 0;font-size:12px;line-height:1.5;color:#5b6472">${falta > 0.005 ? `En total faltan ${m(falta)} por guardar. Se completan con los próximos pedidos que entregués; si no, ese día sale igual de la cuenta.` : 'El fondo cubre todo: no tenés que hacer nada.'} El gasto se registra solo al abrir el panel ese día.</p>`
+  await transporteSmtp().sendMail({
+    from: remitente(), to,
+    subject: `Mañana se ${items.length === 1 ? `paga ${items[0].descripcion}` : `pagan ${items.length} gastos fijos`} (${m(total)}): ${falta > 0.005 ? `faltan ${m(falta)}` : 'fondo completo'}`,
+    html: plantillaCorreo({ nombre: null, codigo: null, estado: null, estadoLabel: 'Mañana toca pagar', nota, urlSeguimiento: `${appUrl}/gastos`, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Abrir Gastos', ctaUrl: `${appUrl}/gastos`, pedirResena: false, kicker: 'Recordatorio', pie: 'Aviso interno del panel' }),
+  })
+}
+
 // (3) REPORTE DIARIO al dueño (7 a. m. Nicaragua): lo de ayer + lo que hay que atender hoy.
 export async function enviarCorreoReporteDiario({ to, r }) {
   const appUrl = (process.env.APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')

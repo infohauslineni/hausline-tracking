@@ -11,9 +11,10 @@
 // A los CLIENTES solo se les escribe de 9 a. m. a 8 p. m. (hora de Nicaragua).
 import { createClient } from '@supabase/supabase-js'
 import { ESTADO_LABEL } from './_correo.js'
-import { enviarCorreoBajaPrecio, enviarCorreoCarritoAbandonado, enviarCorreoNovedades, enviarCorreoRedes, enviarCorreoRecompra, enviarCorreoRecordatorioResena, enviarCorreoRecordatorioSaldo, enviarCorreoReporteDiario } from './_correo-auto.js'
+import { enviarCorreoBajaPrecio, enviarCorreoCarritoAbandonado, enviarCorreoAvisoGastosFijos, enviarCorreoNovedades, enviarCorreoRedes, enviarCorreoRecompra, enviarCorreoRecordatorioResena, enviarCorreoRecordatorioSaldo, enviarCorreoReporteDiario } from './_correo-auto.js'
 import { cerrarEmail, reservarEmail } from './_email-eventos.js'
 import { hacerRespaldo } from './_respaldo.js'
+import { gastosFijosDeManana } from './_fondo.js'
 import { obtenerCatalogoMergeado } from './_catalogo.js'
 
 const HORA = 3_600_000
@@ -324,6 +325,18 @@ async function campanaRedes(db) {
   return enviados
 }
 
+// AVISO DE GASTOS FIJOS: un día antes de cada gasto fijo (en horario de 9 a 20 h) le llega al
+// dueño un correo con lo que se paga mañana y si el fondo está completo o cuánto falta. Uno por día.
+async function avisoGastosFijos(db) {
+  if (!horarioCliente()) return 0
+  const to = (process.env.AVISO_ADMIN || process.env.SMTP_USER || '').trim()
+  if (!to) return 0
+  const { fecha, items } = await gastosFijosDeManana(db)
+  if (!items.length) return 0
+  const ok = await unaVez(`fijo-aviso:${fecha}`, 'aviso_gasto_fijo', { destinatario: to }, () => enviarCorreoAvisoGastosFijos({ to, fecha, items }))
+  return ok ? items.length : 0
+}
+
 // Productos de la tienda que se ven mal: sin foto, o de ropa/calzado sin tallas. Para el reporte.
 async function productosIncompletos() {
   try {
@@ -402,5 +415,6 @@ export async function automatizaciones() {
   await paso('respaldo', respaldoSemanal)
   await paso('novedades', novedades)
   await paso('campana_redes', campanaRedes)
+  await paso('aviso_gastos_fijos', avisoGastosFijos)
   return res
 }

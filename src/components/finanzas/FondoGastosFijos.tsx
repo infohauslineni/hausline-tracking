@@ -1,7 +1,7 @@
 import { Lock } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { isSupabaseConfigured } from '../../lib/supabase'
-import { obtenerMiGanancia, type MiGanancia } from '../../services/miGanancia.service'
+import { obtenerFondoDetalle, type CoberturaFijo, type MiGanancia } from '../../services/miGanancia.service'
 
 // Fondo de gastos fijos: lo que está guardado (y no se toca) para pagar los fijos del mes que
 // todavía faltan. Se llena con los pedidos entregados y baja cuando cada gasto se registra.
@@ -11,10 +11,11 @@ const nombreMes = (mes: string) => new Intl.DateTimeFormat('es-NI', { month: 'lo
 // `recarga`: cambia cuando se agrega/edita un gasto para volver a calcular.
 export function FondoGastosFijos({ recarga = 0 }: { recarga?: number }) {
   const [g, setG] = useState<MiGanancia | null>(null)
+  const [pendientes, setPendientes] = useState<CoberturaFijo[]>([])
   useEffect(() => {
     if (!isSupabaseConfigured) return
     let vivo = true
-    void obtenerMiGanancia().then((m) => { if (vivo) setG(m) }).catch(() => undefined)
+    void obtenerFondoDetalle().then((d) => { if (vivo) { setG(d.resumen); setPendientes(d.pendientes) } }).catch(() => undefined)
     return () => { vivo = false }
   }, [recarga])
   if (!g || g.metaMes <= 0.005) return null
@@ -33,6 +34,13 @@ export function FondoGastosFijos({ recarga = 0 }: { recarga?: number }) {
       {g.apartadoDueno > 0.005 && <span>De tu ganancia: <b className="text-white">{usd(g.apartadoDueno)}</b></span>}
       <span>Le queda al negocio: <b className="text-white">{usd(g.negocioLibre)}</b></span>
     </div>
+    {pendientes.length > 0 && <div className="mt-3 space-y-1.5 border-t border-line pt-3">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Lo que falta pagar este mes</p>
+      {pendientes.map((p) => <div key={p.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-xs">
+        <span className="text-white"><b className="font-mono text-muted">{new Intl.DateTimeFormat('es-NI', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(`${p.fecha}T12:00:00Z`))}</b> · {p.descripcion} · {usd(p.usd)} <span className="text-muted">· {p.deGanancia ? 'de tu ganancia' : 'del negocio'}</span></span>
+        {p.falta > 0.005 ? <b className="text-amber-200">Faltan {usd(p.falta)}</b> : <b className="text-emerald-300">Completo</b>}
+      </div>)}
+    </div>}
     {g.faltaApartar > 0.005 && <p className="mt-2 text-xs text-amber-200">Faltan {usd(g.faltaApartar)} por guardar. Se completan solos con los próximos pedidos que entregués.</p>}
   </section>
 }

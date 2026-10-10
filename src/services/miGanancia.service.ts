@@ -3,7 +3,7 @@ import { esGastoDeGanancia } from '../utils/marcaGanancia'
 import { repartoPedido } from '../utils/reparto'
 import { listarGastos, listarMovimientos, listarVentasStock, obtenerTipoCambio } from './comercial.service'
 import { DEFAULT_FINANZAS, obtenerConfiguracionFinanzas } from './finanzas.service'
-import { listarGastosFijos, type GastoFijo } from './gastosFijos.service'
+import { diaEnMes, listarGastosFijos, type GastoFijo } from './gastosFijos.service'
 import { listarPedidos } from './pedidos.service'
 
 export { MARCA_GASTO_GANANCIA, esGastoDeGanancia, observacionesConMarca, observacionesSinMarca } from '../utils/marcaGanancia'
@@ -120,6 +120,30 @@ export async function obtenerBaseGanancia(excluirPedidoId?: string): Promise<Bas
     desde, pct, pedidos: cuenta, ganado: r2(ganado), negocio: r2(negocio), gastado: r2(gastado), retirado: r2(retirado), negocioGastado: r2(negocioGastado),
     mes, ...fijosDelMes(fijos, mes, tipoCambio),
   }
+}
+
+// Gasto por gasto: cuánto de cada fijo pendiente del mes ya está guardado. El dinero de cada
+// bolsa (negocio / dueño) se reparte entre sus fijos en orden de fecha. Espejo: api/_fondo.js.
+export type CoberturaFijo = { id: string; descripcion: string; deGanancia: boolean; usd: number; fecha: string; cubierto: number; falta: number }
+export function coberturaFijos(fijos: GastoFijo[], b: BaseGanancia, tipoCambio: number): CoberturaFijo[] {
+  const tc = tipoCambio > 0 ? tipoCambio : 37
+  let bolsaNegocio = Math.max(0, b.negocio - b.negocioGastado)
+  let bolsaDueno = Math.max(0, b.ganado - b.gastado - b.retirado)
+  return fijos
+    .filter((g) => g.activo && g.desde <= b.mes && !(g.ultimo && g.ultimo >= b.mes))
+    .map((g) => ({ g, dia: diaEnMes(g.dia, b.mes), usd: r2(g.moneda === 'NIO' ? g.monto / tc : g.monto) }))
+    .sort((x, y) => x.dia - y.dia)
+    .map(({ g, dia, usd }) => {
+      const cubierto = r2(Math.min(usd, g.deGanancia ? bolsaDueno : bolsaNegocio))
+      if (g.deGanancia) bolsaDueno -= cubierto; else bolsaNegocio -= cubierto
+      return { id: g.id, descripcion: g.descripcion, deGanancia: g.deGanancia, usd, fecha: `${b.mes}-${String(dia).padStart(2, '0')}`, cubierto, falta: r2(usd - cubierto) }
+    })
+}
+
+// El fondo completo: el resumen y, por cada gasto fijo pendiente del mes, si ya está guardado.
+export async function obtenerFondoDetalle(): Promise<{ resumen: MiGanancia; pendientes: CoberturaFijo[] }> {
+  const [base, fijos, tipoCambio] = await Promise.all([obtenerBaseGanancia(), listarGastosFijos().catch(() => []), obtenerTipoCambio().catch(() => 37)])
+  return { resumen: resumenGanancia(base), pendientes: coberturaFijos(fijos, base, tipoCambio) }
 }
 
 export async function obtenerMiGanancia(excluirPedidoId?: string): Promise<MiGanancia> {

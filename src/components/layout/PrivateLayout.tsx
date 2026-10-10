@@ -180,6 +180,21 @@ export function PrivateLayout() {
     void import('../../services/gastosFijos.service').then((m) => m.procesarGastosFijos())
       .then((hechos) => { if (hechos.length) toast.info(`Se ${hechos.length === 1 ? 'registró 1 gasto fijo' : `registraron ${hechos.length} gastos fijos`} del mes: ${hechos.map((g) => g.descripcion).join(', ')}.`, { duration: 9000 }) })
       .catch(() => undefined)
+      // Aviso un día antes: qué gasto fijo se paga mañana y si el dinero ya está completo (una vez al día).
+      .then(() => import('../../services/miGanancia.service')).then((m) => m.obtenerFondoDetalle())
+      .then(({ pendientes }) => {
+        const hoy = new Date(Date.now() - 6 * 3_600_000).toISOString().slice(0, 10)
+        const manana = new Date(Date.parse(`${hoy}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
+        const lista = pendientes.filter((p) => p.fecha === manana)
+        let visto = ''
+        try { visto = localStorage.getItem('hausline_aviso_fijos') ?? '' } catch { /* sin almacenamiento */ }
+        if (!lista.length || visto === hoy) return
+        try { localStorage.setItem('hausline_aviso_fijos', hoy) } catch { /* solo esta vez */ }
+        const falta = lista.reduce((s, p) => s + p.falta, 0)
+        const texto = `Mañana se paga: ${lista.map((p) => `${p.descripcion} (US$ ${p.usd.toFixed(2)})`).join(', ')}. ${falta > 0.005 ? `Faltan US$ ${falta.toFixed(2)} por guardar.` : 'El fondo está completo.'}`
+        if (falta > 0.005) toast.warning(texto, { duration: 15000 }); else toast.info(texto, { duration: 12000 })
+      })
+      .catch(() => undefined)
   }, [esAdmin])
 
   const handleSignOut = async () => {
