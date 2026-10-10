@@ -1,6 +1,7 @@
 import { ArrowUpRight, BarChart3, Bell, Bike, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, MoreHorizontal, PackagePlus, PackageSearch, Plus, ReceiptText, RotateCcw, Settings, ShoppingBag, Star, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { RestaurarScroll } from './Navegacion'
 import { toast } from 'sonner'
 import { useAuth } from '../../contexts/AuthContext'
 import { isSupabaseConfigured, supabase } from '../../lib/supabase'
@@ -228,7 +229,7 @@ export function PrivateLayout() {
             <span className="status-dot" /> <span className="hidden text-xs text-muted sm:inline">Sistema operativo</span>
           </div>
         </header>
-        <main className="mx-auto max-w-[1500px] p-4 pb-24 sm:p-6 lg:p-8"><Outlet /></main>
+        <main className="mx-auto max-w-[1500px] p-4 pb-24 sm:p-6 lg:p-8"><RestaurarScroll /><Outlet /></main>
       </div>
       {/* Hoja de accesos rápidos del botón central "+" (solo móvil, solo admin: todas las
           acciones rápidas mueven dinero). */}

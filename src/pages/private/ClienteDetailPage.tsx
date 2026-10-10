@@ -1,4 +1,4 @@
-import { ArrowLeft, CreditCard, Zap, History, MapPin, MessageCircle, PackagePlus, Pencil, ShoppingBag } from 'lucide-react'
+import { CreditCard, Zap, History, MapPin, MessageCircle, PackagePlus, Pencil, ShoppingBag } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -12,6 +12,7 @@ import type { Cliente, Pago, Pedido } from '../../types/domain'
 import { estadoPago } from '../../utils/pedidoCosto'
 import { whatsappUrl } from '../../utils/whatsapp'
 import { ClienteModal } from './ClientesPage'
+import { Volver } from '../../components/layout/Navegacion'
 import { CuentaWebCard } from '../../components/clientes/CuentaWebCard'
 import { DireccionesClienteCard } from '../../components/clientes/DireccionesClienteCard'
 import { EnvioClienteCard } from '../../components/clientes/EnvioClienteCard'
@@ -62,7 +63,7 @@ export function ClienteDetailPage() {
   const conSaldo = misPedidos.filter((p) => p.estado !== 'cancelado' && Number(p.saldo) > 0.01)
 
   return <div>
-    <Link to="/clientes" className="mb-5 inline-flex items-center gap-2 text-xs text-muted transition hover:text-white"><ArrowLeft size={16} /> Volver a clientes</Link>
+    <Volver destino="/clientes" />
 
     <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div className="flex items-center gap-4">

@@ -215,7 +215,7 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], qcG
     <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div><strong className="text-sm">{detalle.label}</strong><p className="mt-0.5 text-xs text-muted">{detalle.description}</p></div>
       <label className="flex cursor-pointer items-center gap-2 text-xs text-muted">
-        <input type="checkbox" checked={visibleCliente} onChange={(event) => setVisibleCliente(event.target.checked)} className="size-4 accent-[#b7ff00]" /> Visible para el cliente
+        <input type="checkbox" checked={visibleCliente} onChange={(event) => setVisibleCliente(event.target.checked)} className="size-4 accent-accent" /> Visible para el cliente
       </label>
     </div>
 

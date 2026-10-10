@@ -1,5 +1,6 @@
 import { ArrowDownRight, ArrowUpRight, CalendarRange, Pencil, ReceiptText, Sparkles, Trash2, Wallet } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { toast } from 'sonner'
 import { CuentasBancarias } from '../../components/finanzas/CuentasBancarias'
 import { CuentaSelect, type DestinoPago } from '../../components/finanzas/CuentaSelect'
@@ -21,7 +22,7 @@ const mesLabel = (ym: string) => { const [y, m] = ym.split('-').map(Number); if 
 const capitalizar = (value: string) => value.charAt(0).toUpperCase() + value.slice(1)
 
 export function CuentaPage() {
-  const [mes, setMes] = useState(mesActualStr())
+  const [mes, setMes] = useEstadoVista('cuenta.mes', mesActualStr())
   const periodo = useMemo(() => { const [y, m] = mes.split('-').map(Number); return periodoDeMes(new Date(y, m - 1, 1)) }, [mes])
   const [items, setItems] = useState<MovimientoCuenta[]>([])
   const [summary, setSummary] = useState(zero)
@@ -80,7 +81,7 @@ export function CuentaPage() {
     <CuentasBancarias refreshKey={cuentasKey} />
 
     <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-white/[.02] px-4 py-3">
-      <span className="flex items-center gap-2 text-sm"><CalendarRange size={16} className="text-accent" /><select className="select-input sm:w-52" value={mes} onChange={(event) => setMes(event.target.value)} aria-label="Mes">{meses.map((m) => <option key={m} value={m}>{capitalizar(mesLabel(m))}</option>)}</select></span>
+      <span className="flex items-center gap-2 text-sm"><CalendarRange size={16} className="text-accent" /><select className="select-input sm:w-52!" value={mes} onChange={(event) => setMes(event.target.value)} aria-label="Mes">{meses.map((m) => <option key={m} value={m}>{capitalizar(mesLabel(m))}</option>)}</select></span>
       <div className="flex flex-wrap gap-2">
         <button className="subtle-button" onClick={() => setGastoOpen(true)}><ReceiptText size={15} /> Registrar gasto</button>
         <button className="subtle-button" onClick={() => setAperturaOpen(true)}><Sparkles size={15} /> {caja.confirmada ? 'Editar apertura del mes' : 'Definir apertura del mes'}</button>

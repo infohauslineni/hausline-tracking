@@ -1,5 +1,6 @@
 import { Boxes, CircleDollarSign, Zap, ImagePlus, PackageCheck, Plus, Printer, Search, ShoppingBag, TrendingUp, Wallet, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Modal } from '../../components/ui/Modal'
@@ -52,8 +53,8 @@ export function InventarioPage() {
   const [linkDe, setLinkDe] = useState<Inversion | null>(null)
   // Ficha "Ver detalles" de una compra (se lee de la lista para que refleje los cambios).
   const [detalleId, setDetalleId] = useState<string | null>(null)
-  const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<'todos' | Inversion['estado']>('todos')
+  const [search, setSearch] = useEstadoVista('stock.busqueda', '')
+  const [filter, setFilter] = useEstadoVista<'todos' | Inversion['estado']>('stock.filtro', 'todos')
   // Datos para "Registrar costo" de un producto de entrega inmediata (abre el formulario ya lleno).
   const [inicial, setInicial] = useState<Partial<typeof empty> | null>(null)
   // Productos que la tienda muestra hoy como Entrega inmediata (catálogo web).
@@ -335,7 +336,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function Metric({ icon: Icon, label, value, accent, warn }: { icon: typeof Boxes; label: string; value: string; accent?: boolean; warn?: boolean }) { return <article className="metric-card"><Icon size={19} className={warn ? 'text-amber-200' : 'text-accent'} /><p className="mt-5 text-xs text-muted">{label}</p><strong className={`mt-1 block text-2xl ${accent ? 'text-accent' : warn ? 'text-amber-200' : ''}`}>{value}</strong></article> }
 // Grupo de opciones tipo tarjeta (una sola elegida): [valor, título, ayuda].
 function Opciones({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: [string, string, string][] }) {
-  return <fieldset className="col-span-full"><legend className="mb-2 text-xs font-semibold text-muted">{label}</legend><div className={`grid gap-2 ${options.length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>{options.map(([valor, titulo, ayuda]) => <label key={valor} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm transition ${value === valor ? 'border-accent/50 bg-accent/[.07]' : 'border-line hover:border-white/25'}`}><input type="radio" className="mt-0.5 size-4 accent-[#b7ff00]" checked={value === valor} onChange={() => onChange(valor)} /><span><strong className="block">{titulo}</strong><small className="mt-0.5 block text-muted">{ayuda}</small></span></label>)}</div></fieldset>
+  return <fieldset className="col-span-full"><legend className="mb-2 text-xs font-semibold text-muted">{label}</legend><div className={`grid gap-2 ${options.length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>{options.map(([valor, titulo, ayuda]) => <label key={valor} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm transition ${value === valor ? 'border-accent/50 bg-accent/[.07]' : 'border-line hover:border-white/25'}`}><input type="radio" className="mt-0.5 size-4 accent-accent" checked={value === valor} onChange={() => onChange(valor)} /><span><strong className="block">{titulo}</strong><small className="mt-0.5 block text-muted">{ayuda}</small></span></label>)}</div></fieldset>
 }
 
 function ClientPreview({ item, onClose }: { item: Inversion | null; onClose: () => void }) {

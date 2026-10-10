@@ -1,6 +1,7 @@
 import { AlertTriangle, BadgeCheck, Check, CheckCircle2, ChevronDown, Eye, HeartPulse, LogIn, MailCheck, MapPin, MessageCircle, RefreshCw, Search, Send, ShoppingBag, Trash2, Users, X } from 'lucide-react'
 import { Modal } from '../../components/ui/Modal'
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
@@ -82,10 +83,10 @@ export function SaludClientesPage() {
   const [borrar, setBorrar] = useState<CuentaCliente | null>(null)
   const [borrando, setBorrando] = useState(false)
   const [eventos, setEventos] = useState<EventoCliente[]>([])
-  const [rango, setRango] = useState<Rango>(7)
+  const [rango, setRango] = useEstadoVista<Rango>('salud.rango', 7)
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [abierto, setAbierto] = useState<string | null>(null)
-  const [verTodas, setVerTodas] = useState(false)
+  const [verTodas, setVerTodas] = useEstadoVista('salud.verTodas', false)
   const [verRevisados, setVerRevisados] = useState(false)
   const [revisadas, setRevisadas] = useState<CuentaRevisada[]>([])
   const [numDirecciones, setNumDirecciones] = useState<Map<string, number>>(new Map())

@@ -1,9 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
-import { ArrowLeft, CircleDollarSign, PackagePlus, Plus, Save, Ticket, Trash2, UserPlus, X } from 'lucide-react'
+import { CircleDollarSign, PackagePlus, Plus, Save, Ticket, Trash2, UserPlus, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useFieldArray, useForm, useWatch } from 'react-hook-form'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { Volver } from '../../components/layout/Navegacion'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { IngresoEnCuenta, INGRESO_VACIO, type Ingreso } from '../../components/finanzas/IngresoEnCuenta'
@@ -185,7 +186,7 @@ export function NuevoPedidoPage() {
   }
 
   return <div className="mx-auto max-w-5xl">
-    <Link to="/pedidos" className="mb-5 inline-flex items-center gap-2 text-xs text-muted transition hover:text-white"><ArrowLeft size={16} /> Volver a pedidos</Link>
+    <Volver destino="/pedidos" />
     {!isSupabaseConfigured && <div className="preview-banner"><strong>Vista previa local:</strong> el formulario valida y calcula, pero no persiste hasta conectar Supabase.</div>}
     {prefill && <div className="mb-4 rounded-xl border border-accent/30 bg-accent/[.06] p-3 text-[12px] leading-5 text-accent"><strong>Apartado de compra libre:</strong> estás convirtiendo <strong>{prefill.producto}</strong> en un pedido normal (con su código, control de calidad y estados). Elegí el cliente; el abono ya viene con el 50%. El costo no se descuenta otra vez (su pago al proveedor se lleva en Compras libres); al guardar, la compra queda ligada a este pedido.</div>}
     <div><p className="eyebrow">Nuevo registro</p><h1 className="page-title">Registrar venta y pedido</h1><p className="page-subtitle">Guarda la venta una sola vez; el código público HS se genera automáticamente.</p></div>

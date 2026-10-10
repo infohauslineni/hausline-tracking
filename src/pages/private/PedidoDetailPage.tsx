@@ -1,6 +1,6 @@
-import { AlertTriangle, ArrowLeft, Ban, Banknote, Boxes, CalendarDays, Check, CheckCircle2, Clipboard, FileText, FolderUp, ImageUp, MessageCircle, Package, PackageCheck, Pencil, PiggyBank, Share2, Ticket, Truck, UserRound, Wallet, MapPin, X, Zap } from 'lucide-react'
+import { AlertTriangle, Ban, Banknote, Boxes, CalendarDays, Check, CheckCircle2, Clipboard, FileText, FolderUp, ImageUp, MessageCircle, Package, PackageCheck, Pencil, PiggyBank, Share2, Ticket, Truck, UserRound, Wallet, MapPin, X, Zap } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { PedidoArchivos } from '../../components/pedidos/PedidoArchivos'
 import { EditarPedidoModal } from '../../components/pedidos/EditarPedidoModal'
@@ -10,6 +10,7 @@ import { HistoriaModal } from '../../components/pedidos/HistoriaModal'
 import { PedidoLogistica } from '../../components/pedidos/PedidoLogistica'
 import { CuentaSelect, type DestinoPago } from '../../components/finanzas/CuentaSelect'
 import { GananciaPedidoModal } from '../../components/finanzas/GananciaPedidoModal'
+import { Volver } from '../../components/layout/Navegacion'
 import { DireccionFichaCard } from '../../components/clientes/DireccionFichaCard'
 import { IngresoEnCuenta, INGRESO_VACIO, type Ingreso } from '../../components/finanzas/IngresoEnCuenta'
 import { Modal } from '../../components/ui/Modal'
@@ -343,7 +344,7 @@ export function PedidoDetailPage() {
   const productosSeguibles = (pedido.pedido_items ?? []).filter((it) => !esLineaEnvio(it))
   const seguimientoPorProducto = productosSeguibles.length > 1
   return <div>
-    <Link to="/pedidos" className="mb-5 inline-flex items-center gap-2 text-xs text-muted hover:text-white"><ArrowLeft size={16} /> Volver a pedidos</Link>
+    <Volver destino="/pedidos" />
     <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
       <div><div className="flex flex-wrap items-center gap-3"><h1 className="text-3xl font-semibold tracking-tight">{pedido.codigo}</h1><Status estado={pedido.estado} />{pedido.envio_rapido && <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2.5 py-1 text-[11px] font-semibold text-accent"><Zap size={12} /> Envío rápido</span>}</div><p className="mt-2 text-sm text-muted">Creado el {new Intl.DateTimeFormat('es-NI', { dateStyle: 'long' }).format(new Date(pedido.fecha_pedido + 'T12:00:00'))}</p></div>
       <div className="flex flex-wrap gap-2"><button className="subtle-button" onClick={() => void copy(pedido.codigo, 'Código copiado.')}><Clipboard size={16} /> Copiar código</button><button className="subtle-button" onClick={() => void copy(publicUrl, 'Enlace público copiado.')}><Check size={16} /> Copiar enlace</button><button className={['disponible_entrega', 'pagado', 'empaquetado'].includes(pedido.estado) ? 'primary-button px-4' : 'subtle-button px-4'} onClick={() => setDatosEntregaOpen(true)}><MapPin size={16} /> Datos de entrega</button>{pedido.clientes?.whatsapp && <a className="primary-button px-4" href={whatsappUrl(pedido.clientes.whatsapp, whatsappMessage)} target="_blank" rel="noreferrer" onClick={anotarAviso} title={pedido.aviso_disponible_at ? `Ya le avisaste ${haceCuanto(pedido.aviso_disponible_at)}` : undefined}><MessageCircle size={17} /> {pedido.estado === 'disponible_entrega' ? (pedido.aviso_disponible_at ? `Volver a avisar · avisado ${haceCuanto(pedido.aviso_disponible_at)}` : 'Avisar disponibilidad') : qualityMessageReady ? 'Avisar control de calidad' : 'WhatsApp'}</a>}{pedido.estado === 'entregado' && <button className="subtle-button px-4" onClick={() => setHistoriaOpen(true)}><Share2 size={16} /> Compartir en historia</button>}{esAdmin && pedido.estado !== 'cancelado' && pedido.estado !== 'entregado' && <button className="subtle-button px-4 text-red-300 hover:text-red-200" onClick={() => setCancelOpen(true)}><Ban size={16} /> Cancelar</button>}</div>
@@ -570,7 +571,7 @@ function EtapaTracker({ actual, seleccionado, onSelect }: { actual: EstadoPedido
       const isSelected = step.value === seleccionado
       const isTarget = isSelected && step.value !== actual
       return <button key={step.value} type="button" onClick={() => onSelect(step.value)} title={step.label} className="flex min-w-[3.9rem] flex-1 shrink-0 flex-col items-center text-center outline-none">
-        <div className="flex w-full items-center"><span className={`h-px flex-1 ${index === 0 ? 'opacity-0' : index <= actualIndex ? 'bg-accent/60' : 'bg-line'}`} /><span className={`step-dot size-8 transition ${reached ? 'step-done' : 'step-todo'} ${index === actualIndex ? 'step-current' : ''} ${isTarget ? 'ring-2 ring-accent ring-offset-2 ring-offset-[#0d100e]' : ''}`}>{reached ? <Check size={15} /> : <span className="text-[11px] font-semibold">{index + 1}</span>}</span><span className={`h-px flex-1 ${index === pasos.length - 1 ? 'opacity-0' : index < actualIndex ? 'bg-accent/60' : 'bg-line'}`} /></div>
+        <div className="flex w-full items-center"><span className={`h-px flex-1 ${index === 0 ? 'opacity-0' : index <= actualIndex ? 'bg-accent/60' : 'bg-line'}`} /><span className={`step-dot size-8 transition ${reached ? 'step-done' : 'step-todo'} ${index === actualIndex ? 'step-current' : ''} ${isTarget ? 'ring-2 ring-accent ring-offset-2 ring-offset-[#111111]' : ''}`}>{reached ? <Check size={15} /> : <span className="text-[11px] font-semibold">{index + 1}</span>}</span><span className={`h-px flex-1 ${index === pasos.length - 1 ? 'opacity-0' : index < actualIndex ? 'bg-accent/60' : 'bg-line'}`} /></div>
         <span className={`mt-2 text-[9px] font-medium leading-3 ${isSelected ? 'text-accent' : reached ? 'text-white' : 'text-muted'}`}>{step.label}</span>
       </button>
     })}

@@ -1,5 +1,6 @@
 import { Check, Copy, MessageCircle, RotateCcw, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { CuentaSelect, type DestinoPago } from '../../components/finanzas/CuentaSelect'
@@ -28,7 +29,7 @@ const ESTADO_UI: Record<SolicitudReembolso['estado'], { label: string; clase: st
 export function ReembolsosPage() {
   const [items, setItems] = useState<SolicitudReembolso[]>([])
   const [loading, setLoading] = useState(isSupabaseConfigured)
-  const [filtro, setFiltro] = useState<Filtro>('atender')
+  const [filtro, setFiltro] = useEstadoVista<Filtro>('reembolsos.filtro', 'atender')
   const [aprobando, setAprobando] = useState<SolicitudReembolso | null>(null)
   const [rechazando, setRechazando] = useState<SolicitudReembolso | null>(null)
   const [busy, setBusy] = useState<string | null>(null)

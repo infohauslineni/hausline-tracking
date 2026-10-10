@@ -209,7 +209,7 @@ export function ProductosVendidos() {
             <div className="panel-heading"><div><h2 className="flex items-center gap-2"><Layers size={17} className="text-accent" /> Ventas por categoría</h2><p>Unidades, pedidos, % del total e ingresos</p></div></div>
             <div className="mt-4 space-y-3">{categorias.map((c) => <div key={c.categoria}>
               <div className="flex items-baseline justify-between gap-2 text-sm"><span className="font-semibold">{c.categoria}</span><span className="text-[12px] text-muted"><b className="text-white">{c.unidades} u.</b> · {c.pedidos} pedido{c.pedidos === 1 ? '' : 's'} · USD {money(c.ingresos)}</span></div>
-              <div className="mt-1 flex items-center gap-2"><div className="h-2 flex-1 rounded-full bg-white/[.06]"><div className="h-2 rounded-full bg-accent" style={{ width: `${Math.max(2, c.pct)}%` }} /></div><span className="w-9 text-right text-[11px] tabular-nums text-muted">{c.pct}%</span></div>
+              <div className="mt-1 flex items-center gap-2"><div className="h-2 flex-1 rounded-full bg-white/[.06]"><div className="h-2 rounded-full bg-chart-3" style={{ width: `${Math.max(2, c.pct)}%` }} /></div><span className="w-9 text-right text-[11px] tabular-nums text-muted">{c.pct}%</span></div>
             </div>)}</div>
           </article>
           <article className="panel-card">
@@ -262,7 +262,7 @@ function DetalleProducto({ r, lineas, desde, hasta, stock, onClose }: { r: Resum
       {r.tallaTop && <p className="mt-1 text-sm">Talla más solicitada: <b className="text-accent">{r.tallaTop}</b></p>}
       <div className="mt-3 space-y-1.5">{r.tallas.map((x) => <div key={x.talla} className="flex items-center gap-2 text-sm">
         <span className={`w-20 shrink-0 ${x.talla === r.tallaTop ? 'font-semibold text-accent' : ''}`}>{x.talla === SIN_TALLA ? 'Sin talla' : `Talla ${x.talla}`}</span>
-        <div className="h-2 flex-1 rounded-full bg-white/[.06]"><div className={`h-2 rounded-full ${x.talla === r.tallaTop ? 'bg-accent' : 'bg-white/40'}`} style={{ width: `${(x.unidades / maxTalla) * 100}%` }} /></div>
+        <div className="h-2 flex-1 rounded-full bg-white/[.06]"><div className={`h-2 rounded-full ${x.talla === r.tallaTop ? 'bg-chart-2' : 'bg-white/35'}`} style={{ width: `${(x.unidades / maxTalla) * 100}%` }} /></div>
         <span className="w-24 shrink-0 text-right text-[12px] tabular-nums"><b>{x.unidades}</b> u. · {x.pct}%</span>
       </div>)}</div>
       {rec.tallas.length > 0 && <div className="mt-3 rounded-xl border border-accent/25 bg-accent/[.05] p-3 text-sm">
@@ -277,7 +277,7 @@ function DetalleProducto({ r, lineas, desde, hasta, stock, onClose }: { r: Resum
       <p className="text-[12px] text-muted">Este período: <b className="text-white/85">{r.unidades} u.</b> · período anterior del mismo largo: <b className="text-white/85">{r.anterior} u.</b></p>
       {serie.puntos.length > 0 && <div className="mt-3 flex h-28 items-end gap-1.5 overflow-x-auto">{serie.puntos.map((p) => <div key={p.periodo} className="flex h-full min-w-[26px] flex-1 flex-col justify-end" title={`${p.periodo}: ${p.unidades} u.`}>
         <span className="mb-1 text-center text-[10px] tabular-nums text-muted">{p.unidades}</span>
-        <div className="rounded-t bg-gradient-to-t from-[#739f00] to-accent" style={{ height: `${Math.max(6, (p.unidades / maxSerie) * 100)}%` }} />
+        <div className="rounded-t bg-chart-1" style={{ height: `${Math.max(6, (p.unidades / maxSerie) * 100)}%` }} />
         <span className="mt-1 text-center text-[9px] text-muted">{serie.porMes ? p.periodo.slice(5) + '/' + p.periodo.slice(2, 4) : fechaCorta(p.periodo).replace(/ \d{4}$/, '')}</span>
       </div>)}</div>}
       <p className="mt-1 text-[11px] text-muted">Ventas por {serie.porMes ? 'mes' : 'semana (desde el lunes)'}.</p>

@@ -162,7 +162,7 @@ function Stat({ icon: Icon, label, value, tone }: { icon: typeof BarChart3; labe
 function BarsPorDia({ data }: { data: { fecha: string; valor: number }[] }) {
   if (!data.length) return <p className="py-8 text-center text-xs text-muted">Sin ventas en este rango.</p>
   const max = Math.max(1, ...data.map((d) => d.valor))
-  return <div className="mt-5 flex h-40 items-end gap-1 overflow-x-auto sm:gap-2">{data.map((d) => <div key={d.fecha} className="flex h-full min-w-[14px] flex-1 flex-col justify-end" title={`${d.fecha}: USD ${money(d.valor)}`}><div className="rounded-t bg-gradient-to-t from-[#739f00] to-accent transition-all hover:brightness-125" style={{ height: `${Math.max(3, (d.valor / max) * 100)}%` }} /><span className="mt-1.5 text-center text-[8px] text-muted">{d.fecha.slice(8)}</span></div>)}</div>
+  return <div className="mt-5 flex h-40 items-end gap-1 overflow-x-auto sm:gap-2">{data.map((d) => <div key={d.fecha} className="flex h-full min-w-[14px] flex-1 flex-col justify-end" title={`${d.fecha}: USD ${money(d.valor)}`}><div className="rounded-t bg-chart-1 transition-all hover:brightness-125" style={{ height: `${Math.max(3, (d.valor / max) * 100)}%` }} /><span className="mt-1.5 text-center text-[8px] text-muted">{d.fecha.slice(8)}</span></div>)}</div>
 }
 
 function Ranking({ icon: Icon, titulo, filas, vacio, extra }: { icon: typeof Users; titulo: string; filas: { label: string; valor: string; sub?: string; tone?: 'emerald' | 'amber' }[]; vacio?: string; extra?: string }) {

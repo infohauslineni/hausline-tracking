@@ -210,7 +210,7 @@ export const estadoTone = (estado: EstadoPedido) => {
 // Color hex por tono (para puntos/acentos que no usan las clases .status-*).
 export const TONE_COLOR: Record<string, string> = {
   confirmada: '#94a3b8', preparacion: '#fbbf24', calidad: '#c4b5fd', despachado: '#fb923c',
-  transito: '#7dd3fc', destino: '#5eead4', disponible: '#b7ff00', pagado: '#4ade80', empaquetado: '#2dd4bf', entregado: '#34d399',
-  incidencia: '#ffb08a', cancelado: '#f87171', neutral: '#8c948f', success: '#62eaa0', info: '#76b4ff', danger: '#ff9696',
+  transito: '#7dd3fc', destino: '#5eead4', disponible: '#f2ece0', pagado: '#4ade80', empaquetado: '#2dd4bf', entregado: '#34d399',
+  incidencia: '#ffb08a', cancelado: '#f87171', neutral: '#94918b', success: '#62eaa0', info: '#76b4ff', danger: '#ff9696',
 }
-export const estadoColor = (estado: EstadoPedido) => TONE_COLOR[estadoTone(estado)] ?? '#8c948f'
+export const estadoColor = (estado: EstadoPedido) => TONE_COLOR[estadoTone(estado)] ?? '#94918b'

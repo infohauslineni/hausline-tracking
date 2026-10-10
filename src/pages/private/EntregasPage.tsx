@@ -1,5 +1,6 @@
 import { AlertTriangle, Banknote, Bike, Bus, CheckCircle2, Copy, ExternalLink, MapPin, MessageCircle, Package, PackageCheck, Phone, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Modal } from '../../components/ui/Modal'
@@ -32,7 +33,7 @@ export function EntregasPage() {
   const [entregas, setEntregas] = useState<Entrega[]>([])
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [tipoCambio, setTipoCambio] = useState(37)
-  const [filtro, setFiltro] = useState<Filtro>('todas')
+  const [filtro, setFiltro] = useEstadoVista<Filtro>('entregas.filtro', 'todas')
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set())
   const [confirmar, setConfirmar] = useState<Entrega | null>(null)
   const [guardando, setGuardando] = useState(false)

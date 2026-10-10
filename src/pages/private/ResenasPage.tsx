@@ -1,5 +1,6 @@
 import { Check, EyeOff, Plus, Star, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { aprobarResena, crearResena, destacarResena, eliminarResena, listarResenas, type Resena } from '../../services/resenas.service'
@@ -22,7 +23,7 @@ export function ResenasPage() {
   const [items, setItems] = useState<Resena[]>([])
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [busy, setBusy] = useState<string | null>(null)
-  const [filtro, setFiltro] = useState<Filtro>('pendientes')
+  const [filtro, setFiltro] = useEstadoVista<Filtro>('resenas.filtro', 'pendientes')
   const [agregando, setAgregando] = useState(false)
 
   const cargar = useCallback(async (silencioso = false) => {

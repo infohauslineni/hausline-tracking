@@ -39,19 +39,19 @@ export function OperacionesCharts() {
 
 function SalesChart({ data }: { data: ChartDay[] }) {
   const max = Math.max(1, ...data.map((item) => item.ventas))
-  return <article className="panel-card"><div className="panel-heading"><div><h2 className="flex items-center gap-2"><BarChart3 size={17} className="text-accent" /> Ventas de los últimos 7 días</h2><p>Valor de pedidos registrados por día</p></div></div><div className="mt-7 flex h-48 items-end gap-2 sm:gap-4">{data.map((item) => <div className="flex h-full min-w-0 flex-1 flex-col justify-end" key={item.date}><div className="mb-2 text-center text-[9px] font-semibold text-muted">{item.ventas > 0 ? `$${item.ventas.toFixed(0)}` : ''}</div><div title={`${item.date}: USD ${item.ventas.toFixed(2)}`} className="min-h-1 rounded-t-lg bg-gradient-to-t from-[#739f00] to-accent transition-all hover:brightness-125" style={{ height: `${Math.max(3, (item.ventas / max) * 100)}%` }} /><span className="mt-2 text-center text-[10px] capitalize text-muted">{item.label}</span></div>)}</div></article>
+  return <article className="panel-card"><div className="panel-heading"><div><h2 className="flex items-center gap-2"><BarChart3 size={17} className="text-accent" /> Ventas de los últimos 7 días</h2><p>Valor de pedidos registrados por día</p></div></div><div className="mt-7 flex h-48 items-end gap-2 sm:gap-4">{data.map((item) => <div className="flex h-full min-w-0 flex-1 flex-col justify-end" key={item.date}><div className="mb-2 text-center text-[9px] font-semibold text-muted">{item.ventas > 0 ? `$${item.ventas.toFixed(0)}` : ''}</div><div title={`${item.date}: USD ${item.ventas.toFixed(2)}`} className="min-h-1 rounded-t bg-chart-1 transition-all hover:brightness-125" style={{ height: `${Math.max(3, (item.ventas / max) * 100)}%` }} /><span className="mt-2 text-center text-[10px] capitalize text-muted">{item.label}</span></div>)}</div></article>
 }
 
 function StatusChart({ pedidos }: { pedidos: Pedido[] }) {
   const groups = [
-    { label: 'Confirmada', states: ['pedido_confirmado'], color: 'bg-slate-400' },
-    { label: 'Preparación', states: ['en_preparacion'], color: 'bg-blue-400' },
-    { label: 'Calidad', states: ['control_calidad'], color: 'bg-yellow-300' },
-    { label: 'Despachado', states: ['etiqueta_creada','despachado'], color: 'bg-sky-300' },
-    { label: 'En tránsito', states: ['transito_internacional','recibido_estados_unidos','transito_nicaragua'], color: 'bg-violet-400' },
-    { label: 'País destino', states: ['llego_nicaragua'], color: 'bg-cyan-300' },
-    { label: 'Disponible', states: ['disponible_entrega'], color: 'bg-accent' },
-    { label: 'Entregado', states: ['entregado'], color: 'bg-green-400' },
+    { label: 'Confirmada', states: ['pedido_confirmado'], color: 'bg-chart-1' },
+    { label: 'Preparación', states: ['en_preparacion'], color: 'bg-chart-2' },
+    { label: 'Calidad', states: ['control_calidad'], color: 'bg-chart-3' },
+    { label: 'Despachado', states: ['etiqueta_creada','despachado'], color: 'bg-chart-4' },
+    { label: 'En tránsito', states: ['transito_internacional','recibido_estados_unidos','transito_nicaragua'], color: 'bg-chart-5' },
+    { label: 'País destino', states: ['llego_nicaragua'], color: 'bg-chart-6' },
+    { label: 'Disponible', states: ['disponible_entrega'], color: 'bg-chart-7' },
+    { label: 'Entregado', states: ['entregado'], color: 'bg-chart-8' },
   ].map((group) => ({ ...group, value: pedidos.filter((order) => group.states.includes(order.estado)).length }))
   const max = Math.max(1, ...groups.map((group) => group.value))
   return <article className="panel-card"><div className="panel-heading"><div><h2>Pedidos por etapa</h2><p>Distribución actual de operaciones</p></div></div><div className="mt-5 space-y-3">{groups.map((group) => <div key={group.label}><div className="mb-1.5 flex justify-between text-[11px]"><span className="text-muted">{group.label}</span><strong>{group.value}</strong></div><div className="h-2 overflow-hidden rounded-full bg-white/[.05]"><div className={`h-full rounded-full ${group.color}`} style={{ width: `${(group.value / max) * 100}%` }} /></div></div>)}</div></article>

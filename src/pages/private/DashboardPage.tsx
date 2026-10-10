@@ -177,9 +177,9 @@ function AreaChart({ serie }: { serie: { label: string; value: number }[] }) {
   return <div className="relative mt-5">
     {vacio && <div className="absolute inset-0 grid place-items-center text-[11px] text-muted">Aún no hay ventas en este rango.</div>}
     <svg viewBox="0 0 100 40" preserveAspectRatio="none" className="h-40 w-full" role="img" aria-label="Gráfica de ventas">
-      <defs><linearGradient id="ventasFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#b7ff00" stopOpacity="0.22" /><stop offset="1" stopColor="#b7ff00" stopOpacity="0" /></linearGradient></defs>
+      <defs><linearGradient id="ventasFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#3987e5" stopOpacity="0.28" /><stop offset="1" stopColor="#3987e5" stopOpacity="0" /></linearGradient></defs>
       <line x1="0" y1="39.5" x2="100" y2="39.5" stroke="rgba(255,255,255,.08)" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
-      {!vacio && <><path d={area} fill="url(#ventasFill)" /><path d={line} fill="none" stroke="#b7ff00" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" /></>}
+      {!vacio && <><path d={area} fill="url(#ventasFill)" /><path d={line} fill="none" stroke="#3987e5" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" /></>}
     </svg>
     <div className="mt-2 flex justify-between text-[10px] text-muted"><span>{serie[0]?.label}</span><span>{serie[Math.floor(n / 2)]?.label}</span><span>{serie[n - 1]?.label}</span></div>
   </div>
@@ -192,16 +192,18 @@ function GananciaEstimada({ ganancia, ventas, gastos, margen }: { ganancia: numb
     <div className="mt-5 space-y-2.5 text-sm">
       <div className="flex items-center justify-between"><span className="text-muted">Ventas</span><strong className="tabular-nums text-emerald-300">USD {money(ventas)}</strong></div>
       <div className="flex items-center justify-between"><span className="text-muted">Gastos</span><strong className="tabular-nums text-red-300">− USD {money(gastos)}</strong></div>
-      <div className="mt-1 border-t border-line pt-3"><div className="flex items-center justify-between text-xs"><span className="text-muted">Margen</span><strong className="text-white">{margen.toFixed(0)}%</strong></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-white/[.05]"><div className="h-full rounded-full bg-gradient-to-r from-[#739f00] to-accent transition-all" style={{ width: `${Math.max(0, Math.min(100, margen))}%` }} /></div></div>
+      <div className="mt-1 border-t border-line pt-3"><div className="flex items-center justify-between text-xs"><span className="text-muted">Margen</span><strong className="text-white">{margen.toFixed(0)}%</strong></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-white/[.05]"><div className="h-full rounded-full bg-chart-3 transition-all" style={{ width: `${Math.max(0, Math.min(100, margen))}%` }} /></div></div>
     </div>
   </article>
 }
 
+// Un color por etapa, en orden fijo (paleta de gráficos del panel).
+const COLOR_ETAPA = ['var(--color-chart-1)', 'var(--color-chart-2)', 'var(--color-chart-3)', 'var(--color-chart-5)', 'var(--color-chart-6)', 'var(--color-chart-7)', 'var(--color-chart-4)', 'var(--color-chart-8)']
 function PedidosPorEstado({ data, total }: { data: { label: string; value: number }[]; total: number }) {
   const max = Math.max(1, ...data.map((d) => d.value))
   return <article className="panel-card">
     <div className="panel-heading"><div><h2 className="flex items-center gap-2"><PackageSearch size={17} className="text-accent" /> Pedidos por estado</h2><p>{total} activos en proceso</p></div><Link to="/pedidos" className="subtle-button">Ver pedidos <ArrowUpRight size={15} /></Link></div>
-    <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">{data.map((d) => <Link key={d.label} to="/pedidos" className="rounded-xl border border-line bg-white/[.02] p-3 text-center transition hover:border-accent/40"><strong className="block text-2xl tabular-nums">{d.value}</strong><span className="mt-1 block text-[10px] leading-3 text-muted">{d.label}</span><div className="mt-2 h-1 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-accent" style={{ width: `${(d.value / max) * 100}%` }} /></div></Link>)}</div>
+    <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">{data.map((d, i) => <Link key={d.label} to="/pedidos" className="rounded-xl border border-line bg-white/[.02] p-3 text-center transition hover:border-accent/40"><strong className="block text-2xl tabular-nums">{d.value}</strong><span className="mt-1 block text-[10px] leading-3 text-muted">{d.label}</span><div className="mt-2 h-1 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full" style={{ width: `${(d.value / max) * 100}%`, background: COLOR_ETAPA[i % COLOR_ETAPA.length] }} /></div></Link>)}</div>
   </article>
 }
 

@@ -1,5 +1,6 @@
 import { AlertTriangle, ArrowUpRight, ChevronDown, ChevronLeft, ChevronRight, CircleDollarSign, Coins, CreditCard, History, PackageCheck, Plus, Printer, ReceiptText, Scale, Search, Tag, TrendingUp, WalletCards, Zap } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Modal } from '../../components/ui/Modal'
@@ -28,7 +29,7 @@ export function VentasPage() {
   const [stock, setStock] = useState<Inversion[]>([])
   const [pagos, setPagos] = useState<Pago[]>([])
   const [tipoCambio, setTipoCambio] = useState(37)
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useEstadoVista('ventas.busqueda', '')
   const [mesRef, setMesRef] = useState(() => new Date())
   const [vender, setVender] = useState(false)
   const [abonoPedido, setAbonoPedido] = useState<Pedido | null>(null)

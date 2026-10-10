@@ -1,5 +1,6 @@
 import { CalendarRange, Edit3, HandCoins, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { toast } from 'sonner'
 import { CuentaSelect, type DestinoPago } from '../../components/finanzas/CuentaSelect'
 import { Modal } from '../../components/ui/Modal'
@@ -22,7 +23,7 @@ export function GastosPage() {
   const [tipoCambio, setTipoCambio] = useState(37)
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Gasto | null>(null)
-  const [verTodo, setVerTodo] = useState(false)
+  const [verTodo, setVerTodo] = useEstadoVista('gastos.verTodo', false)
   const periodo = useMemo(() => periodoDeMes(), [])
 
   useEffect(() => {

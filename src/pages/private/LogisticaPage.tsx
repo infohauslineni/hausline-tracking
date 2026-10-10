@@ -1,6 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { CheckCircle2, ChevronDown, ChevronUp, Edit3, ExternalLink, Package, Plus, RefreshCw, Search, Trash2, Truck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -33,10 +34,10 @@ export function LogisticaPage() {
   const [stock, setStock] = useState<Inversion[]>([])
   const [pedidos, setPedidos] = useState<Pedido[]>(isSupabaseConfigured ? [] : DEMO_PEDIDOS)
   const [transportistas, setTransportistas] = useState<Transportista[]>(isSupabaseConfigured ? [] : DEMO_TRANSPORTISTAS)
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useEstadoVista('logistica.busqueda', '')
   const [editing, setEditing] = useState<EditingTarget>(null)
   const [modalOpen, setModalOpen] = useState(false)
-  const [mostrarEntregados, setMostrarEntregados] = useState(false)
+  const [mostrarEntregados, setMostrarEntregados] = useEstadoVista('logistica.entregados', false)
   const [actualizando, setActualizando] = useState(false)
 
   // Botón "Actualizar seguimiento": fuerza una consulta a 17TRACK AHORA (no espera al

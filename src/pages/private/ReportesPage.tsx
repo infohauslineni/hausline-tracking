@@ -1,5 +1,6 @@
 import { CalendarDays, CircleDollarSign, Download, PackageCheck, PiggyBank, ReceiptText, WalletCards } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { toast } from 'sonner'
 import { Modal } from '../../components/ui/Modal'
 import { OperacionesCharts } from '../../components/OperacionesCharts'
@@ -18,7 +19,7 @@ export function ReportesPage() {
   const [saldoCuenta, setSaldoCuenta] = useState(0)
   const [loading, setLoading] = useState(true)
   const [withdrawPrompt, setWithdrawPrompt] = useState(false)
-  const [tab, setTab] = useState<'reportes' | 'productos' | 'cierre'>('reportes')
+  const [tab, setTab] = useEstadoVista<'reportes' | 'productos' | 'cierre'>('reportes.pestana', 'reportes')
 
   const load = async () => {
     setLoading(true)

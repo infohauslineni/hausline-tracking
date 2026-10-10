@@ -1,6 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Download, Edit3, MapPin, MessageCircle, Plus, Search, Ticket, Trash2, Users } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
@@ -27,7 +28,7 @@ const emptyValues: FormValues = { nombre: '', whatsapp: '', correo: '', departam
 export function ClientesPage() {
   const [clientes, setClientes] = useState<Cliente[]>(isSupabaseConfigured ? [] : DEMO_CLIENTES)
   const [loading, setLoading] = useState(isSupabaseConfigured)
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useEstadoVista('clientes.busqueda', '')
   const [editing, setEditing] = useState<Cliente | null>(null)
   const [open, setOpen] = useState(false)
   const [cuponFor, setCuponFor] = useState<Cliente | null>(null)

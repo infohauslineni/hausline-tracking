@@ -1,5 +1,6 @@
 import { CalendarRange, CircleDollarSign, Download, MessageCircle, Plus } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { toast } from 'sonner'
 import { CuentaSelect, type DestinoPago } from '../../components/finanzas/CuentaSelect'
 import { Modal } from '../../components/ui/Modal'
@@ -14,7 +15,7 @@ import { periodoDeMes } from '../../utils/periodo'
 export function PagosPage() {
   const [pagos, setPagos] = useState<Pago[]>([]), [pedidos, setPedidos] = useState<Pedido[]>([]), [open, setOpen] = useState(false)
   const [tipoCambio, setTipoCambio] = useState(37)
-  const [verTodo, setVerTodo] = useState(false)
+  const [verTodo, setVerTodo] = useEstadoVista('pagos.verTodo', false)
   const periodo = useMemo(() => periodoDeMes(), [])
   useEffect(() => { void Promise.all([listarPagos(), listarPedidos()]).then(([p, o]) => { setPagos(p); setPedidos(o) }).catch(() => toast.error('No se pudieron cargar los pagos.')); void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined) }, [])
   const descargar = async (pago: Pago) => { const pedido = pedidos.find((item) => item.id === pago.pedido_id); if (!pedido) return toast.error('No se encontró el pedido de este pago.'); try { await descargarRecibo(pago, pedido); toast.success('Comprobante descargado.') } catch { toast.error('No se pudo generar el comprobante.') } }

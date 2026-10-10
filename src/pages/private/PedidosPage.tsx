@@ -1,6 +1,7 @@
 import { ArrowUpRight, Ban, Boxes, CalendarDays, CheckCircle2, ChevronDown, CircleDollarSign, Download, Package, Plus, Search, Trash2, XCircle } from 'lucide-react'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ESTADOS_PEDIDO, estadoLabel, estadoTone, etapaBase } from '../../constants/orders'
@@ -15,8 +16,8 @@ export function PedidosPage() {
   const { esAdmin } = useAuth()
   const [pedidos, setPedidos] = useState<Pedido[]>(isSupabaseConfigured ? [] : DEMO_PEDIDOS)
   const [loading, setLoading] = useState(isSupabaseConfigured)
-  const [search, setSearch] = useState('')
-  const [estado, setEstado] = useState<EstadoPedido | 'todos'>('todos')
+  const [search, setSearch] = useEstadoVista('pedidos.busqueda', '')
+  const [estado, setEstado] = useEstadoVista<EstadoPedido | 'todos'>('pedidos.estado', 'todos')
   const [cancelando, setCancelando] = useState<Pedido | null>(null)
   useEffect(() => { if (isSupabaseConfigured) void listarPedidos(setPedidos).then(setPedidos).catch(() => toast.error('No se pudieron cargar los pedidos.')).finally(() => setLoading(false)) }, [])
   // Realtime: si se confirma un encargo (o cambia cualquier pedido) mientras esta pantalla
@@ -31,7 +32,7 @@ export function PedidosPage() {
   // Por defecto abrimos en "Pendientes": TODOS los pedidos activos, sin importar el mes, para
   // no tener que cambiar el filtro cada vez. El selector de mes sigue disponible para revisar
   // un mes concreto (incluye entregados/cancelados de ese mes).
-  const [mes, setMes] = useState('pendientes')
+  const [mes, setMes] = useEstadoVista('pedidos.mes', 'pendientes')
   const enPendientes = mes === 'pendientes'
   // Meses que tienen pedidos, del más nuevo al más viejo; siempre incluye el mes actual.
   const meses = useMemo(() => { const s = new Set(pedidos.map(mesDe).filter(Boolean)); s.add(mesActual()); return [...s].sort().reverse() }, [pedidos])
@@ -84,7 +85,7 @@ export function PedidosPage() {
         <MiniMetric label="Completados" value={delMes.filter((p) => p.estado === 'entregado').length} icon={CheckCircle2} tone="emerald" />
         <MiniMetric label="Cancelados" value={delMes.filter((p) => p.estado === 'cancelado').length} icon={XCircle} tone="danger" />
       </>}</section>
-    <div className="mt-6 flex flex-col gap-3 sm:flex-row"><div className="relative max-w-lg flex-1"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" size={18} /><input className="search-input" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Código, cliente, WhatsApp o producto" /></div><select className="select-input sm:w-52" value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Filtro de pedidos"><option value="pendientes">🕐 Pendientes · todos los meses</option>{meses.map((m) => <option key={m} value={m}>{capitalizar(mesLabel(m))}</option>)}</select><select className="select-input sm:w-52" value={estado} onChange={(e) => setEstado(e.target.value as EstadoPedido | 'todos')}><option value="todos">Todos los estados</option>{ESTADOS_PEDIDO.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
+    <div className="mt-6 flex flex-col gap-3 sm:flex-row"><div className="relative max-w-lg flex-1"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" size={18} /><input className="search-input" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Código, cliente, WhatsApp o producto" /></div><select className="select-input sm:w-52!" value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Filtro de pedidos"><option value="pendientes">🕐 Pendientes · todos los meses</option>{meses.map((m) => <option key={m} value={m}>{capitalizar(mesLabel(m))}</option>)}</select><select className="select-input sm:w-52!" value={estado} onChange={(e) => setEstado(e.target.value as EstadoPedido | 'todos')}><option value="todos">Todos los estados</option>{ESTADOS_PEDIDO.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
     {loading ? <div className="mt-5 h-80 animate-pulse rounded-2xl border border-line bg-panel" /> : <>
       {filtered.length === 0 ? <div className="mt-6 grid min-h-64 place-items-center rounded-2xl border border-dashed border-line text-center"><div><Boxes className="mx-auto text-muted" /><h2 className="mt-3 font-semibold">{enPendientes ? 'No tienes pedidos pendientes' : `Sin pedidos en ${capitalizar(mesLabel(mes))}`}</h2><p className="mt-1 text-sm text-muted">{enPendientes ? 'Todo entregado 🎉 Elige un mes para ver el historial.' : 'Prueba otro mes, término o filtro.'}</p></div></div> : <>
         <div className="mt-5 grid gap-3 md:hidden">{filtered.map((pedido) => <OrderCard pedido={pedido} onDelete={() => void remove(pedido)} onCancel={() => void cancelar(pedido)} key={pedido.id} />)}</div>

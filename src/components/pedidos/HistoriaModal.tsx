@@ -43,7 +43,7 @@ export function HistoriaModal({ pedido, open, onClose }: { pedido: Pedido; open:
 
     <label className="mt-4 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-white/[0.02] px-4 py-3">
       <span className="text-sm"><strong className="block">Mostrar el nombre del cliente</strong><span className="text-xs text-muted">{mostrarNombre ? `Se ve: "${(pedido.clientes?.nombre ?? '').trim().split(/\s+/)[0] || 'Nombre'} · ciudad"` : 'Anónimo: "Entrega en <ciudad>"'}</span></span>
-      <input type="checkbox" className="size-5 shrink-0 accent-[#b7ff00]" checked={mostrarNombre} onChange={(e) => setMostrarNombre(e.target.checked)} />
+      <input type="checkbox" className="size-5 shrink-0 accent-accent" checked={mostrarNombre} onChange={(e) => setMostrarNombre(e.target.checked)} />
     </label>
 
     <div className="mt-5 flex justify-end gap-2">
