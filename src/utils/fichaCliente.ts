@@ -3,6 +3,8 @@
 // producto está en el sistema esperando ser apartado. Nunca lleva costo ni ganancia: solo lo que
 // el cliente necesita (precio de la tienda, abono, llegada y etapa).
 
+import { asegurarFuentesTienda } from './estiloTienda'
+
 export type DatosFicha = {
   codigo: string
   producto: string
@@ -22,26 +24,6 @@ export type DatosFicha = {
 const FONDO = '#FCFBF9', PANEL = '#FFFFFF', LINEA = '#E7E3DC', LINEA_FUERTE = '#D8D2C8', TEXTO = '#171310', TENUE = '#6B655C', SUAVE = '#9C958A', FOTO = '#F1EFEA'
 const SANS = 'Jost, "Segoe UI", Arial, Helvetica, sans-serif', SERIF = '"Cormorant Garamond", Georgia, "Times New Roman", serif'
 
-// Carga las fuentes de la tienda para dibujarlas en el canvas (si no llegan a tiempo, usa las del sistema).
-let fuentes: Promise<void> | null = null
-function asegurarFuentes() {
-  if (fuentes) return fuentes
-  fuentes = (async () => {
-    try {
-      if (!document.getElementById('hl-fuentes-tienda')) {
-        const link = document.createElement('link'); link.id = 'hl-fuentes-tienda'; link.rel = 'stylesheet'
-        link.href = 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Jost:wght@400;500;600&display=swap'
-        document.head.appendChild(link)
-        await new Promise((r) => { link.onload = r; link.onerror = r; setTimeout(r, 2500) })
-      }
-      await Promise.race([
-        Promise.all(['600 40px "Cormorant Garamond"', '400 20px Jost', '500 20px Jost', '600 20px Jost'].map((x) => document.fonts.load(x))),
-        new Promise((r) => setTimeout(r, 2500)),
-      ])
-    } catch { /* sin red: fuentes del sistema */ }
-  })()
-  return fuentes
-}
 
 function cargar(src: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
@@ -112,7 +94,7 @@ export async function generarFichaCliente(d: DatosFicha): Promise<Blob> {
   const W = 1080, H = 1350, M = 56
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H
   const ctx = cv.getContext('2d')!
-  await asegurarFuentes()
+  await asegurarFuentesTienda()
   ctx.fillStyle = FONDO; ctx.fillRect(0, 0, W, H)
 
   // Cabecera como la de la tienda: la marca centrada y espaciada, y debajo la consulta.

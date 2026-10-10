@@ -53,15 +53,15 @@ function dibujarSelloRecepcion(context: CanvasRenderingContext2D, width: number,
   const fecha = new Intl.DateTimeFormat('es-NI', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date())
   context.save()
   // Barra semitransparente al pie de la imagen.
-  context.fillStyle = 'rgba(8,10,9,.72)'
+  context.fillStyle = 'rgba(23,19,16,.78)'
   context.fillRect(0, height - barH, width, barH)
-  context.fillStyle = '#b7ff00'
+  context.fillStyle = '#F7F3EC'
   context.fillRect(0, height - barH, Math.max(4, Math.round(fontSize * .35)), barH)
   // "RECIBIDO ✓"
   context.textBaseline = 'middle'
   context.textAlign = 'left'
   context.font = `800 ${fontSize}px Arial, sans-serif`
-  context.fillStyle = '#b7ff00'
+  context.fillStyle = '#F7F3EC'
   const titulo = '✓ RECIBIDO'
   context.fillText(titulo, pad * 1.6, height - barH + barH * .34)
   // Código del pedido + fecha

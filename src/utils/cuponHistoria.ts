@@ -1,10 +1,12 @@
 import type { Cupon } from '../types/domain'
+import { asegurarFuentesTienda } from './estiloTienda'
 
 // Genera una imagen 9:16 (1080×1920, formato historia de Instagram) con el cupón, lista para
 // compartir. En móvil usa el menú nativo de compartir (para subirla a IG Stories); en
 // escritorio la descarga como PNG.
 
-const ACCENT = '#b7ff00'
+// Estilo tienda: tinta negra sobre crema.
+const ACCENT = '#171310'
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   const radio = Math.min(r, w / 2, h / 2)
@@ -28,70 +30,66 @@ function textoAjustado(ctx: CanvasRenderingContext2D, texto: string, x: number, 
 
 const fmtFecha = (iso: string) => { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}` }
 
-export function generarHistoriaCupon(cupon: Cupon): Promise<Blob> {
+export async function generarHistoriaCupon(cupon: Cupon): Promise<Blob> {
+  await asegurarFuentesTienda()
   const W = 1080, H = 1920
   const canvas = document.createElement('canvas')
   canvas.width = W; canvas.height = H
   const ctx = canvas.getContext('2d')!
   const cx = W / 2
 
-  // Fondo oscuro con un leve degradado y un resplandor verde arriba.
-  const g = ctx.createLinearGradient(0, 0, 0, H)
-  g.addColorStop(0, '#0e120b'); g.addColorStop(0.5, '#070807'); g.addColorStop(1, '#050505')
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H)
-  const glow = ctx.createRadialGradient(cx, 620, 40, cx, 620, 720)
-  glow.addColorStop(0, 'rgba(183,255,0,0.16)'); glow.addColorStop(1, 'rgba(183,255,0,0)')
-  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H)
+  // Fondo crema, como la tienda.
+  ctx.fillStyle = '#FCFBF9'; ctx.fillRect(0, 0, W, H)
 
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'
 
-  // Marca: HAUS (blanco) + LINE (verde).
-  ctx.font = '800 104px "Helvetica Neue", Arial, sans-serif'
+  // Marca espaciada, en tinta.
+  ctx.font = '600 92px Jost, "Helvetica Neue", Arial, sans-serif'
   const p1 = 'HAUS', p2 = 'LINE'
   const w1 = ctx.measureText(p1).width, w2 = ctx.measureText(p2).width
   const startX = cx - (w1 + w2) / 2
   ctx.textAlign = 'left'
-  ctx.fillStyle = '#f3f6f3'; ctx.fillText(p1, startX, 250)
+  ctx.fillStyle = ACCENT; ctx.fillText(p1, startX, 250)
   ctx.fillStyle = ACCENT; ctx.fillText(p2, startX + w1, 250)
   ctx.textAlign = 'center'
   try { ctx.letterSpacing = '10px' } catch { /* navegador viejo */ }
-  ctx.font = '700 30px "Helvetica Neue", Arial, sans-serif'
-  ctx.fillStyle = '#8a938d'; ctx.fillText('KING OF SHOES', cx, 305)
+  ctx.font = '700 30px Jost, "Helvetica Neue", Arial, sans-serif'
+  ctx.fillStyle = '#9C958A'; ctx.fillText('KING OF SHOES', cx, 305)
   try { ctx.letterSpacing = '0px' } catch { /* noop */ }
 
   // Tarjeta central.
   const cardX = 80, cardY = 470, cardW = W - 160, cardH = 1060
-  ctx.fillStyle = 'rgba(255,255,255,0.03)'
-  roundRect(ctx, cardX, cardY, cardW, cardH, 48); ctx.fill()
-  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(183,255,0,0.35)'
-  roundRect(ctx, cardX, cardY, cardW, cardH, 48); ctx.stroke()
+  ctx.fillStyle = '#FFFFFF'
+  roundRect(ctx, cardX, cardY, cardW, cardH, 14); ctx.fill()
+  ctx.lineWidth = 2; ctx.strokeStyle = '#D8D2C8'
+  roundRect(ctx, cardX, cardY, cardW, cardH, 14); ctx.stroke()
 
   // Etiqueta.
   try { ctx.letterSpacing = '8px' } catch { /* noop */ }
-  ctx.font = '700 34px "Helvetica Neue", Arial, sans-serif'
-  ctx.fillStyle = ACCENT; ctx.fillText('CÓDIGO DE DESCUENTO', cx, cardY + 120)
+  ctx.font = '500 30px Jost, "Helvetica Neue", Arial, sans-serif'
+  ctx.fillStyle = '#9C958A'; ctx.fillText('CÓDIGO DE DESCUENTO', cx, cardY + 120)
   try { ctx.letterSpacing = '0px' } catch { /* noop */ }
 
   // Titular del descuento (grande).
   const headline = cupon.tipo === 'porcentaje' ? `${Number(cupon.valor)}%` : `US$ ${Number(cupon.valor).toFixed(2)}`
-  ctx.fillStyle = '#ffffff'
-  textoAjustado(ctx, headline, cx, cardY + 330, cardW - 120, (px) => `800 ${px}px "Helvetica Neue", Arial, sans-serif`, 220)
-  ctx.font = '600 46px "Helvetica Neue", Arial, sans-serif'
-  ctx.fillStyle = '#b9c2ba'
+  ctx.fillStyle = ACCENT
+  textoAjustado(ctx, headline, cx, cardY + 330, cardW - 120, (px) => `600 ${px}px "Cormorant Garamond", Georgia, serif`, 240)
+  ctx.font = '600 46px Jost, "Helvetica Neue", Arial, sans-serif'
+  ctx.fillStyle = '#6B655C'
   ctx.fillText(cupon.tipo === 'porcentaje' ? 'de descuento en tu pedido' : 'de descuento', cx, cardY + 400)
 
   // Pastilla con el código.
   const pillW = cardW - 120, pillX = cardX + 60, pillY = cardY + 470, pillH = 150
   ctx.fillStyle = ACCENT
-  roundRect(ctx, pillX, pillY, pillW, pillH, 28); ctx.fill()
-  ctx.fillStyle = '#0a0b0a'
+  roundRect(ctx, pillX, pillY, pillW, pillH, 8); ctx.fill()
+  ctx.fillStyle = '#F7F3EC'
   textoAjustado(ctx, cupon.codigo, cx, pillY + pillH / 2 + 30, pillW - 60, (px) => `800 ${px}px "SF Mono", Menlo, Consolas, monospace`, 92)
 
   // Instrucciones.
-  ctx.font = '500 40px "Helvetica Neue", Arial, sans-serif'
-  ctx.fillStyle = '#b9c2ba'
+  ctx.font = '500 40px Jost, "Helvetica Neue", Arial, sans-serif'
+  ctx.fillStyle = '#6B655C'
   ctx.fillText('Escribí este código al encargar en', cx, pillY + pillH + 130)
-  ctx.font = '800 56px "Helvetica Neue", Arial, sans-serif'
+  ctx.font = '600 54px Jost, "Helvetica Neue", Arial, sans-serif'
   ctx.fillStyle = ACCENT
   ctx.fillText('hauslineshopni.es', cx, pillY + pillH + 200)
 
@@ -100,22 +98,22 @@ export function generarHistoriaCupon(cupon: Cupon): Promise<Blob> {
   const hoy = new Date(Date.now() - 6 * 3600e3).toISOString().slice(0, 10) // Nicaragua
   const desde = cupon.inicia_el && cupon.inicia_el > hoy ? cupon.inicia_el : null
   if (cupon.vence_el || desde) {
-    ctx.font = '600 34px "Helvetica Neue", Arial, sans-serif'
-    ctx.fillStyle = '#8a938d'
+    ctx.font = '600 34px Jost, "Helvetica Neue", Arial, sans-serif'
+    ctx.fillStyle = '#9C958A'
     const txt = desde && cupon.vence_el ? `Válido del ${fmtFecha(desde)} al ${fmtFecha(cupon.vence_el)}`
       : desde ? `Válido desde el ${fmtFecha(desde)}` : `Válido hasta ${fmtFecha(cupon.vence_el!)}`
     ctx.fillText(txt, cx, detalleY)
     detalleY -= 46
   }
   if (cupon.usos_max === 1) {
-    ctx.font = '600 34px "Helvetica Neue", Arial, sans-serif'
-    ctx.fillStyle = '#8a938d'
+    ctx.font = '600 34px Jost, "Helvetica Neue", Arial, sans-serif'
+    ctx.fillStyle = '#9C958A'
     ctx.fillText('Cupón de un solo uso', cx, detalleY)
   }
 
   // Pie.
-  ctx.font = '600 36px "Helvetica Neue", Arial, sans-serif'
-  ctx.fillStyle = '#6b746d'
+  ctx.font = '600 36px Jost, "Helvetica Neue", Arial, sans-serif'
+  ctx.fillStyle = '#9C958A'
   ctx.fillText('@hausline.ni  ·  Envíos a toda Nicaragua', cx, H - 120)
 
   return new Promise<Blob>((resolve, reject) => {

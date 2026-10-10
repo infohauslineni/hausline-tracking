@@ -8,11 +8,11 @@ import { nombreCorto } from './_nombre-corto.js'
 //   variante 'compra' -> FACTURA DE COMPRA (con saldo pendiente)
 //   variante 'pago'   -> COMPROBANTE DE PAGO (marcado PAGADO)
 
-const VERDE = '#111411'
+const VERDE = '#171310'
 const ACENTO = '#8a6d1f'
-const GRIS = '#6f756f'
-const TEXTO = '#151815'
-const LINEA = '#e4e7df'
+const GRIS = '#6B655C'
+const TEXTO = '#171310'
+const LINEA = '#E7E3DC'
 
 function usd(valor) {
   const n = Number(valor) || 0
@@ -91,11 +91,11 @@ export async function facturaPdfBuffer({ codigo, nombre, fecha, factura }) {
 
   // Encabezado
   doc.rect(0, 0, W, 120).fill(VERDE)
-  doc.fillColor('#b7ff00').font('Helvetica-Bold').fontSize(26).text('HAUSLINE', M, 34)
+  doc.fillColor('#F7F3EC').font('Helvetica-Bold').fontSize(26).text('HAUSLINE', M, 34)
   doc.fillColor('#ffffff').font('Helvetica').fontSize(11).text(esPago ? 'COMPROBANTE DE PAGO' : factura?.variante === 'saldo' ? 'ESTADO DE CUENTA · SALDO PENDIENTE' : 'FACTURA DE COMPRA', M, 68)
-  doc.fillColor('#9aa79a').fontSize(9).text('King of Shoes · hausline.ni', M, 86)
-  doc.fillColor('#b7ff00').font('Helvetica-Bold').fontSize(15).text(codigo || '', W - M - 200, 40, { width: 200, align: 'right' })
-  doc.fillColor('#9aa79a').font('Helvetica').fontSize(9).text('Código de seguimiento', W - M - 200, 62, { width: 200, align: 'right' })
+  doc.fillColor('#B9B2A6').fontSize(9).text('King of Shoes · hausline.ni', M, 86)
+  doc.fillColor('#F7F3EC').font('Helvetica-Bold').fontSize(15).text(codigo || '', W - M - 200, 40, { width: 200, align: 'right' })
+  doc.fillColor('#B9B2A6').font('Helvetica').fontSize(9).text('Código de seguimiento', W - M - 200, 62, { width: 200, align: 'right' })
 
   // Datos del cliente
   let y = 150
@@ -148,7 +148,7 @@ export async function facturaPdfBuffer({ codigo, nombre, fecha, factura }) {
     if (img) {
       try { doc.image(img, M, rowTop, { fit: [42, 42], align: 'center', valign: 'center' }); dibujada = true } catch { /* imagen inválida: recuadro */ }
     }
-    if (hayFotos && !dibujada) doc.roundedRect(M, rowTop, 42, 42, 6).fillColor('#eef0ea').fill()
+    if (hayFotos && !dibujada) doc.roundedRect(M, rowTop, 42, 42, 6).fillColor('#F4F1EB').fill()
     // Nombre resumido en UNA sola línea (nombreCorto + "…" si aún no cupiera). Código y
     // detalle también en una línea cada uno, así nada se encima.
     const nombreTexto = nombreCorto(item.producto) || 'Producto'
@@ -157,7 +157,7 @@ export async function facturaPdfBuffer({ codigo, nombre, fecha, factura }) {
     doc.text(nombreTexto, textX, rowTop, { width: nombreAncho, height: 14, ellipsis: true, lineBreak: false })
     let sub = rowTop + 15
     if (item.codigo) { doc.fillColor(GRIS).font('Helvetica').fontSize(8.5).text(`Código: ${item.codigo}`, textX, sub, { width: nombreAncho, height: 11, ellipsis: true, lineBreak: false }); sub += 12 }
-    if (item.detalle) { doc.fillColor('#8a8f89').font('Helvetica').fontSize(8.5).text(item.detalle, textX, sub, { width: nombreAncho, height: 11, ellipsis: true, lineBreak: false }); sub += 12 }
+    if (item.detalle) { doc.fillColor('#9C958A').font('Helvetica').fontSize(8.5).text(item.detalle, textX, sub, { width: nombreAncho, height: 11, ellipsis: true, lineBreak: false }); sub += 12 }
 
     doc.fillColor(TEXTO).font('Helvetica').fontSize(11)
     doc.text(String(Number(item.cantidad) || 1), colCant - 20, rowTop + 2, { width: 40, align: 'center' })
@@ -179,13 +179,13 @@ export async function facturaPdfBuffer({ codigo, nombre, fecha, factura }) {
   }
   drawTotal('Total del pedido', usd(factura.total))
   drawTotal(esPago ? 'Pago recibido' : 'Abono recibido', usd(factura.abono))
-  if (esPago) drawTotal('Saldo pendiente', 'PAGADO', true, '#2f8f2f')
-  else drawTotal('Saldo pendiente', usd(factura.saldo), true, (Number(factura.saldo) || 0) > 0.01 ? '#b26a00' : '#2f8f2f')
+  if (esPago) drawTotal('Saldo pendiente', 'PAGADO', true, '#171310')
+  else drawTotal('Saldo pendiente', usd(factura.saldo), true, (Number(factura.saldo) || 0) > 0.01 ? '#b26a00' : '#171310')
 
   // Pie
   y += 24
-  doc.rect(M, y, contentW, 60).fill('#f2f6e6')
-  doc.fillColor('#4c6500').font('Helvetica-Bold').fontSize(11).text(
+  doc.rect(M, y, contentW, 60).fill('#F4F1EB')
+  doc.fillColor('#6B655C').font('Helvetica-Bold').fontSize(11).text(
     esPago ? `Pago recibido · Pedido ${codigo} entregado` : `Rastree su pedido con el código ${codigo}`,
     M, y + 16, { width: contentW, align: 'center' },
   )

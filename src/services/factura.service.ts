@@ -2,6 +2,7 @@ import { whatsappUrl } from '../utils/whatsapp'
 import { resolverImagenCatalogo } from '../utils/catalogoImagen'
 import { nombreCorto } from '../utils/nombreCorto'
 import { supabase } from '../lib/supabase'
+import { asegurarFuentesTienda } from '../utils/estiloTienda'
 
 // Factura / comprobante de compra que se genera al registrar un pedido, para enviarla al
 // cliente junto con su código de seguimiento. Disponible como imagen (WhatsApp) y como PDF.
@@ -106,10 +107,10 @@ async function renderFactura(data: FacturaData, visibles: FacturaLinea[], fotos:
   const hayFotos = fotos.some(Boolean)
   // Paleta: a COLOR para el cliente (WhatsApp); en BLANCO Y NEGRO para la copia impresa (PDF).
   const bw = impresion
-  const acento = bw ? '#ffffff' : '#b7ff00'
-  const pagadoColor = bw ? '#151815' : '#3f8600'
-  const pieBg = bw ? '#f1f1ef' : '#edf6d8'
-  const pieTxt = bw ? '#333333' : '#4c6500'
+  const acento = bw ? '#ffffff' : '#F7F3EC'
+  const pagadoColor = bw ? '#171310' : '#171310'
+  const pieBg = bw ? '#F4F1EB' : '#F4F1EB'
+  const pieTxt = bw ? '#333333' : '#6B655C'
   const W = 1240
   const ITEMS_TOP = 590
   const subDe = (item: FacturaLinea) => { const c = (item.codigo ?? '').trim(); return [c ? `Cód. ${c}` : '', item.detalle].filter(Boolean).join('   ·   ') }
@@ -130,30 +131,31 @@ async function renderFactura(data: FacturaData, visibles: FacturaLinea[], fotos:
 
   const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H
   const context = canvas.getContext('2d'); if (!context) throw new Error('No se pudo crear la factura.')
-  context.fillStyle = '#f6f7f3'; context.fillRect(0, 0, W, H)
+  await asegurarFuentesTienda()
+  context.fillStyle = '#FCFBF9'; context.fillRect(0, 0, W, H)
 
   // Encabezado
-  context.fillStyle = '#111411'; context.fillRect(0, 0, W, 300)
-  context.fillStyle = acento; context.font = '800 62px Arial'; context.fillText('HAUSLINE', 90, 120)
-  context.fillStyle = '#ffffff'; context.font = '600 27px Arial'; context.fillText(esPago ? 'COMPROBANTE DE PAGO' : 'FACTURA DE COMPRA', 92, 180)
-  context.fillStyle = acento; context.font = '600 23px Arial'; context.fillText('King of Shoes', 92, 224); context.fillStyle = '#aab0aa'; context.font = '500 23px Arial'; context.fillText('· hausline.ni', 92 + context.measureText('King of Shoes ').width + 34, 224)
-  context.textAlign = 'right'; context.fillStyle = acento; context.font = '700 30px Arial'; context.fillText(data.codigo, 1150, 120)
-  context.fillStyle = '#aab0aa'; context.font = '500 22px Arial'; context.fillText('Código de seguimiento', 1150, 158)
-  if (info.paginas > 1) { context.fillStyle = '#ffffff'; context.font = '700 24px Arial'; context.fillText(`Factura ${info.pagina} de ${info.paginas}`, 1150, 202) }
+  context.fillStyle = '#171310'; context.fillRect(0, 0, W, 300)
+  context.fillStyle = acento; context.font = '600 56px Jost, Arial'; context.letterSpacing = '14px'; context.fillText('HAUSLINE', 90, 120); context.letterSpacing = '0px'
+  context.fillStyle = '#ffffff'; context.font = '600 27px Jost, Arial'; context.fillText(esPago ? 'COMPROBANTE DE PAGO' : 'FACTURA DE COMPRA', 92, 180)
+  context.fillStyle = acento; context.font = '600 23px Jost, Arial'; context.fillText('King of Shoes', 92, 224); context.fillStyle = '#B9B2A6'; context.font = '500 23px Jost, Arial'; context.fillText('· hausline.ni', 92 + context.measureText('King of Shoes ').width + 34, 224)
+  context.textAlign = 'right'; context.fillStyle = acento; context.font = '700 30px Jost, Arial'; context.fillText(data.codigo, 1150, 120)
+  context.fillStyle = '#B9B2A6'; context.font = '500 22px Jost, Arial'; context.fillText('Código de seguimiento', 1150, 158)
+  if (info.paginas > 1) { context.fillStyle = '#ffffff'; context.font = '700 24px Jost, Arial'; context.fillText(`Factura ${info.pagina} de ${info.paginas}`, 1150, 202) }
   context.textAlign = 'left'
 
   // Tarjeta
   context.fillStyle = '#ffffff'; context.beginPath(); context.roundRect(65, 245, 1110, cardBottom - 245, 34); context.fill()
 
   // Datos del cliente
-  context.fillStyle = '#6f756f'; context.font = '600 24px Arial'; context.fillText('CLIENTE', 100, 340)
-  context.fillStyle = '#151815'; context.font = '700 40px Arial'; context.fillText(truncar(context, data.cliente || 'Cliente', 980), 100, 392)
-  context.fillStyle = '#6f756f'; context.font = '500 26px Arial'; context.fillText(new Intl.DateTimeFormat('es-NI', { dateStyle: 'long' }).format(new Date(`${data.fecha}T12:00:00`)), 100, 438)
+  context.fillStyle = '#6B655C'; context.font = '600 24px Jost, Arial'; context.fillText('CLIENTE', 100, 340)
+  context.fillStyle = '#171310'; context.font = '700 40px Jost, Arial'; context.fillText(truncar(context, data.cliente || 'Cliente', 980), 100, 392)
+  context.fillStyle = '#6B655C'; context.font = '500 26px Jost, Arial'; context.fillText(new Intl.DateTimeFormat('es-NI', { dateStyle: 'long' }).format(new Date(`${data.fecha}T12:00:00`)), 100, 438)
 
-  context.strokeStyle = '#e4e7df'; context.lineWidth = 3; context.beginPath(); context.moveTo(100, 480); context.lineTo(1140, 480); context.stroke()
+  context.strokeStyle = '#E7E3DC'; context.lineWidth = 3; context.beginPath(); context.moveTo(100, 480); context.lineTo(1140, 480); context.stroke()
 
   // Cabecera de la tabla
-  context.fillStyle = '#6f756f'; context.font = '700 22px Arial'; context.fillText('PRODUCTO', 100, 535)
+  context.fillStyle = '#6B655C'; context.font = '700 22px Jost, Arial'; context.fillText('PRODUCTO', 100, 535)
   context.textAlign = 'center'; context.fillText('CANT.', 860, 535)
   context.textAlign = 'right'; context.fillText('SUBTOTAL', 1140, 535); context.textAlign = 'left'
 
@@ -168,27 +170,27 @@ async function renderFactura(data: FacturaData, visibles: FacturaLinea[], fotos:
       const top = y - 38
       context.save(); context.beginPath(); context.roundRect(100, top, 74, 74, 14)
       if (foto) { context.clip(); dibujarCover(context, foto, 100, top, 74, 74) }
-      else { context.fillStyle = '#eef0ea'; context.fill(); context.fillStyle = '#9aa093'; context.font = '600 22px Arial'; context.textAlign = 'center'; context.fillText(`${item.cantidad}×`, 137, top + 46); context.textAlign = 'left' }
+      else { context.fillStyle = '#F4F1EB'; context.fill(); context.fillStyle = '#9C958A'; context.font = '600 22px Jost, Arial'; context.textAlign = 'center'; context.fillText(`${item.cantidad}×`, 137, top + 46); context.textAlign = 'left' }
       context.restore()
     }
-    context.fillStyle = '#151815'; context.font = '600 30px Arial'; context.fillText(truncar(context, nombreCorto(item.producto) || 'Producto', anchoNombre), textX, y)
-    if (sub) { context.fillStyle = '#8a8f89'; context.font = '500 22px Arial'; context.fillText(truncar(context, sub, anchoNombre), textX, y + 32) }
-    context.fillStyle = '#343934'; context.font = '600 30px Arial'; context.textAlign = 'center'; context.fillText(`${item.cantidad}`, 860, y)
+    context.fillStyle = '#171310'; context.font = '600 30px Jost, Arial'; context.fillText(truncar(context, nombreCorto(item.producto) || 'Producto', anchoNombre), textX, y)
+    if (sub) { context.fillStyle = '#9C958A'; context.font = '500 22px Jost, Arial'; context.fillText(truncar(context, sub, anchoNombre), textX, y + 32) }
+    context.fillStyle = '#3A352F'; context.font = '600 30px Jost, Arial'; context.textAlign = 'center'; context.fillText(`${item.cantidad}`, 860, y)
     context.textAlign = 'right'; context.fillText(`USD ${(item.cantidad * item.precio).toFixed(2)}`, 1140, y); context.textAlign = 'left'
     y += altoFila(item)
   })
 
   if (!info.ultima) {
     // Página intermedia: nota de continuación en vez de totales.
-    context.fillStyle = '#8a8f89'; context.font = '500 24px Arial'; context.textAlign = 'center'
+    context.fillStyle = '#9C958A'; context.font = '500 24px Jost, Arial'; context.textAlign = 'center'
     context.fillText(`Continúa en la factura ${info.pagina + 1} de ${info.paginas} — los totales van en la última.`, 620, bodyBottom + 50)
     context.textAlign = 'left'
   } else {
     // Última página: totales + pie.
-    context.strokeStyle = '#e4e7df'; context.beginPath(); context.moveTo(100, ty - 40); context.lineTo(1140, ty - 40); context.stroke()
-    const drawTotal = (label: string, value: string, yy: number, strong = false, color = '#343934') => {
-      context.fillStyle = '#6f756f'; context.font = '500 30px Arial'; context.fillText(label, 100, yy)
-      context.fillStyle = strong ? color : '#343934'; context.font = `${strong ? 800 : 600} ${strong ? 38 : 32}px Arial`; context.textAlign = 'right'; context.fillText(value, 1140, yy); context.textAlign = 'left'
+    context.strokeStyle = '#E7E3DC'; context.beginPath(); context.moveTo(100, ty - 40); context.lineTo(1140, ty - 40); context.stroke()
+    const drawTotal = (label: string, value: string, yy: number, strong = false, color = '#3A352F') => {
+      context.fillStyle = '#6B655C'; context.font = '500 30px Jost, Arial'; context.fillText(label, 100, yy)
+      context.fillStyle = strong ? color : '#3A352F'; context.font = `${strong ? 800 : 600} ${strong ? 38 : 32}px Jost, Arial`; context.textAlign = 'right'; context.fillText(value, 1140, yy); context.textAlign = 'left'
     }
     drawTotal('Total del pedido', `USD ${data.total.toFixed(2)}`, ty)
     drawTotal(esPago ? 'Pago recibido' : 'Abono recibido', `USD ${data.abono.toFixed(2)}`, ty + 66)
@@ -196,12 +198,12 @@ async function renderFactura(data: FacturaData, visibles: FacturaLinea[], fotos:
       if (data.metodoPago) drawTotal('Método de pago', data.metodoPago, ty + 132)
       drawTotal('Saldo pendiente', 'PAGADO', ty + (data.metodoPago ? 214 : 148), true, pagadoColor)
     } else {
-      drawTotal('Saldo pendiente', `USD ${Math.max(0, data.saldo).toFixed(2)}`, ty + 148, true, bw ? '#151815' : (data.saldo > 0.01 ? '#b26a00' : '#3f8600'))
+      drawTotal('Saldo pendiente', `USD ${Math.max(0, data.saldo).toFixed(2)}`, ty + 148, true, bw ? '#171310' : (data.saldo > 0.01 ? '#b26a00' : '#171310'))
     }
     context.fillStyle = pieBg; context.beginPath(); context.roundRect(100, pieY, 1040, 90, 18); context.fill()
-    context.fillStyle = pieTxt; context.font = '600 24px Arial'; context.textAlign = 'center'
+    context.fillStyle = pieTxt; context.font = '600 24px Jost, Arial'; context.textAlign = 'center'
     context.fillText(esPago ? `Pago recibido · Pedido ${data.codigo} entregado` : `Rastree su pedido con el código ${data.codigo}`, 620, pieY + 46)
-    context.fillStyle = '#7a807a'; context.font = '500 20px Arial'
+    context.fillStyle = '#6B655C'; context.font = '500 20px Jost, Arial'
     context.fillText(esPago ? '¡Muchas gracias por su compra en Hausline! Esperamos verle pronto.' : 'Gracias por comprar en Hausline · Los tiempos pueden variar por logística internacional.', 620, pieY + 140)
     context.textAlign = 'left'
   }

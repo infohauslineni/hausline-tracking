@@ -6,12 +6,16 @@ import { App } from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { AuthProvider } from './contexts/AuthContext'
 import { recargarUnaVez } from './lib/reloadOnce'
+import { aplicarTemaPanel } from './utils/temaPanel'
 import './styles.css'
 
 // Tras un deploy, una pestaña abierta puede pedir un chunk con el hash viejo (ya no existe).
 // Vite emite este evento cuando falla la precarga de un módulo: recargamos (como máximo una
 // vez cada 15 s) para tomar la versión nueva, en vez de dejar la pantalla en negro.
 window.addEventListener('vite:preloadError', () => { recargarUnaVez() })
+
+// Color de acento del panel elegido en Configuración → Apariencia.
+aplicarTemaPanel()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

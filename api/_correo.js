@@ -500,10 +500,10 @@ export function plantillaEncargoAdmin({ s, panelUrl }) {
     <tr><td align="center" style="padding:32px 16px;">
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 24px rgba(17,24,39,.08);">
         <tr><td style="background-color:#050505;padding:30px 24px;text-align:center;">
-          <div style="color:#ffffff;font-size:24px;font-weight:800;letter-spacing:5px;line-height:1;">HAUS<span style="color:#b7ff00;">LINE</span></div>
-          <div style="color:#b7ff00;font-size:11px;font-weight:600;letter-spacing:3px;text-transform:uppercase;margin-top:8px;">Nuevo encargo web</div>
+          <div style="color:#ffffff;font-size:24px;font-weight:800;letter-spacing:5px;line-height:1;">HAUS<span style="color:#F7F3EC;">LINE</span></div>
+          <div style="color:#F7F3EC;font-size:11px;font-weight:600;letter-spacing:3px;text-transform:uppercase;margin-top:8px;">Nuevo encargo web</div>
         </td></tr>
-        <tr><td style="height:4px;background-color:#b7ff00;font-size:0;line-height:0;">&nbsp;</td></tr>
+        <tr><td style="height:4px;background-color:#F7F3EC;font-size:0;line-height:0;">&nbsp;</td></tr>
         <tr><td style="padding:32px 36px 8px;">
           <p style="margin:0 0 4px;font-size:18px;font-weight:700;color:#0b0f19;">Entró un encargo desde el catálogo</p>
           <p style="margin:0 0 22px;font-size:14px;line-height:1.6;color:#b26a00;">⏳ Vence en 24 h si no lo confirmas.</p>
@@ -541,7 +541,7 @@ export function plantillaEncargoAdmin({ s, panelUrl }) {
           </table>
 
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:26px;"><tr><td align="center">
-            <a href="${panelUrl}" target="_blank" style="display:inline-block;background-color:#b7ff00;color:#052012;text-decoration:none;font-weight:800;font-size:15px;padding:15px 38px;border-radius:10px;">Abrir en el panel</a>
+            <a href="${panelUrl}" target="_blank" style="display:inline-block;background-color:#171310;color:#F7F3EC;text-decoration:none;font-weight:800;font-size:15px;padding:15px 38px;border-radius:10px;">Abrir en el panel</a>
           </td></tr></table>
         </td></tr>
         <tr><td style="padding:26px 36px 32px;border-top:1px solid #eef0f2;text-align:center;">
@@ -613,10 +613,10 @@ export function plantillaEncargoAdminGrupo({ solicitudes, panelUrl }) {
     <tr><td align="center" style="padding:32px 16px;">
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 24px rgba(17,24,39,.08);">
         <tr><td style="background-color:#050505;padding:30px 24px;text-align:center;">
-          <div style="color:#ffffff;font-size:24px;font-weight:800;letter-spacing:5px;line-height:1;">HAUS<span style="color:#b7ff00;">LINE</span></div>
-          <div style="color:#b7ff00;font-size:11px;font-weight:600;letter-spacing:3px;text-transform:uppercase;margin-top:8px;">Nuevo encargo web</div>
+          <div style="color:#ffffff;font-size:24px;font-weight:800;letter-spacing:5px;line-height:1;">HAUS<span style="color:#F7F3EC;">LINE</span></div>
+          <div style="color:#F7F3EC;font-size:11px;font-weight:600;letter-spacing:3px;text-transform:uppercase;margin-top:8px;">Nuevo encargo web</div>
         </td></tr>
-        <tr><td style="height:4px;background-color:#b7ff00;font-size:0;line-height:0;">&nbsp;</td></tr>
+        <tr><td style="height:4px;background-color:#F7F3EC;font-size:0;line-height:0;">&nbsp;</td></tr>
         <tr><td style="padding:32px 36px 8px;">
           <p style="margin:0 0 4px;font-size:18px;font-weight:700;color:#0b0f19;">${esc(s0.cliente_nombre || 'Un cliente')} encargó ${solicitudes.length} ${solicitudes.length === 1 ? 'producto' : 'productos'}</p>
           <p style="margin:0 0 22px;font-size:14px;line-height:1.6;color:#b26a00;">⏳ Vence en 24 h si no lo confirmas.${rapido ? ' ⚡ Incluye envío rápido.' : ''}</p>
@@ -640,7 +640,7 @@ export function plantillaEncargoAdminGrupo({ solicitudes, panelUrl }) {
           </table>
 
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:26px;"><tr><td align="center">
-            <a href="${panelUrl}" target="_blank" style="display:inline-block;background-color:#b7ff00;color:#052012;text-decoration:none;font-weight:800;font-size:15px;padding:15px 38px;border-radius:10px;">Abrir en el panel</a>
+            <a href="${panelUrl}" target="_blank" style="display:inline-block;background-color:#171310;color:#F7F3EC;text-decoration:none;font-weight:800;font-size:15px;padding:15px 38px;border-radius:10px;">Abrir en el panel</a>
           </td></tr></table>
         </td></tr>
         <tr><td style="padding:26px 36px 32px;border-top:1px solid #eef0f2;text-align:center;">

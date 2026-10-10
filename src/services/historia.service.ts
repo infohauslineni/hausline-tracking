@@ -1,5 +1,6 @@
 import type { Pedido } from '../types/domain'
 import { resolverImagenCatalogo } from '../utils/catalogoImagen'
+import { asegurarFuentesTienda } from '../utils/estiloTienda'
 
 // Genera una imagen tipo "historia" (9:16, 1080×1920) de un pedido ENTREGADO, lista para
 // subir a Instagram/WhatsApp. Muestra prueba social SIN exponer al cliente: foto y nombre
@@ -10,8 +11,10 @@ import { resolverImagenCatalogo } from '../utils/catalogoImagen'
 
 export type HistoriaOpts = { mostrarNombre: boolean }
 
-const GREEN = '#b7ff00'
-const BLACK = '#0b0b0b'
+// Estilo tienda: tinta negra sobre crema (antes verde neón).
+const TINTA = '#171310'
+const CREMA = '#F7F3EC'
+const BLACK = '#171310'
 const MUTED = '#8a8a8a'
 const FAINT = '#a9a9a9'
 const LINE_COL = '#e9e9e9'
@@ -48,7 +51,7 @@ function placeholderProducto(ctx: CanvasRenderingContext2D, x: number, y: number
   ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.clip()
   ctx.fillStyle = '#f2f2f2'; ctx.fillRect(x, y, w, h)
   ctx.fillStyle = '#d6d6d6'
-  ctx.font = '800 120px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+  ctx.font = '800 120px Jost, Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
   ctx.fillText((texto || 'H').charAt(0).toUpperCase(), x + w / 2, y + h / 2)
   ctx.restore()
   ctx.textBaseline = 'alphabetic'
@@ -79,13 +82,13 @@ function partirTexto(ctx: CanvasRenderingContext2D, texto: string, maxW: number,
 // Wordmark "•HAUSLINE" (punto neón + texto negro) centrado sobre fondo claro.
 function marca(ctx: CanvasRenderingContext2D, cx: number, y: number) {
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
-  ctx.font = '800 46px Arial'; ctx.letterSpacing = '8px'
+  ctx.font = '800 46px Jost, Arial'; ctx.letterSpacing = '8px'
   const texto = 'HAUSLINE'
   const wTexto = ctx.measureText(texto).width
   const dotR = 9, gap = 16
   const totalW = dotR * 2 + gap + wTexto
   const startX = cx - totalW / 2
-  ctx.fillStyle = GREEN; ctx.beginPath(); ctx.arc(startX + dotR, y - 14, dotR, 0, Math.PI * 2); ctx.fill()
+  ctx.fillStyle = TINTA; ctx.beginPath(); ctx.arc(startX + dotR, y - 14, dotR, 0, Math.PI * 2); ctx.fill()
   ctx.fillStyle = BLACK; ctx.fillText(texto, startX + dotR * 2 + gap, y)
   ctx.letterSpacing = '0px'
 }
@@ -107,7 +110,7 @@ function check(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: numb
 function marcaDeAgua(ctx: CanvasRenderingContext2D, W: number, H: number) {
   ctx.save()
   ctx.translate(W / 2, H / 2); ctx.rotate((-28 * Math.PI) / 180)
-  ctx.fillStyle = '#f4f4f4'; ctx.font = '700 24px Arial'; ctx.textAlign = 'left'; ctx.letterSpacing = '4px'
+  ctx.fillStyle = '#F4F1EB'; ctx.font = '600 24px Jost, Arial'; ctx.textAlign = 'left'; ctx.letterSpacing = '6px'
   for (let yy = -H; yy < H; yy += 200) for (let xx = -W; xx < W; xx += 330) ctx.fillText('HAUSLINE', xx, yy)
   ctx.restore(); ctx.letterSpacing = '0px'
 }
@@ -117,24 +120,25 @@ async function historiaJpeg(pedido: Pedido, opts: HistoriaOpts): Promise<Blob> {
   const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H
   const ctx = canvas.getContext('2d'); if (!ctx) throw new Error('No se pudo generar la historia.')
 
-  // Fondo blanco + marca de agua + filo neón arriba.
-  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H)
+  // Fondo crema + marca de agua + filo de tinta arriba.
+  await asegurarFuentesTienda()
+  ctx.fillStyle = '#FCFBF9'; ctx.fillRect(0, 0, W, H)
   marcaDeAgua(ctx, W, H)
-  ctx.fillStyle = GREEN; ctx.fillRect(0, 0, W, 6)
+  ctx.fillStyle = TINTA; ctx.fillRect(0, 0, W, 6)
 
   // Encabezado de marca.
   marca(ctx, CX, 164)
-  ctx.textAlign = 'center'; ctx.fillStyle = FAINT; ctx.font = '600 20px Arial'
+  ctx.textAlign = 'center'; ctx.fillStyle = FAINT; ctx.font = '600 20px Jost, Arial'
   ctx.letterSpacing = '5px'; ctx.fillText('KING OF SHOES', CX, 205); ctx.letterSpacing = '0px'
 
-  // Check de éxito (círculo negro + check neón).
+  // Check de éxito (círculo de tinta + check crema).
   ctx.fillStyle = BLACK; ctx.beginPath(); ctx.arc(CX, 360, 66, 0, Math.PI * 2); ctx.fill()
-  check(ctx, CX, 360, 120, GREEN, 11)
+  check(ctx, CX, 360, 120, CREMA, 11)
 
   // Titular + subtítulo.
-  ctx.fillStyle = BLACK; ctx.textAlign = 'center'; ctx.font = '800 58px Arial'
-  ctx.letterSpacing = '1px'; ctx.fillText('¡PEDIDO ENTREGADO!', CX, 540); ctx.letterSpacing = '0px'
-  ctx.fillStyle = '#6b6b6b'; ctx.font = '400 27px Arial'
+  ctx.fillStyle = BLACK; ctx.textAlign = 'center'; ctx.font = '600 74px "Cormorant Garamond", Georgia, serif'
+  ctx.letterSpacing = '1px'; ctx.fillText('¡Pedido entregado!', CX, 540); ctx.letterSpacing = '0px'
+  ctx.fillStyle = '#6b6b6b'; ctx.font = '400 27px Jost, Arial'
   ctx.fillText('Tu pedido fue entregado con éxito.', CX, 598)
 
   // Datos del pedido (anonimizados).
@@ -158,28 +162,28 @@ async function historiaJpeg(pedido: Pedido, opts: HistoriaOpts): Promise<Blob> {
   const tX = 400
   ctx.textAlign = 'left'
   if (marcaProducto) {
-    ctx.fillStyle = '#5a7d00'; ctx.font = '800 23px Arial'; ctx.letterSpacing = '3px'
+    ctx.fillStyle = '#9C958A'; ctx.font = '600 22px Jost, Arial'; ctx.letterSpacing = '3px'
     ctx.fillText(marcaProducto.toUpperCase(), tX, 748); ctx.letterSpacing = '0px'
   }
-  ctx.fillStyle = BLACK; ctx.font = '800 34px Arial'
+  ctx.fillStyle = BLACK; ctx.font = '800 34px Jost, Arial'
   const lineas = partirTexto(ctx, nombreProducto, cardW - (tX - cardX) - 40, 2)
   let ny = 800
   for (const linea of lineas) { ctx.fillText(linea, tX, ny); ny += 42 }
   const badgeY = 800 + (lineas.length - 1) * 42 + 30
-  ctx.font = '800 21px Arial'; ctx.letterSpacing = '2px'
+  ctx.font = '800 21px Jost, Arial'; ctx.letterSpacing = '2px'
   const bTxt = 'ENTREGADO', bTxtW = ctx.measureText(bTxt).width
   const bw = 60 + bTxtW + 26, bh = 50
-  ctx.fillStyle = GREEN; ctx.beginPath(); ctx.roundRect(tX, badgeY, bw, bh, bh / 2); ctx.fill()
-  check(ctx, tX + 34, badgeY + bh / 2, 26, BLACK, 4)
-  ctx.fillStyle = BLACK; ctx.textBaseline = 'middle'; ctx.fillText(bTxt, tX + 60, badgeY + bh / 2 + 1)
+  ctx.fillStyle = TINTA; ctx.beginPath(); ctx.roundRect(tX, badgeY, bw, bh, 6); ctx.fill()
+  check(ctx, tX + 34, badgeY + bh / 2, 26, CREMA, 4)
+  ctx.fillStyle = CREMA; ctx.textBaseline = 'middle'; ctx.fillText(bTxt, tX + 60, badgeY + bh / 2 + 1)
   ctx.textBaseline = 'alphabetic'; ctx.letterSpacing = '0px'
 
   // Referencia genérica (NUNCA el código real).
-  ctx.fillStyle = FAINT; ctx.textAlign = 'center'; ctx.font = '700 19px Arial'
+  ctx.fillStyle = FAINT; ctx.textAlign = 'center'; ctx.font = '700 19px Jost, Arial'
   ctx.letterSpacing = '3px'; ctx.fillText('PEDIDO VERIFICADO · HAUSLINE', CX, 1020); ctx.letterSpacing = '0px'
 
   // Seguimiento COMPLETO: barra negra + 4 puntos con check neón + etiquetas.
-  ctx.fillStyle = FAINT; ctx.font = '700 19px Arial'; ctx.letterSpacing = '5px'
+  ctx.fillStyle = FAINT; ctx.font = '700 19px Jost, Arial'; ctx.letterSpacing = '5px'
   ctx.fillText('SEGUIMIENTO DEL PEDIDO', CX, 1115); ctx.letterSpacing = '0px'
   const etapas = ['CONFIRMADO', 'EN PREPARACIÓN', 'EN CAMINO', 'ENTREGADO']
   const tL = 150, tR = W - 150, tY = 1210, col = (tR - tL) / (etapas.length - 1)
@@ -187,30 +191,30 @@ async function historiaJpeg(pedido: Pedido, opts: HistoriaOpts): Promise<Blob> {
   etapas.forEach((et, i) => {
     const x = tL + col * i
     ctx.fillStyle = BLACK; ctx.beginPath(); ctx.arc(x, tY, 15, 0, Math.PI * 2); ctx.fill()
-    check(ctx, x, tY, 22, GREEN, 3.6)
-    ctx.fillStyle = BLACK; ctx.textAlign = 'center'; ctx.font = '700 17px Arial'
+    check(ctx, x, tY, 22, CREMA, 3.6)
+    ctx.fillStyle = BLACK; ctx.textAlign = 'center'; ctx.font = '700 17px Jost, Arial'
     ctx.letterSpacing = '1px'; ctx.fillText(et, x, tY + 50); ctx.letterSpacing = '0px'
   })
 
   // Entrega verificada / ubicación (con o sin nombre según la opción).
   const quien = opts.mostrarNombre && primerNombre ? `${primerNombre} · ${ciudad}` : `Entrega verificada en ${ciudad}`
-  ctx.fillStyle = BLACK; ctx.textAlign = 'center'; ctx.font = '800 24px Arial'; ctx.fillText(quien, CX, 1350)
-  ctx.fillStyle = MUTED; ctx.font = '400 20px Arial'; ctx.fillText('Gracias por confiar en HAUSLINE.', CX, 1388)
+  ctx.fillStyle = BLACK; ctx.textAlign = 'center'; ctx.font = '800 24px Jost, Arial'; ctx.fillText(quien, CX, 1350)
+  ctx.fillStyle = MUTED; ctx.font = '400 20px Jost, Arial'; ctx.fillText('Gracias por confiar en HAUSLINE.', CX, 1388)
 
   // Cuadro reservado para el sticker del sitio web (se coloca en Instagram).
   ctx.save()
   ctx.strokeStyle = '#d8d8d8'; ctx.lineWidth = 2; ctx.setLineDash([10, 8])
   ctx.fillStyle = '#fafafa'; ctx.beginPath(); ctx.roundRect(150, 1440, 780, 150, 20); ctx.fill(); ctx.stroke()
   ctx.restore()
-  ctx.fillStyle = '#b9b9b9'; ctx.textAlign = 'center'; ctx.font = '700 22px Arial'
+  ctx.fillStyle = '#b9b9b9'; ctx.textAlign = 'center'; ctx.font = '700 22px Jost, Arial'
   ctx.fillText('Coloca aquí el sticker del sitio web', CX, 1508)
-  ctx.fillStyle = '#cfcfcf'; ctx.font = '600 19px Arial'; ctx.fillText('hauslineshopni.es', CX, 1542)
+  ctx.fillStyle = '#cfcfcf'; ctx.font = '600 19px Jost, Arial'; ctx.fillText('hauslineshopni.es', CX, 1542)
 
   // Pie.
   ctx.strokeStyle = LINE_COL; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(150, 1700); ctx.lineTo(930, 1700); ctx.stroke()
-  ctx.fillStyle = BLACK; ctx.font = '800 26px Arial'; ctx.letterSpacing = '7px'
+  ctx.fillStyle = BLACK; ctx.font = '800 26px Jost, Arial'; ctx.letterSpacing = '7px'
   ctx.fillText('HAUSLINE', CX, 1762); ctx.letterSpacing = '0px'
-  ctx.fillStyle = FAINT; ctx.font = '600 17px Arial'; ctx.letterSpacing = '4px'
+  ctx.fillStyle = FAINT; ctx.font = '600 17px Jost, Arial'; ctx.letterSpacing = '4px'
   ctx.fillText('MODA PREMIUM. SIN LÍMITES.', CX, 1800); ctx.letterSpacing = '0px'
   ctx.textAlign = 'left'
 
