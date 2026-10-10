@@ -2,6 +2,7 @@ import { AlertTriangle, ArrowUpRight, CalendarClock, CheckCircle2, CircleDollarS
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ESTADOS_PEDIDO, estadoLabel, estadoTone, etapaBase } from '../../constants/orders'
+import { RepartoMes } from '../../components/finanzas/RepartoGanancia'
 import { DEMO_PEDIDOS } from '../../data/demo'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { obtenerCajaMes, obtenerResumenComercial } from '../../services/comercial.service'
@@ -100,6 +101,8 @@ export function DashboardPage() {
       </section>}
 
       <section className="mt-3"><PedidosPorEstado data={porEstado} total={activos.length} /></section>
+
+      <section className="mt-3"><RepartoMes pedidos={pedidos} /></section>
 
       <section className="mt-3 grid gap-3 xl:grid-cols-[1.6fr_1fr]">
         <RendimientoVentas pedidos={pedidos} />
