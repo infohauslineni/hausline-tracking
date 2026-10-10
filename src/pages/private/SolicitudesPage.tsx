@@ -9,7 +9,8 @@ import { isSupabaseConfigured } from '../../lib/supabase'
 import { archivarComprobanteDrive } from '../../services/archivos.service'
 import { comprasConLinkPago, comprasEnCamino, convertirComprasEnCamino, convertirComprasInmediatas, emparejarEnCamino, confirmarSolicitud, confirmarSolicitudesGrupo, descartarSolicitud, descartarSolicitudes, eliminarSolicitud, listarSolicitudes, suscribirSolicitudes, urlComprobanteSolicitud, type Solicitud } from '../../services/solicitudes.service'
 import { useAuth } from '../../contexts/AuthContext'
-import { sinEmojis, whatsappUrl } from '../../utils/whatsapp'
+import { whatsappUrl } from '../../utils/whatsapp'
+import { tallaProveedor, urlProveedor } from '../../utils/listaProveedor'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { urlSeguimientoCliente } from '../../utils/seguimientoUrl'
 
@@ -35,26 +36,9 @@ const fechaCorta = (iso: string) => new Intl.DateTimeFormat('es-NI', { day: 'num
 
 // Mensaje para EL PROVEEDOR con el código del pedido (HS####), el código de cada producto y
 // la talla. Se manda al confirmar el pago para pedirle la mercadería al proveedor.
-// Talla de calzado (número 35–50, con o sin media) → se manda como "40EUR" al proveedor.
-function tallaProveedor(talla: string | null | undefined): string {
-  const t = (talla || '').trim()
-  if (!t) return 'N/A'
-  const n = Number(t.replace(',', '.'))
-  if (/^\d{2}([.,]5)?$/.test(t) && n >= 35 && n <= 50) return `${t}EUR`
-  return t
-}
 function mensajeProveedor(codigo: string, grupo: Solicitud[]): string {
   const bloques = grupo.map((s) => `🏷️ PRODUCT CODE: ${s.producto_codigo || s.producto || '—'}\n📏 SIZE: ${tallaProveedor(s.talla)}`)
   return `📦 ORDER CODE: ${codigo}\n${bloques.join('\n\n')}`
-}
-// WhatsApp del proveedor: número guardado (localStorage) o VITE_PROVEEDOR_WHATSAPP; si no hay,
-// abre WhatsApp para elegir el contacto con el mensaje ya escrito.
-function urlProveedor(mensaje: string): string {
-  let num = ''
-  try { num = (localStorage.getItem('hausline_proveedor_wa') || '').replace(/\D/g, '') } catch { /* */ }
-  const env = ((import.meta.env.VITE_PROVEEDOR_WHATSAPP as string | undefined) || '').replace(/\D/g, '')
-  const phone = num || env
-  return phone ? `https://wa.me/${phone}?text=${encodeURIComponent(sinEmojis(mensaje))}` : `https://wa.me/?text=${encodeURIComponent(sinEmojis(mensaje))}`
 }
 
 // Agrupa los encargos pendientes por cliente (teléfono normalizado: últimos 8 dígitos), así

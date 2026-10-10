@@ -813,6 +813,23 @@ export async function marcarPagaAlRecibir(pedido: Pick<Pedido, 'id' | 'notas_int
   return notas
 }
 
+// Lista de compra para el proveedor: marca (o desmarca) los pedidos que ya se le mandaron, para
+// que no vuelvan a salir en la próxima lista. Devuelve las notas nuevas de cada pedido.
+export async function marcarEnListaProveedor(pedidos: Pick<Pedido, 'id' | 'notas_internas'>[], activo: boolean) {
+  const client = requireSupabase()
+  const MARCA = '[EN_LISTA_PROVEEDOR]'
+  const notas = new Map<string, string | null>()
+  for (const pedido of pedidos) {
+    const limpio = (pedido.notas_internas ?? '').split(MARCA).join('').trim()
+    const nueva = activo ? `${MARCA} ${limpio}`.trim() : (limpio || null)
+    const { error } = await client.from('pedidos').update({ notas_internas: nueva }).eq('id', pedido.id)
+    if (error) throw error
+    notas.set(pedido.id, nueva)
+  }
+  invalidateCache('pedidos')
+  return notas
+}
+
 // Venta inmediata de una compra libre a un cliente con ficha: queda como un pedido ya
 // ENTREGADO y pagado a su nombre (le aparece en Mi cuenta, sale de "Todavía no compran" y
 // cuenta para reseña y volver a comprar). Usa el mismo camino que "Apartar": el costo ya se

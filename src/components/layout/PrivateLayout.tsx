@@ -70,6 +70,7 @@ const clientesProductos: NavItem[] = [
 // Por eso "Gastos" ya no es una entrada aparte (se registran desde Mi cuenta).
 const finanzas: NavItem[] = [
   { to: '/pagos', label: 'Pagos', icon: CreditCard },
+  { to: '/gastos', label: 'Gastos', icon: ReceiptText, nuevo: true },
   { to: '/reembolsos', label: 'Reembolsos', icon: RotateCcw, nuevo: true },
   { to: '/cuenta', label: 'Mi cuenta', icon: Wallet },
   { to: '/reportes', label: 'Reportes', icon: BarChart3, nuevo: true },
