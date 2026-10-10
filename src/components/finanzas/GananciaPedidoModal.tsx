@@ -23,7 +23,7 @@ export function GananciaPedidoModal({ open, pedido, onClose }: { open: boolean; 
   }, [open, pedido])
   if (!open || !pedido) return null
 
-  const pct = base?.pct ?? 30
+  const pct = base?.pct ?? 60
   const r = repartoPedido(pedido, pct)
   const entregado = pedido.estado === 'entregado'
   const cuenta = base ? cuentaParaGanancia(pedido, base.desde) && !r.pendiente : false

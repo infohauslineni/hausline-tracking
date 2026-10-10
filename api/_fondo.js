@@ -50,7 +50,7 @@ async function bolsas(db) {
   const de = (clave) => (cfg ?? []).find((c) => c.clave === clave)?.valor_json
   const fin = de('finanzas') ?? {}
   const desde = fin.ganancia_desde || '2026-10-10'
-  const pct = Number(fin.porcentaje_reserva_negocio ?? 30)
+  const pct = Number(fin.porcentaje_reserva_negocio ?? 60)
   const tc = Number(de('moneda')?.tipo_cambio) > 0 ? Number(de('moneda').tipo_cambio) : 37
   const fijos = Array.isArray(de('gastos_fijos')) ? de('gastos_fijos') : []
   const corte = `${desde}T06:00:00Z` // 12 a. m. de ese día en Nicaragua

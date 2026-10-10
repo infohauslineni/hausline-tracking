@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase'
 import type { ConfiguracionFinanzas, GananciaRealizada, MetaCompra } from '../types/domain'
 
-export const DEFAULT_FINANZAS: ConfiguracionFinanzas & { ganancia_desde: string } = { dia_inicio_mes: 1, dia_retiro: 28, porcentaje_reserva_negocio: 30, ganancia_desde: '2026-10-10' }
+export const DEFAULT_FINANZAS: ConfiguracionFinanzas & { ganancia_desde: string } = { dia_inicio_mes: 1, dia_retiro: 28, porcentaje_reserva_negocio: 60, ganancia_desde: '2026-10-10' }
 function client() { if (!supabase) throw new Error('Supabase no está configurado.'); return supabase }
 
 export function periodoComercial(fecha = new Date(), diaInicio = 1) {

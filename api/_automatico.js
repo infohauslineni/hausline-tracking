@@ -301,7 +301,18 @@ async function novedades(db) {
 async function campanaRedes(db) {
   if (!horarioCliente()) return 0
   const { data: cfg } = await db.from('configuracion').select('valor_json').eq('clave', 'campana_redes').maybeSingle()
-  const c = cfg?.valor_json
+  let c = cfg?.valor_json ?? null
+  // AUTOMÁTICO: los días 15 y 30 de cada mes (el último día si el mes tiene menos de 30) se lanza
+  // sola una edición nueva, salvo que el dueño lo haya apagado en Configuración (automatico:false).
+  const hoy = fechaNic()
+  const dia = Number(hoy.slice(8, 10))
+  const ultimoDia = new Date(Date.UTC(Number(hoy.slice(0, 4)), Number(hoy.slice(5, 7)), 0)).getUTCDate()
+  const toca = dia === 15 || dia === Math.min(30, ultimoDia)
+  if (toca && c?.automatico !== false && !(c?.activa && !c.completa) && c?.id !== `redes-${hoy}`) {
+    c = { ...(c ?? {}), id: `redes-${hoy}`, activa: true, completa: false, creada: new Date().toISOString(), completada: null, enviados: 0, total: null, origen: 'automatico' }
+    const { error: eNueva } = await db.from('configuracion').upsert({ clave: 'campana_redes', valor_json: c }, { onConflict: 'clave' })
+    if (eNueva) throw new Error(eNueva.message)
+  }
   if (!c?.id || !c.activa || c.completa) return 0
   const { data: subs, error } = await db.from('suscriptores').select('correo, nombre').eq('activo', true).eq('consentimiento', true).limit(5000)
   if (error) throw new Error(error.message)

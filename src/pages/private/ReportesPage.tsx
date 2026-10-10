@@ -14,7 +14,7 @@ const todayIso = () => new Date().toISOString().slice(0, 10)
 const promptKey = () => `hausline-retiro-consultado-${todayIso()}`
 
 export function ReportesPage() {
-  const [config, setConfig] = useState<ConfiguracionFinanzas>({ dia_inicio_mes: 1, dia_retiro: 28, porcentaje_reserva_negocio: 30 })
+  const [config, setConfig] = useState<ConfiguracionFinanzas>({ dia_inicio_mes: 1, dia_retiro: 28, porcentaje_reserva_negocio: 60 })
   const [data, setData] = useState(zero)
   const [saldoCuenta, setSaldoCuenta] = useState(0)
   const [loading, setLoading] = useState(true)

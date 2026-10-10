@@ -15,6 +15,12 @@ export function CampanaRedesSection() {
 
   const c = estado?.campana ?? null
   const enviando = Boolean(c?.activa && !c.completa)
+  // Automático los días 15 y 30: encendido salvo que se apague aquí.
+  const automatico = c?.automatico !== false
+  const cambiarAuto = async (valor: boolean) => {
+    try { setEstado(await campanaRedes('auto', valor)); toast.success(valor ? 'Listo: se envía solo los días 15 y 30 de cada mes.' : 'Envío automático apagado. Solo sale cuando toqués “Enviar”.') }
+    catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo guardar.') }
+  }
   const fecha = (iso?: string) => iso ? new Intl.DateTimeFormat('es-NI', { day: 'numeric', month: 'long' }).format(new Date(iso)) : ''
 
   const prueba = async () => {
@@ -31,10 +37,11 @@ export function CampanaRedesSection() {
   return <section className="form-section">
     <h2 className="flex items-center gap-2 font-semibold"><AtSign size={18} className="text-accent" /> Correo: síganos en Instagram y TikTok</h2>
     <p className="mt-2 text-xs leading-5 text-muted">Invita a seguir las dos cuentas de Instagram (<b className="text-white">@hausline.ni</b> y <b className="text-white">@archive.hauslineni</b>) y <b className="text-white">@hausline.niof</b> en TikTok. Llega solo a quienes aceptaron recibir novedades{estado ? <> (<b className="text-white">{estado.suscriptores}</b> hoy)</> : ''}, con su enlace para darse de baja.</p>
-    {c && <p className="mt-2 rounded-lg border border-line bg-white/[.02] px-3 py-2 text-xs text-muted">{enviando ? <>Enviándose: <b className="text-white">{c.enviados ?? 0}</b> de {c.total ?? estado?.suscriptores ?? 0}. Sale de a 25 cada 15 minutos.</> : c.completa ? <>Última campaña: <b className="text-white">{c.enviados ?? 0}</b> correos, terminó el {fecha(c.completada)}.</> : null}</p>}
+    {c && (enviando || c.completada) && <p className="mt-2 rounded-lg border border-line bg-white/[.02] px-3 py-2 text-xs text-muted">{enviando ? <>Enviándose: <b className="text-white">{c.enviados ?? 0}</b> de {c.total ?? estado?.suscriptores ?? 0}. Sale de a 25 cada 15 minutos.</> : c.completa ? <>Última campaña: <b className="text-white">{c.enviados ?? 0}</b> correos, terminó el {fecha(c.completada ?? undefined)}.</> : null}</p>}
+    <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-white/[.02] p-3"><input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-accent" checked={automatico} disabled={!estado} onChange={(e) => void cambiarAuto(e.target.checked)} /><span className="flex flex-col"><span className="text-sm font-medium">Enviarlo solo los días 15 y 30</span><span className="text-[11px] text-muted">Cada mes, a todos los suscriptores (en meses de menos de 30 días, el último día). Desmarcá para apagarlo.</span></span></label>
     <div className="mt-4 grid gap-2">
       <button className="subtle-button" disabled={trabajando !== null} onClick={() => void prueba()}>{trabajando === 'prueba' ? 'Enviando…' : 'Enviarme una prueba'}</button>
-      <button className="primary-button" disabled={trabajando !== null || enviando || !estado?.suscriptores} onClick={() => setConfirmar(true)}><Send size={16} /> {enviando ? 'Ya se está enviando' : 'Enviar a los suscriptores'}</button>
+      <button className="primary-button" disabled={trabajando !== null || enviando || !estado?.suscriptores} onClick={() => setConfirmar(true)}><Send size={16} /> {enviando ? 'Ya se está enviando' : 'Enviar ahora a los suscriptores'}</button>
     </div>
     <Modal open={confirmar} onClose={() => setConfirmar(false)} title="¿Enviar el correo a los suscriptores?" description={`Sale a ${estado?.suscriptores ?? 0} personas que aceptaron recibir novedades. No se puede deshacer.`}>
       <p className="text-sm leading-6 text-muted">Se manda de a 25 cada 15 minutos, solo de 9 a. m. a 8 p. m. Cada persona lo recibe una sola vez.{c?.completa ? ' Ya enviaste una campaña antes: quienes la recibieron ese mismo día no la reciben de nuevo, pero los demás sí.' : ''}</p>

@@ -288,11 +288,18 @@ async function campanaRedesPanel(response, body, authorization) {
     if (accion === 'iniciar') {
       if (actual?.activa && !actual.completa) return response.status(200).json({ ok: false, error: 'Ya hay una campaña enviándose.', suscriptores: count ?? 0, campana: actual })
       if (!count) return response.status(200).json({ ok: false, error: 'Todavía no hay suscriptores con consentimiento.', suscriptores: 0, campana: actual })
-      const nueva = { id: `redes-${new Date(Date.now() - 6 * 3_600_000).toISOString().slice(0, 10)}`, activa: true, completa: false, creada: new Date().toISOString(), enviados: 0, total: count }
+      const nueva = { id: `redes-${new Date(Date.now() - 6 * 3_600_000).toISOString().slice(0, 10)}`, activa: true, completa: false, creada: new Date().toISOString(), enviados: 0, total: count, origen: 'manual', ...(actual?.automatico === false ? { automatico: false } : {}) }
       // Misma campaña el mismo día = no se repite a quien ya la recibió (candado por id + correo).
       const { error } = await admin.from('configuracion').upsert({ clave: 'campana_redes', valor_json: nueva }, { onConflict: 'clave' })
       if (error) throw new Error(error.message)
       return response.status(200).json({ ok: true, suscriptores: count, campana: nueva })
+    }
+    // Encender / apagar el envío automático de los días 15 y 30.
+    if (accion === 'auto') {
+      const nueva = { ...(actual ?? { id: '', activa: false, completa: true }), automatico: body.valor !== false }
+      const { error } = await admin.from('configuracion').upsert({ clave: 'campana_redes', valor_json: nueva }, { onConflict: 'clave' })
+      if (error) throw new Error(error.message)
+      return response.status(200).json({ ok: true, suscriptores: count ?? 0, campana: nueva })
     }
     return response.status(200).json({ ok: true, suscriptores: count ?? 0, campana: actual })
   } catch (e) {
