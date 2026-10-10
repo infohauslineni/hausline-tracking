@@ -224,7 +224,7 @@ export function suscribirPedidos(onChange: () => void) {
 export async function obtenerPedido(id: string) {
   const { data, error } = await requireSupabase()
     .from('pedidos')
-    .select('*, clientes(nombre, whatsapp, departamento, ciudad, costo_envio), pedido_items(*, pedido_item_costos(*)), gastos(*)')
+    .select('*, clientes(nombre, whatsapp, departamento, ciudad, direccion, referencia, costo_envio), pedido_items(*, pedido_item_costos(*)), gastos(*)')
     .eq('id', id)
     .single()
   if (error) throw error

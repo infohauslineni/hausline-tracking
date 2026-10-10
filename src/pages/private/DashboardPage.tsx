@@ -2,14 +2,13 @@ import { AlertTriangle, ArrowUpRight, CalendarClock, CheckCircle2, CircleDollarS
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ESTADOS_PEDIDO, estadoLabel, estadoTone, etapaBase } from '../../constants/orders'
-import { RepartoMes } from '../../components/finanzas/RepartoGanancia'
 import { DEMO_PEDIDOS } from '../../data/demo'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { obtenerCajaMes, obtenerResumenComercial } from '../../services/comercial.service'
+import { obtenerMiGanancia, type MiGanancia } from '../../services/miGanancia.service'
 import { listarPedidos } from '../../services/pedidos.service'
 import type { EstadoPedido, Pedido, ResumenComercial } from '../../types/domain'
 import { calcularAlertas } from '../../utils/alertas'
-import { desglosePedido } from '../../utils/pedidoCosto'
 import { periodoDeMes } from '../../utils/periodo'
 
 const EMPTY_SUMMARY: ResumenComercial = { ventas: 0, cobrado: 0, por_cobrar: 0, gastos: 0, costos_productos: 0, saldo_cuenta: 0, pedidos: 0 }
@@ -21,6 +20,9 @@ export function DashboardPage() {
   const [saldoMes, setSaldoMes] = useState(0)
   const [ventasAnterior, setVentasAnterior] = useState(0)
   const [loading, setLoading] = useState(isSupabaseConfigured)
+  // Lo que le toca al dueño: pedidos entregados desde el arranque, menos sus gastos y retiros.
+  const [miGanancia, setMiGanancia] = useState<MiGanancia | null>(null)
+  useEffect(() => { if (isSupabaseConfigured) void obtenerMiGanancia().then(setMiGanancia).catch(() => undefined) }, [])
   const [actualizado, setActualizado] = useState(() => Date.now())
   const [, setTick] = useState(0)
   const periodo = useMemo(() => periodoDeMes(), [])
@@ -63,8 +65,6 @@ export function DashboardPage() {
   const trendVentas: Trend | undefined = cambioVentas != null ? { text: `${Math.abs(cambioVentas).toFixed(0)}%`, dir: cambioVentas >= 0 ? 'up' : 'down', label: 'vs. mes anterior' } : undefined
   const ganancia = summary.ventas - summary.gastos
   const margen = summary.ventas > 0 ? (ganancia / summary.ventas) * 100 : 0
-  // Ganancia NETA realizada del mes: solo pedidos ENTREGADOS (la ganancia se realiza al entregar).
-  const gananciaNeta = pedidos.filter((p) => p.estado === 'entregado' && p.fecha_pedido >= periodo.desde && p.fecha_pedido <= periodo.hasta).reduce((sum, p) => sum + desglosePedido(p).gananciaNeta, 0)
   // Pedidos activos por etapa, para "Pedidos por estado".
   const porEstado = ESTADOS_PEDIDO.filter((e) => e.value !== 'entregado').map((e) => ({ label: e.label, value: activos.filter((p) => etapaBase(p.estado) === e.value).length }))
   // Alertas accionables (mismas que la campana del encabezado).
@@ -92,7 +92,7 @@ export function DashboardPage() {
         <HeroMetric icon={CircleDollarSign} label="Ventas del mes" value={`USD ${money(summary.ventas)}`} tone="blue" trend={trendVentas} />
         <HeroMetric icon={Coins} label="Dinero cobrado" value={`USD ${money(summary.cobrado)}`} tone="emerald" sub={`Saldo caja USD ${money(saldoMes)}`} />
         <HeroMetric icon={ReceiptText} label="Por cobrar" value={`USD ${money(summary.por_cobrar)}`} tone="warning" sub={`${porCobrar.length} ${porCobrar.length === 1 ? 'pendiente' : 'pendientes'}`} />
-        <HeroMetric icon={PiggyBank} label="Ganancia neta" value={`USD ${money(gananciaNeta)}`} tone="accent" sub="Entregados del mes" />
+        <HeroMetric icon={PiggyBank} label="Mi ganancia" value={`USD ${money(miGanancia?.disponible ?? 0)}`} tone="accent" sub={miGanancia ? `${miGanancia.pedidos} ${miGanancia.pedidos === 1 ? 'entregado' : 'entregados'} desde el ${fechaCorta(`${miGanancia.desde}T12:00:00`)} · negocio USD ${money(miGanancia.negocio)}` : 'Pedidos entregados'} />
         <HeroMetric icon={CheckCircle2} label="Pedidos activos" value={`${activos.length}`} tone="blue" sub={`${enTransito} en tránsito · ${enPreparacion} en prep.`} />
       </section>
 
@@ -101,8 +101,6 @@ export function DashboardPage() {
       </section>}
 
       <section className="mt-3"><PedidosPorEstado data={porEstado} total={activos.length} /></section>
-
-      <section className="mt-3"><RepartoMes pedidos={pedidos} /></section>
 
       <section className="mt-3 grid gap-3 xl:grid-cols-[1.6fr_1fr]">
         <RendimientoVentas pedidos={pedidos} />

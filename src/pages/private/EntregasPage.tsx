@@ -1,6 +1,6 @@
 import { AlertTriangle, Banknote, Bike, Bus, CheckCircle2, Copy, ExternalLink, MapPin, MessageCircle, Package, PackageCheck, Phone, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Modal } from '../../components/ui/Modal'
 import { mensajeWhatsAppEstado } from '../../constants/orders'
@@ -28,6 +28,7 @@ const debePedido = (e: Entrega) => e.cobrar.saldo + e.cobrar.bodega
 
 export function EntregasPage() {
   const { esAdmin } = useAuth()
+  const navigate = useNavigate()
   const [entregas, setEntregas] = useState<Entrega[]>([])
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [tipoCambio, setTipoCambio] = useState(37)
@@ -100,7 +101,8 @@ export function EntregasPage() {
     try {
       await actualizarEstadoPedido(confirmar.pedido.id, 'entregado')
       setEntregas((cur) => cur.filter((x) => x.pedido.id !== confirmar.pedido.id))
-      toast.success(`Pedido ${confirmar.pedido.codigo} entregado.`)
+      const id = confirmar.pedido.id
+      toast.success(`Pedido ${confirmar.pedido.codigo} entregado.`, { action: { label: 'Ver ganancia', onClick: () => navigate(`/pedidos/${id}?ganancia=1`) }, duration: 9000 })
       setConfirmar(null)
     } catch { toast.error('No se pudo marcar como entregado.') }
     finally { setGuardando(false) }
@@ -160,7 +162,7 @@ export function EntregasPage() {
               {lineas.length ? <>
                 <p className="flex items-start gap-1.5 font-semibold text-white"><MapPin size={14} className="mt-0.5 shrink-0 text-accent" /> <span>{lineas[0]}</span></p>
                 {lineas.slice(1).map((x, i) => <p key={i} className="pl-5 text-xs text-white/75">{x}</p>)}
-                {l?.deFicha && !e.cliente?.direccion && <p className="mt-1 pl-5 text-[11px] text-amber-200/90">Solo tenemos la ciudad: falta la dirección exacta.</p>}
+                {l?.deFicha && !e.cliente?.direccion && !e.cliente?.referencia && <p className="mt-1 pl-5 text-[11px] text-amber-200/90">Solo tenemos la ciudad: falta la dirección exacta.</p>}
                 {l?.mapa && <a className="mt-1.5 inline-flex items-center gap-1 pl-5 text-xs font-semibold text-accent hover:underline" href={l.mapa} target="_blank" rel="noopener noreferrer"><ExternalLink size={12} /> Ver en Google Maps</a>}
               </> : <p className="flex items-center gap-1.5 text-xs text-amber-200"><AlertTriangle size={14} /> No tenemos la dirección de este cliente.</p>}
               {e.cliente?.whatsapp && <p className="mt-2 flex items-center gap-1.5 border-t border-line pt-2 font-mono text-xs text-muted"><Phone size={12} /> {e.cliente.whatsapp}</p>}

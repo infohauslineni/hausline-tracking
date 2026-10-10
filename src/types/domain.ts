@@ -69,6 +69,8 @@ export type Pedido = {
   qc_general_enviado_at?: string | null
   // Cuándo se le avisó por WhatsApp que su pedido está disponible ("ya le avisé").
   aviso_disponible_at?: string | null
+  // Cuándo se marcó Entregado (lo pone el panel al entregar).
+  fecha_entrega?: string | null
   // Solicitud de envío hecha por el cliente desde su cuenta (panel del cliente).
   entrega_solicitada_at?: string | null
   entrega_direccion?: { nombre: string; direccion: string; referencia?: string | null; ciudad: string; departamento?: string | null; pais: string; codigo_postal?: string | null; lat?: number | null; lng?: number | null } | null
@@ -76,7 +78,7 @@ export type Pedido = {
   activo: boolean
   created_at: string
   updated_at: string
-  clientes?: Pick<Cliente, 'nombre' | 'whatsapp' | 'departamento' | 'ciudad' | 'costo_envio'> | null
+  clientes?: (Pick<Cliente, 'nombre' | 'whatsapp' | 'departamento' | 'ciudad' | 'costo_envio'> & Partial<Pick<Cliente, 'direccion' | 'referencia'>>) | null
   pedido_items?: PedidoItem[]
   gastos?: Gasto[]
 }
@@ -127,7 +129,8 @@ export type Inversion = { id: string; fecha: string; producto_id: string | null;
 export type Deuda = { id: string; acreedor: string; concepto: string; monto_total: number; monto_pagado: number; fecha_deuda: string; fecha_vencimiento: string | null; estado: 'pendiente' | 'pagada' | 'cancelada'; notas: string | null; created_at: string; pagos_deuda?: PagoDeuda[] }
 export type PagoDeuda = { id: string; deuda_id: string; fecha: string; monto: number; metodo: string | null; notas: string | null; desde_ganancia: number; desde_negocio: number; created_at: string }
 export type ResumenComercial = { ventas: number; cobrado: number; por_cobrar: number; gastos: number; costos_productos: number; saldo_cuenta: number; pedidos: number }
-export type ConfiguracionFinanzas = { dia_inicio_mes: number; dia_retiro: number; porcentaje_reserva_negocio: number }
+// ganancia_desde: desde qué día (YYYY-MM-DD) cuentan los pedidos entregados para "Mi ganancia".
+export type ConfiguracionFinanzas = { dia_inicio_mes: number; dia_retiro: number; porcentaje_reserva_negocio: number; ganancia_desde?: string }
 export type GananciaRealizada = { desde: string; hasta: string; pedidos_entregados: number; cobrado: number; costos: number; ganancia_realizada: number; ganancia_asignada: number; ganancia_disponible: number }
 export type MetaCompra = { id: string; nombre: string; monto_objetivo: number; monto_reservado: number; fecha_objetivo: string | null; estado: 'activa' | 'completada' | 'cancelada'; notas: string | null; created_at: string }
 export type EstadoContenido = 'pendiente_grabacion' | 'grabado'
