@@ -92,7 +92,7 @@ export function DashboardPage() {
         <HeroMetric icon={CircleDollarSign} label="Ventas del mes" value={`USD ${money(summary.ventas)}`} tone="blue" trend={trendVentas} />
         <HeroMetric icon={Coins} label="Dinero cobrado" value={`USD ${money(summary.cobrado)}`} tone="emerald" sub={`Saldo caja USD ${money(saldoMes)}`} />
         <HeroMetric icon={ReceiptText} label="Por cobrar" value={`USD ${money(summary.por_cobrar)}`} tone="warning" sub={`${porCobrar.length} ${porCobrar.length === 1 ? 'pendiente' : 'pendientes'}`} />
-        <HeroMetric icon={PiggyBank} label="Mi ganancia" value={`USD ${money(miGanancia?.disponible ?? 0)}`} tone="accent" sub={miGanancia ? `${miGanancia.pedidos} ${miGanancia.pedidos === 1 ? 'entregado' : 'entregados'} desde el ${fechaCorta(`${miGanancia.desde}T12:00:00`)} · negocio USD ${money(miGanancia.negocio)}` : 'Pedidos entregados'} />
+        <HeroMetric icon={PiggyBank} label="Mi ganancia" value={`USD ${money(miGanancia?.disponible ?? 0)}`} tone="accent" sub={miGanancia ? `${miGanancia.pedidos} ${miGanancia.pedidos === 1 ? 'entregado' : 'entregados'} desde el ${fechaCorta(`${miGanancia.desde}T12:00:00`)} · negocio USD ${money(miGanancia.negocioLibre)}${miGanancia.apartado > 0.005 ? ` · fondo de fijos USD ${money(miGanancia.apartado)}` : ''}` : 'Pedidos entregados'} />
         <HeroMetric icon={CheckCircle2} label="Pedidos activos" value={`${activos.length}`} tone="blue" sub={`${enTransito} en tránsito · ${enPreparacion} en prep.`} />
       </section>
 

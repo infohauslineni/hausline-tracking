@@ -2,7 +2,7 @@ import { supabase } from '../lib/supabase'
 import type { Gasto, Moneda } from '../types/domain'
 import { listarCuentas } from './cuentas.service'
 import { obtenerTipoCambio, registrarGasto } from './comercial.service'
-import { observacionesConMarca } from './miGanancia.service'
+import { observacionesConMarca } from '../utils/marcaGanancia'
 
 // GASTOS FIJOS: lo que se paga todos los meses (publicidad, suscripciones, internet…). Se define
 // una vez y el panel lo registra solo cuando llega el día: sale de la cuenta elegida y, si se
