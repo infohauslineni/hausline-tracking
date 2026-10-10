@@ -688,6 +688,37 @@ async function ajustarCostoProveedor(client: NonNullable<typeof supabase>, pedid
   if (movError) throw movError
 }
 
+// COSTO PROPUESTO de un pedido para el pago al proveedor: por cada producto usa el costo que ya
+// trae el pedido y, si no tiene, el del catálogo (productos.precio_compra, que el panel va
+// aprendiendo de los pagos anteriores). Así el monto llega lleno y solo hay que confirmarlo.
+export type CostoSugerido = { total: number; lineas: { producto: string; cantidad: number; unitario: number | null; fuente: 'pedido' | 'catalogo' | null }[]; faltan: string[] }
+export async function sugerirCostoPedido(pedido: Pick<Pedido, 'pedido_items'>): Promise<CostoSugerido> {
+  const client = requireSupabase()
+  const items = (pedido.pedido_items ?? []).filter((it) => !esLineaEnvio(it))
+  const propio = (it: PedidoItem) => Number(it.precio_compra || 0) + Number(it.envio_internacional || 0) + Number(it.costo_delivery || 0) + Number(it.otros_gastos || 0)
+  const sinCosto = items.filter((it) => propio(it) <= 0)
+  const ids = [...new Set(sinCosto.map((it) => it.producto_id).filter(Boolean))] as string[]
+  const codigos = [...new Set(sinCosto.map((it) => (it.codigo_producto ?? '').trim().toUpperCase()).filter(Boolean))]
+  type Fila = { id: string; codigo: string | null; precio_compra: number | null }
+  const vacio = Promise.resolve({ data: [] as Fila[] })
+  const [porId, porCodigo] = await Promise.all([
+    ids.length ? client.from('productos').select('id, codigo, precio_compra').in('id', ids) : vacio,
+    codigos.length ? client.from('productos').select('id, codigo, precio_compra').in('codigo', codigos) : vacio,
+  ])
+  const catalogo = [...((porId.data ?? []) as Fila[]), ...((porCodigo.data ?? []) as Fila[])]
+  const lineas = items.map((it) => {
+    const cantidad = Number(it.cantidad || 1)
+    const suyo = propio(it)
+    if (suyo > 0) return { producto: it.producto, cantidad, unitario: suyo, fuente: 'pedido' as const }
+    const codigo = (it.codigo_producto ?? '').trim().toUpperCase()
+    const fila = catalogo.find((p) => (it.producto_id && p.id === it.producto_id) || (codigo && (p.codigo ?? '').trim().toUpperCase() === codigo))
+    const costo = Number(fila?.precio_compra || 0)
+    return costo > 0 ? { producto: it.producto, cantidad, unitario: costo, fuente: 'catalogo' as const } : { producto: it.producto, cantidad, unitario: null, fuente: null }
+  })
+  const total = Math.round(lineas.reduce((s, l) => s + (l.unitario ?? 0) * l.cantidad, 0) * 100) / 100
+  return { total, lineas, faltan: lineas.filter((l) => l.unitario == null).map((l) => l.producto) }
+}
+
 // Registra (o ajusta) el pago al proveedor de un pedido y lo DESCUENTA de la cuenta
 // elegida. Se usa desde el detalle del pedido al pasarlo a "En preparación": ese es el
 // momento real en que se le compra al proveedor. Es idempotente respecto a la caja: si ya

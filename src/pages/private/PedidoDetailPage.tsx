@@ -18,7 +18,7 @@ import { ESTADOS_ITEM, ESTADOS_PEDIDO, estadoLabel, etapaBase, mensajeWhatsAppEs
 import { CancelarPedidoModal } from '../../components/pedidos/CancelarPedidoModal'
 import { DEMO_PEDIDOS } from '../../data/demo'
 import { isSupabaseConfigured } from '../../lib/supabase'
-import { actualizarEstadoItem, actualizarEstadoPedido, anotarUltimoHistorial, actualizarPedidoCompleto, agregarEnvioPedido, cobrarPedido, esLineaEnvio, esLineaEnvioRapido, esPagaAlRecibir, marcarPagaAlRecibir, obtenerDisponibleDesde, obtenerPedido, pagarProveedorPedido, pasarPedidoAStock, type PagoProveedorInput } from '../../services/pedidos.service'
+import { actualizarEstadoItem, actualizarEstadoPedido, anotarUltimoHistorial, actualizarPedidoCompleto, agregarEnvioPedido, cobrarPedido, esLineaEnvio, esLineaEnvioRapido, esPagaAlRecibir, marcarPagaAlRecibir, obtenerDisponibleDesde, obtenerPedido, pagarProveedorPedido, pasarPedidoAStock, sugerirCostoPedido, type CostoSugerido, type PagoProveedorInput } from '../../services/pedidos.service'
 import { useAuth } from '../../contexts/AuthContext'
 import type { FacturaData } from '../../services/factura.service'
 import { obtenerTipoCambio, registrarGasto } from '../../services/comercial.service'
@@ -510,6 +510,19 @@ function ProveedorPagoModal({ pedido, tipoCambio, montoSugerido, open, onClose, 
   const [destino, setDestino] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
   const [saving, setSaving] = useState(false)
   useEffect(() => { if (open) { setMoneda('USD'); setMonto(Math.round(Math.max(0, montoSugerido) * 100) / 100); setMetodo(pedido.metodo_pago || 'Transferencia'); setDestino({ cuentaId: null, montoCuenta: 0 }) } }, [open, montoSugerido, pedido.metodo_pago])
+  // Costo propuesto con lo que ya sabe el catálogo: si el pedido no trae costo, llena el monto solo.
+  const [sugerido, setSugerido] = useState<CostoSugerido | null>(null)
+  useEffect(() => {
+    if (!open || !isSupabaseConfigured) return
+    let vivo = true
+    void sugerirCostoPedido(pedido).then((s) => {
+      if (!vivo) return
+      setSugerido(s)
+      if (montoSugerido <= 0 && s.total > 0) { setMoneda('USD'); setMonto(s.total) }
+    }).catch(() => undefined)
+    return () => { vivo = false }
+  }, [open, pedido, montoSugerido])
+  const delCatalogo = sugerido?.lineas.filter((l) => l.fuente === 'catalogo') ?? []
   const montoUsd = aUsd(monto, moneda, tipoCambio)
   const guardar = async () => {
     if (montoUsd <= 0) return toast.error('Indica cuánto le pagaste al proveedor, o toca "Solo cambiar etapa".')
@@ -532,6 +545,12 @@ function ProveedorPagoModal({ pedido, tipoCambio, montoSugerido, open, onClose, 
         <div className="mt-3 space-y-2.5">{aVerificar.map((item, index) => <div key={`${item.producto}-${index}`}><div className="flex items-baseline justify-between gap-2"><strong className="text-sm">{item.producto}</strong>{item.cantidad > 1 && <span className="shrink-0 text-xs text-muted">{item.cantidad}×</span>}</div><DetalleProducto talla={item.talla} color={item.color} esLinea={false} /></div>)}</div>
       </div>}
       <MoneyField label="Costo pagado al proveedor" moneda={moneda} montoOriginal={monto} tipoCambio={tipoCambio} onMoneda={setMoneda} onMonto={setMonto} autoFocus />
+      {sugerido && (delCatalogo.length > 0 || sugerido.faltan.length > 0) && <div className="col-span-full rounded-xl border border-line bg-white/[.02] p-3 text-xs leading-5">
+        {delCatalogo.length > 0 && <><p className="text-muted">Costo propuesto con lo que te costó antes (catálogo): <b className="font-mono text-white">US$ {sugerido.total.toFixed(2)}</b>{Math.abs(montoUsd - sugerido.total) > 0.005 && <button type="button" className="ml-2 font-semibold text-accent hover:underline" onClick={() => { setMoneda('USD'); setMonto(sugerido.total) }}>Usar este monto</button>}</p>
+          <ul className="mt-1 text-muted">{sugerido.lineas.filter((l) => l.unitario != null).map((l, i) => <li key={i}>{l.cantidad > 1 ? `${l.cantidad}× ` : ''}{l.producto}: US$ {(Number(l.unitario) * l.cantidad).toFixed(2)}{l.fuente === 'pedido' ? ' (ya estaba en el pedido)' : ''}</li>)}</ul>
+          <p className="mt-1 text-muted">Si esta vez te costó distinto, cambiá el monto antes de registrar.</p></>}
+        {sugerido.faltan.length > 0 && <p className="mt-1 text-amber-200">No tengo el costo de: {sugerido.faltan.join(', ')}. {delCatalogo.length > 0 ? 'Sumalo al monto.' : 'Escribilo: la próxima vez ya lo propongo solo.'}</p>}
+      </div>}
       <label className="form-field"><span>Método</span><input value={metodo} onChange={(e) => setMetodo(e.target.value)} /></label>
       <CuentaSelect requerido montoUsd={montoUsd} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" proposito="comprar" />
       <div className="col-span-full flex flex-col-reverse gap-2 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">

@@ -173,6 +173,14 @@ export function PrivateLayout() {
     return () => { void client.removeChannel(channel) }
   }, [esAdmin])
 
+  // Gastos fijos del mes: al abrir el panel se registran los que ya tocan (solo admin).
+  useEffect(() => {
+    if (!isSupabaseConfigured || !esAdmin) return
+    void import('../../services/gastosFijos.service').then((m) => m.procesarGastosFijos())
+      .then((hechos) => { if (hechos.length) toast.info(`Se ${hechos.length === 1 ? 'registró 1 gasto fijo' : `registraron ${hechos.length} gastos fijos`} del mes: ${hechos.map((g) => g.descripcion).join(', ')}.`, { duration: 9000 }) })
+      .catch(() => undefined)
+  }, [esAdmin])
+
   const handleSignOut = async () => {
     try { await signOut() } catch { toast.error('No se pudo cerrar la sesión.') }
   }

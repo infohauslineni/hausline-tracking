@@ -1,9 +1,10 @@
-import { CalendarRange, Edit3, HandCoins, Trash2 } from 'lucide-react'
+import { CalendarClock, CalendarRange, Edit3, HandCoins, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { toast } from 'sonner'
 import { CuentaSelect, type DestinoPago } from '../../components/finanzas/CuentaSelect'
 import { Modal } from '../../components/ui/Modal'
+import { GastosFijosModal } from '../../components/finanzas/GastosFijosModal'
 import { MoneyField } from '../../components/ui/MoneyField'
 import { actualizarGasto, eliminarGasto, listarGastos, listarInversiones, listarProveedores, obtenerTipoCambio, registrarGasto } from '../../services/comercial.service'
 import { esGastoDeGanancia, observacionesConMarca, observacionesSinMarca } from '../../services/miGanancia.service'
@@ -43,9 +44,12 @@ export function GastosPage() {
     catch { toast.error('No se pudo eliminar el gasto.') }
   }
   const openNew = () => { setEditing(null); setOpen(true) }
+  const [fijosOpen, setFijosOpen] = useState(false)
   const openEdit = (item: Gasto) => { setEditing(item); setOpen(true) }
   return <div>
     <PageHeader title="Gastos" subtitle="Compras, proveedores, delivery, deudas y gastos operativos." onAdd={openNew} button="Registrar gasto" />
+    <div className="mt-3 flex justify-end"><button className="subtle-button" onClick={() => setFijosOpen(true)}><CalendarClock size={14} /> Gastos fijos (se registran solos)</button></div>
+    <GastosFijosModal open={fijosOpen} onClose={() => setFijosOpen(false)} onRegistrados={(nuevos) => setItems((all) => [...nuevos, ...all])} />
     <div className="mt-6 grid gap-3 sm:grid-cols-[1.4fr_1fr]">
       <div className="flex flex-col gap-3 rounded-2xl border border-line bg-red-400/[.04] p-5 sm:flex-row sm:items-center sm:justify-between">
         <div><span className="flex items-center gap-2 text-xs capitalize text-muted"><CalendarRange size={14} className="text-red-300" /> {verTodo ? 'Todos los gastos' : periodo.etiqueta}</span><strong className="mt-1 block text-2xl text-red-300">USD {total.toFixed(2)}</strong></div>
