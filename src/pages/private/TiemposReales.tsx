@@ -4,11 +4,13 @@ import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { obtenerTiemposReales, type Estadistica, type GrupoTiempos } from '../../services/tiemposReales.service'
-import { guardarPreparacionTienda, leerPreparacionTienda, type PreparacionTienda } from '../../services/ventaLibre.service'
+import { leerPreparacionTienda, type PreparacionTienda } from '../../services/ventaLibre.service'
+import { guardarPreparacionReal, obtenerPreparacionReal, type PreparacionReal } from '../../services/preparacionReal.service'
 
 // REPORTES → TIEMPOS REALES. Cuánto tarda de verdad cada marca y cada producto en prepararse
 // (En preparación → Control de calidad) y en llegar (Control de calidad → Nicaragua), comparado
-// con lo que promete la tienda. "Usar en la tienda" corrige la preparación de esos productos.
+// con lo que promete la tienda. "Usar en la tienda" guarda el tiempo real (configuracion
+// preparacion_tienda): lo usa la tienda para TODOS esos productos y la fecha estimada de sus pedidos.
 
 const PREP_GENERAL = { min: 4, max: 5 } // lo que la tienda promete sin dato propio (config.js)
 const dias = (n: number) => `${n % 1 === 0 ? n : n.toFixed(1)} ${n === 1 ? 'día' : 'días'}`
@@ -23,35 +25,39 @@ export function TiemposReales() {
   const [buscar, setBuscar] = useState('')
   const [abierto, setAbierto] = useState<string | null>(null)
   const [guardando, setGuardando] = useState<string | null>(null)
+  const [prep, setPrep] = useState<PreparacionReal | null>(null)
 
   useEffect(() => {
     if (!isSupabaseConfigured) return
     void obtenerTiemposReales().then(setDatos).catch(() => toast.error('No se pudieron leer los tiempos.'))
     void leerPreparacionTienda().then(setTienda).catch(() => setTienda([]))
+    void obtenerPreparacionReal().then(setPrep).catch(() => setPrep({ marcas: {}, productos: {} }))
   }, [])
 
   const tiendaPorCodigo = useMemo(() => new Map((tienda ?? []).map((t) => [t.codigo, t])), [tienda])
-  // Lo que promete la tienda para un grupo: si todos sus productos dicen lo mismo, eso; si no, "varía".
+  // Lo que promete HOY la tienda. Orden (igual que la tienda): tiempo real del producto → tiempo
+  // real de la marca → "Preparación aprox." del admin → general (4 a 5 días).
   const promesa = (g: GrupoTiempos, deMarca: boolean) => {
+    const real = deMarca ? prep?.marcas[g.marca] : (prep?.productos[g.codigos[0]] ?? prep?.marcas[g.marca])
+    const propio = deMarca ? prep?.marcas[g.marca] : prep?.productos[g.codigos[0]]
+    if (real) return { texto: `${rango(real.min, real.max)}`, min: real.min, origen: propio ? 'tiempo real' : 'tiempo real de la marca', guardado: !!propio }
     const filas = deMarca ? (tienda ?? []).filter((t) => t.marca === g.marca) : g.codigos.map((c) => tiendaPorCodigo.get(c)).filter((t): t is PreparacionTienda => !!t)
-    const textos = [...new Set(filas.map((t) => (t.prepMin > 0 ? rango(t.prepMin, Math.max(t.prepMin, t.prepMax)) : rango(PREP_GENERAL.min, PREP_GENERAL.max))))]
-    if (!filas.length) return { texto: `${rango(PREP_GENERAL.min, PREP_GENERAL.max)} (general)`, codigos: [] as string[], min: PREP_GENERAL.min }
-    return { texto: textos.length === 1 ? textos[0] : 'Varía por producto', codigos: filas.map((t) => t.codigo), min: Math.min(...filas.map((t) => t.prepMin || PREP_GENERAL.min)) }
+    const conDato = filas.filter((t) => t.prepMin > 0)
+    if (!conDato.length) return { texto: rango(PREP_GENERAL.min, PREP_GENERAL.max), min: PREP_GENERAL.min, origen: 'general', guardado: false }
+    const textos = [...new Set(conDato.map((t) => rango(t.prepMin, Math.max(t.prepMin, t.prepMax))))]
+    return { texto: textos.length === 1 && conDato.length === filas.length ? textos[0] : 'Varía por producto', min: Math.min(...conDato.map((t) => t.prepMin)), origen: 'admin de la tienda', guardado: false }
   }
 
-  const usarEnTienda = async (g: GrupoTiempos, deMarca: boolean) => {
+  const usarEnTienda = async (g: GrupoTiempos, deMarca: boolean, quitar = false) => {
     const p = g.preparacion
-    if (!p) return
-    const { codigos } = promesa(g, deMarca)
-    const lista = deMarca ? codigos : g.codigos
-    if (!lista.length) return toast.error('Ninguno de estos productos está en el admin de la tienda.')
-    if (!window.confirm(`¿Poner "Preparación aprox. ${rango(p.desde, p.hasta)}" a ${lista.length} ${lista.length === 1 ? 'producto' : 'productos'} de ${g.nombre} en la tienda?`)) return
+    if (!p && !quitar) return
+    const clave = deMarca ? g.marca : g.codigos[0]
+    if (!quitar && !window.confirm(`¿Que la tienda prometa ${rango(p!.desde, p!.hasta)} de preparación para ${deMarca ? `todos los productos de ${g.nombre}` : g.nombre}? También se usa para la fecha estimada de sus pedidos.`)) return
     setGuardando(g.clave)
     try {
-      const r = await guardarPreparacionTienda(lista, p.desde, p.hasta)
-      toast.success(`Listo: ${r.cambiados} ${r.cambiados === 1 ? 'producto ahora promete' : 'productos ahora prometen'} ${rango(p.desde, p.hasta)} de preparación.${r.faltan.length ? ` ${r.faltan.length} no están en el admin de la tienda.` : ''}`)
-      setTienda(await leerPreparacionTienda())
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo guardar en la tienda.') } finally { setGuardando(null) }
+      setPrep(await guardarPreparacionReal(deMarca ? 'marcas' : 'productos', clave, quitar ? null : { min: p!.desde, max: p!.hasta }))
+      toast.success(quitar ? 'Listo: vuelve a lo del admin de la tienda (o al tiempo general).' : `Listo: ${deMarca ? g.nombre : clave} ahora promete ${rango(p!.desde, p!.hasta)} de preparación.`)
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo guardar.') } finally { setGuardando(null) }
   }
 
   if (!isSupabaseConfigured) return <p className="text-sm text-muted">Disponible con la base conectada.</p>
@@ -84,14 +90,14 @@ export function TiemposReales() {
           <button type="button" onClick={() => setAbierto(abiertoAqui ? null : g.clave)} className="grid w-full gap-3 p-4 text-left sm:grid-cols-[minmax(0,1.4fr)_1fr_1fr_1fr_auto] sm:items-center">
             <div className="min-w-0"><strong className="block truncate text-sm">{g.nombre}</strong><span className="text-[11px] text-muted">{vista === 'productos' ? `${g.codigos[0]} · ${g.marca} · ` : ''}{g.mediciones.length} {g.mediciones.length === 1 ? 'pedido medido' : 'pedidos medidos'}{p && p.n < 3 ? ' · pocos datos' : ''}</span></div>
             <Dato etiqueta="Preparación real" valor={p ? `${dias(p.mediana)}` : '—'} sub={p ? `normal ${rango(p.desde, p.hasta)}` : 'sin Control de calidad aún'} tono={tono} />
-            <Dato etiqueta="La tienda promete" valor={prom.texto} sub={p && Math.abs(diferencia) >= 2 ? (diferencia > 0 ? `tarda ~${dias(Math.round(diferencia))} más` : `tarda ~${dias(Math.round(-diferencia))} menos`) : p ? 'parecido' : ''} tono={tono} />
+            <Dato etiqueta="La tienda promete" valor={prom.texto} sub={`${prom.origen}${p && Math.abs(diferencia) >= 2 ? (diferencia > 0 ? ` · tarda ~${dias(Math.round(diferencia))} más` : ` · tarda ~${dias(Math.round(-diferencia))} menos`) : ''}`} tono={tono} />
             <Dato etiqueta="Envío real" valor={g.envio ? dias(g.envio.mediana) : '—'} sub={g.envio ? `normal ${rango(g.envio.desde, g.envio.hasta)}` : 'aún no llega'} />
             <ChevronDown size={16} className={`justify-self-end text-muted transition ${abiertoAqui ? 'rotate-180' : ''}`} />
           </button>
           {abiertoAqui && <div className="border-t border-line p-4">
             {p && <div className="mb-3 flex flex-col gap-2 rounded-xl border border-accent/25 bg-accent/[.05] p-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-white/85"><Store size={13} className="mr-1 inline text-accent" />Prometer en la tienda <b>{rango(p.desde, p.hasta)}</b> de preparación{vista === 'marcas' ? ` a todos los productos de ${g.nombre}` : ''}. {p.n < 3 && <span className="text-amber-200">Con pocos pedidos todavía puede cambiar.</span>}</p>
-              <button type="button" className="primary-button shrink-0 px-4 text-xs" disabled={guardando === g.clave} onClick={() => void usarEnTienda(g, vista === 'marcas')}>{guardando === g.clave ? 'Guardando…' : 'Usar en la tienda'}</button>
+              <p className="text-xs text-white/85"><Store size={13} className="mr-1 inline text-accent" />Prometer en la tienda <b>{rango(p.desde, p.hasta)}</b> de preparación{vista === 'marcas' ? ` a todos los productos de ${g.nombre}` : ''} y usarlo en la fecha estimada de sus pedidos. {p.n < 3 && <span className="text-amber-200">Con pocos pedidos todavía puede cambiar.</span>}</p>
+              <div className="flex shrink-0 gap-2">{prom.guardado && <button type="button" className="subtle-button px-3 text-xs" disabled={guardando === g.clave} onClick={() => void usarEnTienda(g, vista === 'marcas', true)}>Quitar</button>}<button type="button" className="primary-button px-4 text-xs" disabled={guardando === g.clave} onClick={() => void usarEnTienda(g, vista === 'marcas')}>{guardando === g.clave ? 'Guardando…' : prom.guardado ? 'Actualizar' : 'Usar en la tienda'}</button></div>
             </div>}
             <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">Pedidos medidos</p>
             <div className="grid gap-1 text-xs sm:grid-cols-2">
