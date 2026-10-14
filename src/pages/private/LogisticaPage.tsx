@@ -1,6 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { CheckCircle2, ChevronDown, ChevronUp, Edit3, ExternalLink, Package, Plus, RefreshCw, Search, Trash2, Truck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
@@ -35,6 +36,9 @@ export function LogisticaPage() {
   const [pedidos, setPedidos] = useState<Pedido[]>(isSupabaseConfigured ? [] : DEMO_PEDIDOS)
   const [transportistas, setTransportistas] = useState<Transportista[]>(isSupabaseConfigured ? [] : DEMO_TRANSPORTISTAS)
   const [search, setSearch] = useEstadoVista('logistica.busqueda', '')
+  // Llegar desde otra pantalla con ?q=TRACKING (botón "Logística" de una compra libre) la busca de una vez.
+  const [params, setParams] = useSearchParams()
+  useEffect(() => { const q = params.get('q'); if (q) { setSearch(q); setParams({}, { replace: true }) } }, [params, setParams, setSearch])
   const [editing, setEditing] = useState<EditingTarget>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [mostrarEntregados, setMostrarEntregados] = useEstadoVista('logistica.entregados', false)
@@ -113,8 +117,13 @@ export function LogisticaPage() {
     <h2 className="mt-6 text-sm font-semibold text-accent">Trackings activos</h2>
     <div className="mt-3 grid gap-4 xl:grid-cols-2">
       {activeRoutes.map((route) => <RouteCard key={route.id} route={route} onEdit={() => { setEditing({ kind: 'pedido', value: route }); setModalOpen(true) }} onDelete={() => void removeRoute(route)} onDelivered={() => void deliverRoute(route)} onReopen={() => void reopenRoute(route)} />)}
-      {activeStock.map((item) => <StockRouteCard key={`stock-${item.id}`} item={item} onEdit={() => { setEditing({ kind: 'stock', value: item }); setModalOpen(true) }} onDelete={() => void removeStockTracking(item)} onDelivered={() => void deliverStock(item)} onReopen={() => void reopenStock(item)} />)}
     </div>
+    {activeStock.length > 0 && <>
+      <h2 className="mt-8 text-sm font-semibold text-accent">Compras libres en camino</h2>
+      <div className="mt-3 grid gap-4 xl:grid-cols-2">
+        {activeStock.map((item) => <StockRouteCard key={`stock-${item.id}`} item={item} onEdit={() => { setEditing({ kind: 'stock', value: item }); setModalOpen(true) }} onDelete={() => void removeStockTracking(item)} onDelivered={() => void deliverStock(item)} onReopen={() => void reopenStock(item)} />)}
+      </div>
+    </>}
     {entregados > 0 && (() => { const expandido = mostrarEntregados || Boolean(search.trim()); return <><button type="button" onClick={() => setMostrarEntregados((value) => !value)} className="mt-10 flex w-full items-center gap-2 rounded-xl border border-line bg-white/[0.02] px-4 py-3 text-sm font-semibold text-emerald-300 transition hover:border-emerald-300/30 hover:bg-emerald-300/[0.04]"><CheckCircle2 size={17} /> Trackings recibidos ({entregados}) <span className="ml-auto flex items-center gap-1.5 text-xs font-medium text-muted">{expandido ? 'Ocultar' : 'Ver'} {expandido ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span></button>{expandido && <div className="mt-3 grid gap-4 xl:grid-cols-2">{deliveredRoutes.map((route) => <RouteCard key={route.id} route={route} onEdit={() => { setEditing({ kind: 'pedido', value: route }); setModalOpen(true) }} onDelete={() => void removeRoute(route)} onDelivered={() => void deliverRoute(route)} onReopen={() => void reopenRoute(route)} />)}{deliveredStock.map((item) => <StockRouteCard key={`stock-${item.id}`} item={item} onEdit={() => { setEditing({ kind: 'stock', value: item }); setModalOpen(true) }} onDelete={() => void removeStockTracking(item)} onDelivered={() => void deliverStock(item)} onReopen={() => void reopenStock(item)} />)}</div>}</> })()}
     {filteredRoutes.length + filteredStock.length === 0 && <div className="mt-6 grid min-h-64 place-items-center rounded-2xl border border-dashed border-line text-center"><div><Truck className="mx-auto text-muted" /><h2 className="mt-3 font-semibold">No hay trackings</h2><p className="mt-1 text-sm text-muted">Agrega el tracking de un pedido o producto de stock.</p></div></div>}
     <TrackingModal open={modalOpen} editing={editing} pedidos={pedidos} stock={stock} carriers={transportistas} onClose={() => { setModalOpen(false); setEditing(null) }} onRouteSaved={saveRoute} onStockSaved={saveStock} />
@@ -149,7 +158,7 @@ function EnvioInfo({ route }: { route: Trayecto }) {
 function StockRouteCard({ item, onEdit, onDelete, onDelivered, onReopen }: { item: Inversion; onEdit: () => void; onDelete: () => void; onDelivered: () => void; onReopen: () => void }) {
   const delivered = item.estado_tracking === 'Entregado'
   const carrierName = item.transportista || 'Sin paquetería'
-  return <article className={`rounded-2xl border bg-panel p-4 sm:p-5 ${delivered ? 'border-emerald-300/20' : 'border-accent/20'}`}><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-white">{item.imagen ? <img src={resolverImagenCatalogo(item.imagen)} alt={item.producto} className="h-full w-full object-contain" loading="lazy" /> : <Package size={18} className="text-black/40" />}</span><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong className="tracking-wide">{item.codigo || 'STOCK'}</strong>{delivered && <span className="status-badge status-success">Entregado</span>}</div><p className="mt-1 text-xs text-muted">Stock inmediato · {item.producto} · {item.talla_color || 'Sin talla'}</p></div></div><CardActions onEdit={onEdit} onDelete={onDelete} /></div><TrackingBox tracking={item.tracking ?? ''} carrier={carrierName} stock /><div className="mt-5 flex flex-wrap gap-2 border-t border-line pt-4"><TrackingButtons tracking={item.tracking ?? ''} />{!delivered ? <DeliveredButton onClick={onDelivered} label="Recibido" /> : <button className="subtle-button ml-auto text-amber-200" onClick={onReopen}>Corregir entrega</button>}</div></article>
+  return <article className={`rounded-2xl border bg-panel p-4 sm:p-5 ${delivered ? 'border-emerald-300/20' : 'border-accent/20'}`}><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-white">{item.imagen ? <img src={resolverImagenCatalogo(item.imagen)} alt={item.producto} className="h-full w-full object-contain" loading="lazy" /> : <Package size={18} className="text-black/40" />}</span><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong className="tracking-wide">{item.codigo || 'STOCK'}</strong>{delivered && <span className="status-badge status-success">Entregado</span>}</div><p className="mt-1 text-xs text-muted">Compra libre · {item.producto} · {item.talla_color || 'Sin talla'}</p></div></div><CardActions onEdit={onEdit} onDelete={onDelete} /></div><TrackingBox tracking={item.tracking ?? ''} carrier={carrierName} stock />{!delivered && item.estado_tracking && <p className="mt-2.5 text-xs text-white/85"><span className="text-muted">Último estado:</span> {item.estado_tracking}</p>}<div className="mt-5 flex flex-wrap gap-2 border-t border-line pt-4"><TrackingButtons tracking={item.tracking ?? ''} />{!delivered ? <DeliveredButton onClick={onDelivered} label="Recibido" /> : <button className="subtle-button ml-auto text-amber-200" onClick={onReopen}>Corregir entrega</button>}</div></article>
 }
 
 function TrackingModal({ open, editing, pedidos, stock, carriers, onClose, onRouteSaved, onStockSaved }: { open: boolean; editing: EditingTarget; pedidos: Pedido[]; stock: Inversion[]; carriers: Transportista[]; onClose: () => void; onRouteSaved: (value: Trayecto) => void; onStockSaved: (value: Inversion) => void }) {

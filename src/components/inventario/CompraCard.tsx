@@ -1,5 +1,6 @@
 import { Bookmark, Camera, ChevronDown, ExternalLink, Eye, Link2, PackageCheck, Pencil, Printer, Send, Tag, Trash2, Truck, Wallet, X, Zap } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import type { Inversion } from '../../types/domain'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { ProductoImg } from '../ui/ProductoImg'
@@ -118,9 +119,16 @@ export function CompraCard(p: Props) {
       {p.fotos > 0 && <Chip tono="border-sky-400/35 bg-sky-400/10 text-sky-300"><Camera size={11} /> {p.fotos} {p.fotos === 1 ? 'foto' : 'fotos'} de calidad</Chip>}
     </div>}
 
-    {item.tracking && <div className="mx-4 mt-3 flex items-center justify-between gap-2 rounded-xl border border-line px-3 py-2 text-[11px]">
-      <span className="min-w-0 truncate"><b>{item.transportista || 'Tracking'}:</b> <span className="font-mono">{item.tracking}</span></span>
-      {item.url_tracking && <a className="text-accent" href={item.url_tracking} target="_blank" rel="noreferrer" aria-label="Abrir tracking"><Link2 size={14} /></a>}
+    {item.tracking && <div className="mx-4 mt-3 rounded-xl border border-line px-3 py-2 text-[11px]">
+      <div className="flex items-center justify-between gap-2">
+        <span className="min-w-0 truncate"><b>{item.transportista || 'Tracking'}:</b> <span className="font-mono">{item.tracking}</span></span>
+        {item.url_tracking && <a className="text-accent" href={item.url_tracking} target="_blank" rel="noreferrer" aria-label="Abrir enlace de la paquetería"><Link2 size={14} /></a>}
+      </div>
+      {item.estado_tracking && <p className="mt-1 text-white/85"><span className="text-muted">Estado:</span> {item.estado_tracking === 'Registrado' ? 'Registrándose en 17TRACK…' : item.estado_tracking}</p>}
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <a className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 font-semibold text-[#9ed0ff] transition hover:border-[#9ed0ff]/40" href={`https://t.17track.net/es#nums=${encodeURIComponent(item.tracking)}`} target="_blank" rel="noopener noreferrer"><ExternalLink size={12} /> Ver estado</a>
+        <Link className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 font-semibold text-white/85 transition hover:border-white/30" to={`/logistica?q=${encodeURIComponent(item.tracking)}`}><Truck size={12} /> Ver en Logística</Link>
+      </div>
     </div>}
     {item.notas && <p className="mx-4 mt-3 line-clamp-2 border-l-2 border-accent/40 pl-2.5 text-[11px] leading-4 text-muted">{item.notas}</p>}
 

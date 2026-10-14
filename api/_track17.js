@@ -219,6 +219,7 @@ export async function aplicarEventoTrayectos(client, item, { soloUbicacion = fal
   // Ruta rápida del webhook: un solo UPDATE de la ubicación en todos los trayectos con
   // esa guía que sigan activos. Sin selects previos ni inserts → responde en < 1 s.
   if (soloUbicacion) {
+    await aplicarEventoStock(client, item)
     const { data, error } = await client.from('trayectos')
       .update({ estado: estadoTrayectoGuardar, ultima_ubicacion: info.ubicacion || null, ultimo_evento: info.descripcion })
       .eq('tracking', info.numero).eq('activo', true).select('id')
@@ -309,5 +310,60 @@ export async function pollGuiasActivas(client, limite = 120) {
     }
     consultadas += lote.length
   }
+  try { consultadas += await pollStock(client) } catch (stockError) { console.error('track17: poll de compras libres falló', stockError?.message) }
   return { consultadas, avanzados }
+}
+
+// COMPRAS LIBRES (stock): su tracking vive en inversiones.tracking y el estado en
+// inversiones.estado_tracking (texto libre). Sin columnas nuevas:
+//   • 'Registrado' / 'Etiqueta creada' / vacío = todavía no está en 17TRACK → se registra y
+//     queda 'Rastreando…'.
+//   • Después se guarda el último estado legible: 'En tránsito · MIAMI, FL', 'Llegó a Miami'…
+//   • 'Entregado' (recibido en Nicaragua) lo marca el admin en Logística y ya no se toca.
+const SIN_REGISTRAR = new Set(['', 'registrado', 'etiqueta creada'])
+export function estadoStockLegible(info) {
+  const lugar = info.ubicacion ? ` · ${info.ubicacion}` : ''
+  const texto = {
+    InfoReceived: 'Etiqueta creada (aún no lo recoge la paquetería)',
+    InTransit: `En tránsito${lugar}`,
+    AvailableForPickup: `Listo para retirar${lugar}`,
+    OutForDelivery: `En reparto${lugar}`,
+    DeliveryFailure: `Entrega fallida${lugar}`,
+    Delivered: `Llegó a Miami${lugar}`,
+    Exception: `Incidencia: ${info.descripcion || 'revisar'}`,
+  }[info.status]
+  return texto ? texto.slice(0, 120) : null
+}
+
+export async function aplicarEventoStock(client, item) {
+  const info = resumirTracking(item)
+  const estado = info.numero ? estadoStockLegible(info) : null
+  if (!estado) return 0
+  const { data, error } = await client.from('inversiones').update({ estado_tracking: estado })
+    .eq('tracking', info.numero).neq('estado', 'descartado').or('estado_tracking.is.null,estado_tracking.neq.Entregado').select('id')
+  if (error) { console.error('track17: update de compra libre falló', error.message); return 0 }
+  return data?.length ?? 0
+}
+
+async function pollStock(client) {
+  const { data, error } = await client.from('inversiones').select('id, tracking, estado_tracking')
+    .not('tracking', 'is', null).neq('estado', 'descartado').order('created_at', { ascending: false }).limit(200)
+  if (error) throw error
+  const activos = (data ?? []).filter((i) => String(i.tracking ?? '').trim() && i.estado_tracking !== 'Entregado')
+  // 1. Registrar las guías nuevas.
+  const nuevas = [...new Set(activos.filter((i) => SIN_REGISTRAR.has(normalizar(i.estado_tracking).trim())).map((i) => String(i.tracking).trim()))].slice(0, 40)
+  if (nuevas.length) {
+    const { accepted, rejected } = await registrarEnTrack17(nuevas)
+    // Rechazada con -18019901 = ya estaba registrada: también cuenta como registrada.
+    const ok = new Set([...(accepted ?? []).map((a) => String(a.number ?? '').trim()), ...(rejected ?? []).filter((r) => String(r?.error?.code ?? '') === '-18019901').map((r) => String(r.number ?? '').trim())])
+    const marcar = nuevas.filter((n) => ok.has(n))
+    if (marcar.length) await client.from('inversiones').update({ estado_tracking: 'Rastreando…' }).in('tracking', marcar).neq('estado', 'descartado')
+  }
+  // 2. Traer el estado actual de las que ya están en 17TRACK.
+  const numeros = [...new Set(activos.filter((i) => !SIN_REGISTRAR.has(normalizar(i.estado_tracking).trim())).map((i) => String(i.tracking).trim()))]
+  for (let i = 0; i < numeros.length; i += 40) {
+    const trackings = await consultarEnTrack17(numeros.slice(i, i + 40))
+    for (const item of trackings) await aplicarEventoStock(client, item)
+  }
+  return numeros.length
 }
