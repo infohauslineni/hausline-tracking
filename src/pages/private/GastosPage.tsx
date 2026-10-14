@@ -8,7 +8,8 @@ import { GastosFijosModal } from '../../components/finanzas/GastosFijosModal'
 import { FondoGastosFijos } from '../../components/finanzas/FondoGastosFijos'
 import { MoneyField } from '../../components/ui/MoneyField'
 import { actualizarGasto, eliminarGasto, listarGastos, listarInversiones, listarProveedores, obtenerTipoCambio, registrarGasto } from '../../services/comercial.service'
-import { esGastoDeGanancia, observacionesConMarca, observacionesSinMarca } from '../../services/miGanancia.service'
+import { esGastoDeGanancia, obtenerBaseGanancia, observacionesConMarca, observacionesSinMarca, resumenGanancia, type BaseGanancia } from '../../services/miGanancia.service'
+import { isSupabaseConfigured } from '../../lib/supabase'
 import { listarPedidos } from '../../services/pedidos.service'
 import type { Gasto, Inversion, Moneda, Pedido, Proveedor } from '../../types/domain'
 import { aUsd, formatMoneda } from '../../utils/money'
@@ -76,6 +77,18 @@ export function GastoModal({ open, editing, pedidos, stock, providers, tipoCambi
   const montoUsd = aUsd(Number(form.monto) || 0, form.moneda, tipoCambio)
 
   const esDeuda = esGastoDeuda(form.categoria)
+  // Tu ganancia antes y después de este gasto (cuando sale de tu ganancia o es una deuda).
+  const [baseGanancia, setBaseGanancia] = useState<BaseGanancia | null>(null)
+  useEffect(() => {
+    if (!open || !isSupabaseConfigured) return
+    let vivo = true
+    void obtenerBaseGanancia().then((b) => { if (vivo) setBaseGanancia(b) }).catch(() => undefined)
+    return () => { vivo = false }
+  }, [open])
+  const restaGanancia = esDeuda || form.de_ganancia
+  const yaContado = editing && (esGastoDeGanancia(editing) || esGastoDeuda(editing.categoria)) ? Number(editing.monto || 0) : 0
+  const gananciaAntes = baseGanancia ? resumenGanancia({ ...baseGanancia, gastado: baseGanancia.gastado - yaContado }).disponibleContable : null
+  const gananciaDespues = baseGanancia ? resumenGanancia({ ...baseGanancia, gastado: baseGanancia.gastado - yaContado + montoUsd }).disponibleContable : null
   // Solo pedidos activos (los entregados/cancelados ya no deberían recibir gastos nuevos),
   // ordenados del más reciente al más viejo para que no aparezcan pedidos viejos arriba.
   const pedidosDisponibles = useMemo(() => pedidos
@@ -97,7 +110,8 @@ export function GastoModal({ open, editing, pedidos, stock, providers, tipoCambi
       } else {
         const saved = await registrarGasto(payload, destino)
         onSaved(saved, 'create')
-        toast.success(esDeuda ? 'Deuda pagada: se descontó del saldo y de tu ganancia.' : form.inversion_id ? 'Gasto registrado y sumado al costo total del stock.' : form.de_ganancia ? 'Gasto registrado: se resta de tu ganancia.' : 'Gasto registrado.')
+        const quedan = gananciaDespues == null ? '' : gananciaDespues > 0.005 ? ` Te quedan USD ${gananciaDespues.toFixed(2)}.` : ' Ya no te queda ganancia.'
+        toast.success(esDeuda ? `Deuda pagada: se descontó del saldo y de tu ganancia.${quedan}` : form.inversion_id ? 'Gasto registrado y sumado al costo total del stock.' : form.de_ganancia ? `Gasto registrado: se restó de tu ganancia.${quedan}` : 'Gasto registrado.')
       }
     } catch { toast.error(editing ? 'No se pudo actualizar el gasto.' : 'No se pudo registrar el gasto.') } finally { setSaving(false) }
   }
@@ -117,6 +131,11 @@ export function GastoModal({ open, editing, pedidos, stock, providers, tipoCambi
       {!editing && <CuentaSelect requerido montoUsd={montoUsd} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" />}
       <label className="form-field col-span-full"><span>Observaciones</span><input value={form.observaciones} onChange={(event) => setForm({ ...form, observaciones: event.target.value })} /></label>
       {!esDeuda && <label className="col-span-full flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-white/[.02] p-3"><input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-accent" checked={form.de_ganancia} onChange={(event) => setForm({ ...form, de_ganancia: event.target.checked })} /><span className="flex flex-col"><span className="text-sm font-medium">Lo tomo de mi ganancia</span><span className="text-[11px] text-muted">Se resta de lo que te toca: cuando entre ganancia de los pedidos entregados, este gasto ya va descontado.</span></span></label>}
+      {restaGanancia && gananciaAntes != null && gananciaDespues != null && <div className={`col-span-full rounded-xl border p-3 text-xs ${gananciaDespues > 0.005 ? 'border-line bg-white/[.02]' : 'border-amber-400/30 bg-amber-400/[.06]'}`}>
+        <div className="flex items-baseline justify-between gap-3"><span className="text-muted">Tu ganancia ahora</span><b className="tabular-nums text-white">{gananciaAntes > 0.005 ? `USD ${gananciaAntes.toFixed(2)}` : 'Sin ganancia'}</b></div>
+        <div className="mt-1 flex items-baseline justify-between gap-3"><span className="text-muted">Después de este gasto</span><b className={`tabular-nums ${gananciaDespues > 0.005 ? 'text-white' : 'text-amber-200'}`}>{gananciaDespues > 0.005 ? `USD ${gananciaDespues.toFixed(2)}` : 'Sin ganancia'}</b></div>
+        {gananciaDespues < -0.005 && <p className="mt-2 leading-5 text-amber-200">Este gasto es más de lo que tenés de ganancia: quedás debiendo USD {(-gananciaDespues).toFixed(2)} a tu ganancia y se descuenta de lo próximo que ganés.</p>}
+      </div>}
       {esDeuda && <p className="col-span-full rounded-xl border border-amber-400/25 bg-amber-400/[.06] p-4 text-xs leading-5 text-amber-200/90">Al guardar, USD {(aUsd(Number(form.monto) || 0, form.moneda, tipoCambio)).toFixed(2)} se restan del saldo de caja y la misma cantidad se descuenta de tu ganancia disponible (como cuando usas la ganancia y el negocio para pagar una deuda).</p>}
       {!esDeuda && form.inversion_id && <p className="col-span-full rounded-xl border border-accent/20 bg-accent/[.05] p-4 text-xs leading-5 text-muted">Este gasto se descontará una sola vez de Mi cuenta y se sumará al costo total del producto seleccionado.</p>}
       <Actions saving={saving} onClose={onClose} />

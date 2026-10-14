@@ -63,7 +63,7 @@ export function GananciaPedidoModal({ open, pedido, onClose }: { open: boolean; 
         {total.gastado > 0.005 && <Linea label="Gastos que tomaste de tu ganancia" valor={`− ${usd(total.gastado)}`} />}
         {total.retirado > 0.005 && <Linea label="Retiros de Mi cuenta" valor={`− ${usd(total.retirado)}`} />}
         {total.ganado - total.gastado - total.retirado - total.disponibleContable > 0.005 && <Linea label="Para tus gastos fijos del mes" valor={`− ${usd(total.ganado - total.gastado - total.retirado - total.disponibleContable)}`} />}
-        <div className="border-t border-line pt-2"><Linea label="Tu ganancia ahora" valor={usd(total.disponibleContable)} fuerte /></div>
+        <div className="border-t border-line pt-2"><Linea label="Tu ganancia ahora" valor={total.disponibleContable > 0.005 ? usd(total.disponibleContable) : 'Sin ganancia'} fuerte /></div>
         {total.limitadoPorCaja && <p className="text-xs leading-5 text-amber-200">Podés sacar hoy <b>{usd(Math.max(0, total.disponible))}</b>: es lo que hay libre en el banco sobre el mínimo de tus cuentas.</p>}
       </div>
     </div>}
