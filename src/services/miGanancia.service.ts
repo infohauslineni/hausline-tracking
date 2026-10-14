@@ -73,12 +73,16 @@ export function resumenGanancia(b: BaseGanancia): MiGanancia {
   // Nada puede ser más que el dinero que de verdad está libre en las cuentas (sobre el mínimo).
   let real = b.libreReal == null ? Number.POSITIVE_INFINITY : Math.max(0, b.libreReal)
   const tomar = (v: number) => { const x = r2(Math.max(0, Math.min(v, real))); real -= x; return x }
-  const apartadoNegocio = tomar(Math.min(Math.max(0, negocioNeto), b.pendienteNegocio))
-  const apartadoDueno = tomar(Math.min(Math.max(0, duenoNeto), b.pendienteDueno))
+  // Según las cuentas (sin mirar el banco): lo que se aparta para los fijos y lo que te queda.
+  const paraFijosNegocio = Math.min(Math.max(0, negocioNeto), b.pendienteNegocio)
+  const paraFijosDueno = Math.min(Math.max(0, duenoNeto), b.pendienteDueno)
+  const disponibleContable = r2(duenoNeto - paraFijosDueno)
+  const negocioContable = r2(negocioNeto - paraFijosNegocio)
+  // Con el dinero real: primero el fondo, después lo tuyo, después lo del negocio.
+  const apartadoNegocio = tomar(paraFijosNegocio)
+  const apartadoDueno = tomar(paraFijosDueno)
   const apartado = r2(apartadoNegocio + apartadoDueno)
-  const disponibleContable = r2(duenoNeto - apartadoDueno)
   const disponible = disponibleContable > 0 ? tomar(disponibleContable) : disponibleContable
-  const negocioContable = r2(negocioNeto - apartadoNegocio)
   const negocioLibre = negocioContable > 0 ? tomar(negocioContable) : negocioContable
   return {
     ...b, apartadoNegocio, apartadoDueno, apartado,
