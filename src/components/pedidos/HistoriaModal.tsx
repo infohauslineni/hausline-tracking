@@ -3,12 +3,15 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Modal } from '../ui/Modal'
 import { compartirHistoria, crearHistoriaBlob, descargarHistoria } from '../../services/historia.service'
+import { MARCA_VENTA_INMEDIATA } from '../../services/pedidos.service'
 import type { Pedido } from '../../types/domain'
 
 // Vista previa + descarga/compartir de la "historia" (imagen 9:16) de un pedido entregado.
 // El admin elige si mostrar el primer nombre del cliente o dejarlo anónimo antes de postear.
 export function HistoriaModal({ pedido, open, onClose }: { pedido: Pedido; open: boolean; onClose: () => void }) {
   const [mostrarNombre, setMostrarNombre] = useState(false)
+  // Venta de Entrega inmediata → "¡Vendido!". Se marca sola si el pedido es una venta inmediata.
+  const [inmediata, setInmediata] = useState(() => String(pedido.notas_internas ?? '').includes(MARCA_VENTA_INMEDIATA))
   const [preview, setPreview] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -19,17 +22,17 @@ export function HistoriaModal({ pedido, open, onClose }: { pedido: Pedido; open:
     let vivo = true
     let url: string | null = null
     setCargando(true)
-    crearHistoriaBlob(pedido, { mostrarNombre })
+    crearHistoriaBlob(pedido, { mostrarNombre, inmediata })
       .then((blob) => { if (!vivo) return; url = URL.createObjectURL(blob); setPreview(url) })
       .catch(() => { if (vivo) toast.error('No se pudo generar la historia.') })
       .finally(() => { if (vivo) setCargando(false) })
     return () => { vivo = false; if (url) URL.revokeObjectURL(url) }
-  }, [open, mostrarNombre, pedido])
+  }, [open, mostrarNombre, inmediata, pedido])
 
-  const descargar = async () => { setBusy(true); try { await descargarHistoria(pedido, { mostrarNombre }); toast.success('Historia descargada.') } catch { toast.error('No se pudo descargar.') } finally { setBusy(false) } }
+  const descargar = async () => { setBusy(true); try { await descargarHistoria(pedido, { mostrarNombre, inmediata }); toast.success('Historia descargada.') } catch { toast.error('No se pudo descargar.') } finally { setBusy(false) } }
   const compartir = async () => {
     setBusy(true)
-    try { const r = await compartirHistoria(pedido, { mostrarNombre }); if (r === 'shared') toast.success('Historia compartida.'); else if (r === 'downloaded') toast.success('Historia descargada (compartir no disponible aquí).') }
+    try { const r = await compartirHistoria(pedido, { mostrarNombre, inmediata }); if (r === 'shared') toast.success('Historia compartida.'); else if (r === 'downloaded') toast.success('Historia descargada (compartir no disponible aquí).') }
     catch { toast.error('No se pudo compartir.') } finally { setBusy(false) }
   }
 
@@ -42,7 +45,12 @@ export function HistoriaModal({ pedido, open, onClose }: { pedido: Pedido; open:
     </div>
 
     <label className="mt-4 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-white/[0.02] px-4 py-3">
-      <span className="text-sm"><strong className="block">Mostrar el nombre del cliente</strong><span className="text-xs text-muted">{mostrarNombre ? `Se ve: "${(pedido.clientes?.nombre ?? '').trim().split(/\s+/)[0] || 'Nombre'} · ciudad"` : 'Anónimo: "Entrega en <ciudad>"'}</span></span>
+      <span className="text-sm"><strong className="block">Venta inmediata (estaba en stock)</strong><span className="text-xs text-muted">{inmediata ? 'Dice "¡Vendido!"' : 'Dice "¡Pedido entregado!" con el seguimiento de importación'}</span></span>
+      <input type="checkbox" className="size-5 shrink-0 accent-accent" checked={inmediata} onChange={(e) => setInmediata(e.target.checked)} />
+    </label>
+
+    <label className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-white/[0.02] px-4 py-3">
+      <span className="text-sm"><strong className="block">Mostrar el nombre del cliente</strong><span className="text-xs text-muted">{mostrarNombre ? `Se ve: "${(pedido.clientes?.nombre ?? '').trim().split(/\s+/)[0] || 'Nombre'} · ciudad"` : (inmediata ? 'Anónimo: "Vendido en <ciudad>"' : 'Anónimo: "Entrega en <ciudad>"')}</span></span>
       <input type="checkbox" className="size-5 shrink-0 accent-accent" checked={mostrarNombre} onChange={(e) => setMostrarNombre(e.target.checked)} />
     </label>
 

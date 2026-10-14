@@ -9,7 +9,9 @@ import { asegurarFuentesTienda } from '../utils/estiloTienda'
 //
 // Reusa el enfoque de recibos.service (canvas → JPEG → compartir/descargar).
 
-export type HistoriaOpts = { mostrarNombre: boolean }
+// inmediata: venta de Entrega inmediata (ya estaba en Nicaragua) → "¡Vendido!" en vez de
+// "¡Pedido entregado!", y el seguimiento sin las etapas de importación.
+export type HistoriaOpts = { mostrarNombre: boolean; inmediata?: boolean }
 
 // Estilo tienda: tinta negra sobre crema (antes verde neón).
 const TINTA = '#171310'
@@ -137,9 +139,9 @@ async function historiaJpeg(pedido: Pedido, opts: HistoriaOpts): Promise<Blob> {
 
   // Titular + subtítulo.
   ctx.fillStyle = BLACK; ctx.textAlign = 'center'; ctx.font = '600 74px "Cormorant Garamond", Georgia, serif'
-  ctx.letterSpacing = '1px'; ctx.fillText('¡Pedido entregado!', CX, 540); ctx.letterSpacing = '0px'
+  ctx.letterSpacing = '1px'; ctx.fillText(opts.inmediata ? '¡Vendido!' : '¡Pedido entregado!', CX, 540); ctx.letterSpacing = '0px'
   ctx.fillStyle = '#6b6b6b'; ctx.font = '400 27px Jost, Arial'
-  ctx.fillText('Tu pedido fue entregado con éxito.', CX, 598)
+  ctx.fillText(opts.inmediata ? 'Entrega inmediata · ya tiene dueño.' : 'Tu pedido fue entregado con éxito.', CX, 598)
 
   // Datos del pedido (anonimizados).
   const items = pedido.pedido_items ?? []
@@ -171,7 +173,7 @@ async function historiaJpeg(pedido: Pedido, opts: HistoriaOpts): Promise<Blob> {
   for (const linea of lineas) { ctx.fillText(linea, tX, ny); ny += 42 }
   const badgeY = 800 + (lineas.length - 1) * 42 + 30
   ctx.font = '800 21px Jost, Arial'; ctx.letterSpacing = '2px'
-  const bTxt = 'ENTREGADO', bTxtW = ctx.measureText(bTxt).width
+  const bTxt = opts.inmediata ? 'VENDIDO' : 'ENTREGADO', bTxtW = ctx.measureText(bTxt).width
   const bw = 60 + bTxtW + 26, bh = 50
   ctx.fillStyle = TINTA; ctx.beginPath(); ctx.roundRect(tX, badgeY, bw, bh, 6); ctx.fill()
   check(ctx, tX + 34, badgeY + bh / 2, 26, CREMA, 4)
@@ -180,13 +182,13 @@ async function historiaJpeg(pedido: Pedido, opts: HistoriaOpts): Promise<Blob> {
 
   // Referencia genérica (NUNCA el código real).
   ctx.fillStyle = FAINT; ctx.textAlign = 'center'; ctx.font = '700 19px Jost, Arial'
-  ctx.letterSpacing = '3px'; ctx.fillText('PEDIDO VERIFICADO · HAUSLINE', CX, 1020); ctx.letterSpacing = '0px'
+  ctx.letterSpacing = '3px'; ctx.fillText(opts.inmediata ? 'VENTA VERIFICADA · HAUSLINE' : 'PEDIDO VERIFICADO · HAUSLINE', CX, 1020); ctx.letterSpacing = '0px'
 
   // Seguimiento COMPLETO: barra negra + 4 puntos con check neón + etiquetas.
   ctx.fillStyle = FAINT; ctx.font = '700 19px Jost, Arial'; ctx.letterSpacing = '5px'
-  ctx.fillText('SEGUIMIENTO DEL PEDIDO', CX, 1115); ctx.letterSpacing = '0px'
-  const etapas = ['CONFIRMADO', 'EN PREPARACIÓN', 'EN CAMINO', 'ENTREGADO']
-  const tL = 150, tR = W - 150, tY = 1210, col = (tR - tL) / (etapas.length - 1)
+  ctx.fillText(opts.inmediata ? 'ENTREGA INMEDIATA' : 'SEGUIMIENTO DEL PEDIDO', CX, 1115); ctx.letterSpacing = '0px'
+  const etapas = opts.inmediata ? ['EN STOCK', 'APARTADO', 'VENDIDO'] : ['CONFIRMADO', 'EN PREPARACIÓN', 'EN CAMINO', 'ENTREGADO']
+  const tL = opts.inmediata ? 250 : 150, tR = W - tL, tY = 1210, col = (tR - tL) / (etapas.length - 1)
   ctx.strokeStyle = BLACK; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(tL, tY); ctx.lineTo(tR, tY); ctx.stroke()
   etapas.forEach((et, i) => {
     const x = tL + col * i
@@ -197,7 +199,7 @@ async function historiaJpeg(pedido: Pedido, opts: HistoriaOpts): Promise<Blob> {
   })
 
   // Entrega verificada / ubicación (con o sin nombre según la opción).
-  const quien = opts.mostrarNombre && primerNombre ? `${primerNombre} · ${ciudad}` : `Entrega verificada en ${ciudad}`
+  const quien = opts.mostrarNombre && primerNombre ? `${primerNombre} · ${ciudad}` : opts.inmediata ? `Vendido en ${ciudad}` : `Entrega verificada en ${ciudad}`
   ctx.fillStyle = BLACK; ctx.textAlign = 'center'; ctx.font = '800 24px Jost, Arial'; ctx.fillText(quien, CX, 1350)
   ctx.fillStyle = MUTED; ctx.font = '400 20px Jost, Arial'; ctx.fillText('Gracias por confiar en HAUSLINE.', CX, 1388)
 
@@ -244,7 +246,7 @@ export async function descargarHistoria(pedido: Pedido, opts: HistoriaOpts) {
 export async function compartirHistoria(pedido: Pedido, opts: HistoriaOpts) {
   const file = historiaFile(await historiaJpeg(pedido, opts), pedido.codigo)
   if (navigator.canShare?.({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: 'Pedido entregado · HAUSLINE' }); return 'shared' as const }
+    try { await navigator.share({ files: [file], title: opts.inmediata ? 'Vendido · HAUSLINE' : 'Pedido entregado · HAUSLINE' }); return 'shared' as const }
     catch (error) { if (error instanceof DOMException && error.name === 'AbortError') return 'cancelled' as const }
   }
   await descargarHistoria(pedido, opts)
