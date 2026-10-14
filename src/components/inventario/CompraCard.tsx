@@ -1,4 +1,4 @@
-import { Bookmark, Camera, ChevronDown, ExternalLink, Eye, Link2, PackageCheck, Pencil, Printer, Send, Tag, Trash2, Truck, Wallet, X, Zap } from 'lucide-react'
+import { Bookmark, Camera, ChevronDown, ExternalLink, Eye, EyeOff, Link2, PackageCheck, Pencil, Printer, Send, Tag, Trash2, Truck, Wallet, X, Zap } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { Inversion } from '../../types/domain'
@@ -10,6 +10,8 @@ import { ProductoImg } from '../ui/ProductoImg'
 // principales (Vender / Apartar) → barra de herramientas con íconos y nombre.
 
 const ESTADO_LABEL: Record<Inversion['estado'], string> = { en_transito: 'En camino', en_inventario: 'Disponible', reservado: 'Apartado', vendido: 'Vendido', descartado: 'Descartado' }
+// "En camino" sin tracking todavía = el proveedor lo está preparando (solo se ve aquí, en el panel).
+const etiquetaEstado = (item: Pick<Inversion, 'estado' | 'tracking'>) => item.estado === 'en_transito' && !(item.tracking ?? '').trim() ? 'En preparación' : ESTADO_LABEL[item.estado]
 const ESTADO_TONO: Record<Inversion['estado'], string> = {
   en_transito: 'border-amber-300/35 bg-amber-300/10 text-amber-200',
   en_inventario: 'border-accent/35 bg-accent/10 text-accent',
@@ -47,6 +49,8 @@ type Props = {
   onFicha?: () => void
   // Link de pago del checkout (compra inmediata, ya en Nicaragua).
   onLinkPago?: () => void
+  // Mostrar u ocultar la compra en la tienda (sin cambiar su estado).
+  onMostrarTienda?: (mostrar: boolean) => void
 }
 
 const usd = (n: number) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -89,10 +93,10 @@ export function CompraCard(p: Props) {
           {/* Se ve la etiqueta de color; el <select> real va invisible encima (con 16px para que
               el iPhone no haga zoom al tocarlo). */}
           <label className={`relative inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-full border py-0.5 pl-2.5 pr-2 text-[10.5px] font-bold uppercase tracking-wider ${ESTADO_TONO[item.estado]}`}>
-            {ESTADO_LABEL[item.estado]}<ChevronDown size={11} />
+            {etiquetaEstado(item)}<ChevronDown size={11} />
             <select aria-label="Cambiar estado" value={item.estado} onChange={(e) => p.onEstado(e.target.value as Inversion['estado'])}
               className="absolute inset-0 cursor-pointer opacity-0" style={{ fontSize: 16 }}>
-              {Object.entries(ESTADO_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              {Object.entries(ESTADO_LABEL).map(([v, l]) => <option key={v} value={v}>{v === 'en_transito' ? 'En preparación / En camino' : l}</option>)}
             </select>
           </label>
         </div>
@@ -113,9 +117,12 @@ export function CompraCard(p: Props) {
     {(p.enEI || p.fotos > 0 || item.estado === 'en_transito' || porPagar) && <div className="mx-4 mt-3 flex flex-wrap gap-1.5">
       {porPagar && <Chip tono="border-amber-300/35 bg-amber-300/10 text-amber-200"><Wallet size={11} /> Por pagar al proveedor</Chip>}
       {p.enEI && <Chip tono="border-accent/35 bg-accent/10 text-accent" onQuitar={p.quitandoEI ? undefined : p.onQuitarEI} tituloQuitar="Quitar de Entrega inmediata"><Zap size={11} /> {p.quitandoEI ? 'Quitando…' : 'En Entrega inmediata'}</Chip>}
-      {item.estado === 'en_transito' && (p.enCaminoPublicado
-        ? <Chip tono="border-amber-300/35 bg-amber-300/10 text-amber-200"><Truck size={11} /> En la tienda · Apártelo ya{item.llega_aprox ? ` · llega aprox. ${item.llega_aprox.split('-').reverse().slice(0, 2).join('/')}` : ''}</Chip>
-        : <Chip tono="border-line bg-white/[.03] text-muted"><Truck size={11} /> {codigo ? 'Publicándose en la tienda…' : 'Sin código: no sale en la tienda'}</Chip>)}
+      {item.estado === 'en_transito' && (item.mostrar_tienda === false
+        ? <Chip tono="border-line bg-white/[.03] text-muted"><EyeOff size={11} /> No sale en la tienda</Chip>
+        : p.enCaminoPublicado
+        ? <Chip tono="border-amber-300/35 bg-amber-300/10 text-amber-200" onQuitar={p.onMostrarTienda ? () => p.onMostrarTienda?.(false) : undefined} tituloQuitar="Quitar de la tienda"><Truck size={11} /> En la tienda · Apártelo ya{item.llega_aprox ? ` · llega aprox. ${item.llega_aprox.split('-').reverse().slice(0, 2).join('/')}` : ''}</Chip>
+        : <Chip tono="border-line bg-white/[.03] text-muted" onQuitar={codigo && p.onMostrarTienda ? () => p.onMostrarTienda?.(false) : undefined} tituloQuitar="No mostrar en la tienda"><Truck size={11} /> {codigo ? 'Publicándose en la tienda…' : 'Sin código: no sale en la tienda'}</Chip>)}
+      {item.estado === 'en_transito' && item.mostrar_tienda === false && codigo && p.onMostrarTienda && <button type="button" onClick={() => p.onMostrarTienda?.(true)} className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[10.5px] font-semibold text-accent hover:bg-accent/20"><Eye size={11} /> Mostrar en la tienda</button>}
       {p.fotos > 0 && <Chip tono="border-sky-400/35 bg-sky-400/10 text-sky-300"><Camera size={11} /> {p.fotos} {p.fotos === 1 ? 'foto' : 'fotos'} de calidad</Chip>}
     </div>}
 
@@ -180,13 +187,14 @@ export function CompraFila({ item, costo, enEI, enCaminoPublicado, fotos, onDeta
       <p className="truncate text-sm font-semibold">{item.producto}</p>
       <p className="truncate text-[11px] text-muted">{[item.marca, item.talla_color && `Talla ${item.talla_color}`, `${unidades} ud`].filter(Boolean).join(' · ')}</p>
       {/* En teléfono: estado y venta debajo del nombre */}
-      <div className="mt-1 flex items-center gap-1.5 md:hidden"><span className={`rounded-full border px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wider ${ESTADO_TONO[item.estado]}`}>{ESTADO_LABEL[item.estado]}</span><span className="font-mono text-[11px] text-accent">{usd(venta)}</span></div>
+      <div className="mt-1 flex items-center gap-1.5 md:hidden"><span className={`rounded-full border px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wider ${ESTADO_TONO[item.estado]}`}>{etiquetaEstado(item)}</span><span className="font-mono text-[11px] text-accent">{usd(venta)}</span></div>
     </div>
-    <span className={`hidden justify-self-start rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider md:inline-block ${ESTADO_TONO[item.estado]}`}>{ESTADO_LABEL[item.estado]}</span>
+    <span className={`hidden justify-self-start rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider md:inline-block ${ESTADO_TONO[item.estado]}`}>{etiquetaEstado(item)}</span>
     <div className="hidden flex-wrap gap-1 md:flex">
       {porPagar && <span title="Por pagar al proveedor" className="grid size-7 place-items-center rounded-lg border border-amber-300/35 bg-amber-300/10 text-amber-200"><Wallet size={13} /></span>}
       {enEI && <span title="En Entrega inmediata" className="grid size-7 place-items-center rounded-lg border border-accent/35 bg-accent/10 text-accent"><Zap size={13} /></span>}
-      {item.estado === 'en_transito' && enCaminoPublicado && <span title="En la tienda como En camino" className="grid size-7 place-items-center rounded-lg border border-amber-300/35 bg-amber-300/10 text-amber-200"><Truck size={13} /></span>}
+      {item.estado === 'en_transito' && item.mostrar_tienda === false && <span title="No sale en la tienda" className="grid size-7 place-items-center rounded-lg border border-line bg-white/[.03] text-muted"><EyeOff size={13} /></span>}
+      {item.estado === 'en_transito' && item.mostrar_tienda !== false && enCaminoPublicado && <span title="En la tienda como En camino" className="grid size-7 place-items-center rounded-lg border border-amber-300/35 bg-amber-300/10 text-amber-200"><Truck size={13} /></span>}
       {fotos > 0 && <span title={`${fotos} fotos de calidad`} className="inline-flex h-7 items-center gap-1 rounded-lg border border-sky-400/35 bg-sky-400/10 px-1.5 text-[10.5px] font-semibold text-sky-300"><Camera size={13} />{fotos}</span>}
     </div>
     <div className="hidden grid-cols-3 gap-2 text-right md:grid">
