@@ -13,6 +13,7 @@ import { whatsappUrl } from '../../utils/whatsapp'
 import { tallaProveedor, urlProveedor } from '../../utils/listaProveedor'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { urlSeguimientoCliente } from '../../utils/seguimientoUrl'
+import { calcularMargen, guardarMargenMinimo, obtenerDatosMargen, type DatosMargen } from '../../services/margen.service'
 
 // Cuánto falta para que la solicitud se venza (color según urgencia). ≤3 h = crítico.
 function tiempoRestante(venceAt: string): { texto: string; tono: 'ok' | 'warn' | 'crit'; vencida: boolean; horas: number } {
@@ -195,6 +196,38 @@ export function SolicitudesPage() {
   </div>
 }
 
+// Cuánto deja este encargo (venta − costo del catálogo − envío internacional aprox.). Avisa si
+// queda debajo del mínimo o si al producto le falta el costo. Se recalcula con el descuento.
+function AlertaMargen({ grupo, venta }: { grupo: Solicitud[]; venta: number }) {
+  const [d, setD] = useState<DatosMargen | null>(null)
+  useEffect(() => { let vivo = true; void obtenerDatosMargen().then((x) => { if (vivo) setD(x) }).catch(() => undefined); return () => { vivo = false } }, [])
+  if (!d) return null
+  const lineas = grupo.map((s) => { const codigo = (s.producto_codigo ?? '').trim().toUpperCase(); return { codigo, producto: s.producto, cantidad: Number(s.cantidad) || 1, costo: codigo && d.costos.has(codigo) ? d.costos.get(codigo) ?? null : null } })
+  const m = calcularMargen(venta, lineas, d.envio)
+  const sinCosto = m.sinCosto.length > 0
+  const bajo = !sinCosto && m.porcentaje < d.minimo
+  const cambiarMinimo = async () => {
+    const v = window.prompt('Ganancia mínima por pedido (%)', String(d.minimo))
+    const n = Number(v)
+    if (!v || !(n > 0)) return
+    try { await guardarMargenMinimo(n); setD({ ...d, minimo: Math.round(n) }); toast.success(`Mínimo de ganancia: ${Math.round(n)} %.`) } catch { toast.error('No se pudo guardar el mínimo.') }
+  }
+  return <div className={`mt-4 rounded-xl border p-3 text-xs ${bajo || sinCosto ? 'border-amber-400/40 bg-amber-400/[.07]' : 'border-line bg-white/[0.02]'}`}>
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="font-semibold text-white">Ganancia de este pedido (aprox.)</span>
+      <strong className={`font-mono text-sm ${sinCosto ? 'text-amber-200' : bajo ? 'text-amber-200' : 'text-[#62eaa0]'}`}>{sinCosto ? 'Sin costo' : `${usd(m.ganancia)} · ${m.porcentaje} %`}</strong>
+    </div>
+    <div className="mt-2 space-y-0.5 text-muted">
+      <div className="flex justify-between gap-3"><span>Venta</span><span className="font-mono">{usd(venta)}</span></div>
+      <div className="flex justify-between gap-3"><span>Costo del producto (catálogo)</span><span className="font-mono">− {usd(m.costo)}</span></div>
+      <div className="flex justify-between gap-3"><span>Envío internacional aprox.</span><span className="font-mono">− {usd(m.envio)}</span></div>
+    </div>
+    {sinCosto && <p className="mt-2 flex items-start gap-1.5 text-amber-200"><AlertCircle size={13} className="mt-0.5 shrink-0" /><span>Falta el costo de {m.sinCosto.map((l) => l.codigo || l.producto).join(', ')}. Ponelo en Productos para saber cuánto deja antes de confirmar.</span></p>}
+    {bajo && <p className="mt-2 flex items-start gap-1.5 text-amber-200"><AlertCircle size={13} className="mt-0.5 shrink-0" /><span>Deja solo <b>{m.porcentaje} %</b>, menos de tu mínimo de {d.minimo} %. {m.ganancia <= 0 ? 'Con esto perdés plata.' : 'Revisá el descuento o el precio antes de confirmar.'}</span></p>}
+    <button type="button" onClick={() => void cambiarMinimo()} className="mt-2 text-[11px] text-muted underline-offset-2 hover:text-white hover:underline">Mínimo de ganancia: {d.minimo} % · cambiar</button>
+  </div>
+}
+
 // Modal para confirmar el pago indicando el MONTO REAL que pagó el cliente. Acepta un grupo:
 // con un solo encargo se comporta como antes; con varios muestra la lista de productos y usa
 // el total sumado (y el 50% del total del grupo).
@@ -234,6 +267,7 @@ function ConfirmarModal({ grupo, busy, onClose, onConfirm }: { grupo: Solicitud[
       <input type="number" min="0" step="0.01" value={descuentoStr} onChange={(e) => setDescuentoStr(e.target.value)} className="simple-input w-28 text-right" placeholder="0.00" />
     </label>
     {descuento > 0 && <p className="mt-1.5 text-right text-[11px] font-semibold text-[#62eaa0]">Se aplica −{usd(descuento)} · nuevo total {usd(total)}</p>}
+    {isSupabaseConfigured && <AlertaMargen grupo={grupo} venta={total} />}
     <p className="mt-5 text-xs font-semibold text-muted">¿Cuánto pagó el cliente ahora?</p>
     <div className="mt-2 grid grid-cols-2 gap-2">
       <button type="button" onClick={() => setMonto(total.toFixed(2))} className={`rounded-xl border p-3 text-left transition ${Math.abs(abono - total) < 0.01 ? 'border-accent bg-accent/[0.07]' : 'border-line hover:border-line'}`}><strong className="block text-sm">Pagó todo</strong><span className="text-xs text-muted">{usd(total)}</span></button>

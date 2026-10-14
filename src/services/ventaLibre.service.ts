@@ -157,3 +157,34 @@ export async function datosTienda(codigo: string, inmediata = false): Promise<{ 
   const lista = inmediata ? datos.tallasEntregaInmediata : datos.tallasEnCamino
   return { precio: precio > 0 ? precio : null, tallas: Array.isArray(lista) ? lista.map(String).filter(Boolean) : [] }
 }
+
+// PREPARACIÓN QUE PROMETE LA TIENDA (admin de la tienda → "Preparación aprox." = datos.prepMin /
+// prepMax, en días). Sin dato, la tienda usa la general (4 a 5 días). Lo usa "Tiempos reales" de
+// Reportes para comparar con lo que de verdad tarda y para corregirlo de un toque.
+export type PreparacionTienda = { id: string; codigo: string; marca: string; prepMin: number; prepMax: number }
+export async function leerPreparacionTienda(): Promise<PreparacionTienda[]> {
+  const { data, error } = await catalogo().from('catalogo_web').select('id, codigo, datos').eq('activo', true)
+  lanzar(error, 'No se pudo leer la tienda')
+  return ((data ?? []) as { id: string; codigo: string; datos: Record<string, unknown> | null }[]).map((r) => ({
+    id: r.id, codigo: String(r.codigo ?? '').trim().toUpperCase(), marca: String(r.datos?.marca ?? '').trim().toUpperCase(),
+    prepMin: Math.round(Number(r.datos?.prepMin) || 0), prepMax: Math.round(Number(r.datos?.prepMax) || 0),
+  }))
+}
+// Pone la preparación (días) a esos productos de la tienda. Solo los que están en el admin de la
+// tienda (catalogo_web); devuelve cuántos se cambiaron y cuáles no se encontraron.
+export async function guardarPreparacionTienda(codigos: string[], min: number, max: number) {
+  const lista = [...new Set(codigos.map((c) => c.trim().toUpperCase()).filter(Boolean))]
+  if (!lista.length) return { cambiados: 0, faltan: [] as string[] }
+  const a = Math.max(1, Math.round(min)), b = Math.max(a, Math.round(max))
+  const { data, error } = await catalogo().from('catalogo_web').select('id, codigo, datos').in('codigo', lista)
+  lanzar(error, 'No se pudo leer la tienda')
+  const filas = (data ?? []) as { id: string; codigo: string; datos: Record<string, unknown> | null }[]
+  let cambiados = 0
+  for (const f of filas) {
+    const { error: e } = await catalogo().from('catalogo_web').update({ datos: { ...(f.datos ?? {}), prepMin: a, prepMax: b } }).eq('id', f.id)
+    lanzar(e, `No se pudo guardar ${f.codigo}`)
+    cambiados++
+  }
+  const encontrados = new Set(filas.map((f) => String(f.codigo).trim().toUpperCase()))
+  return { cambiados, faltan: lista.filter((c) => !encontrados.has(c)) }
+}

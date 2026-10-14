@@ -130,7 +130,7 @@ export type Deuda = { id: string; acreedor: string; concepto: string; monto_tota
 export type PagoDeuda = { id: string; deuda_id: string; fecha: string; monto: number; metodo: string | null; notas: string | null; desde_ganancia: number; desde_negocio: number; created_at: string }
 export type ResumenComercial = { ventas: number; cobrado: number; por_cobrar: number; gastos: number; costos_productos: number; saldo_cuenta: number; pedidos: number }
 // ganancia_desde: desde qué día (YYYY-MM-DD) cuentan los pedidos entregados para "Mi ganancia".
-export type ConfiguracionFinanzas = { dia_inicio_mes: number; dia_retiro: number; porcentaje_reserva_negocio: number; ganancia_desde?: string }
+export type ConfiguracionFinanzas = { dia_inicio_mes: number; dia_retiro: number; porcentaje_reserva_negocio: number; ganancia_desde?: string; margen_minimo?: number }
 export type GananciaRealizada = { desde: string; hasta: string; pedidos_entregados: number; cobrado: number; costos: number; ganancia_realizada: number; ganancia_asignada: number; ganancia_disponible: number }
 export type MetaCompra = { id: string; nombre: string; monto_objetivo: number; monto_reservado: number; fecha_objetivo: string | null; estado: 'activa' | 'completada' | 'cancelada'; notas: string | null; created_at: string }
 export type EstadoContenido = 'pendiente_grabacion' | 'grabado'

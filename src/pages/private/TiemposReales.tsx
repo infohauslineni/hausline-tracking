@@ -1,0 +1,119 @@
+import { ChevronDown, Clock3, Plane, Search, Store, Timer } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { toast } from 'sonner'
+import { isSupabaseConfigured } from '../../lib/supabase'
+import { obtenerTiemposReales, type Estadistica, type GrupoTiempos } from '../../services/tiemposReales.service'
+import { guardarPreparacionTienda, leerPreparacionTienda, type PreparacionTienda } from '../../services/ventaLibre.service'
+
+// REPORTES → TIEMPOS REALES. Cuánto tarda de verdad cada marca y cada producto en prepararse
+// (En preparación → Control de calidad) y en llegar (Control de calidad → Nicaragua), comparado
+// con lo que promete la tienda. "Usar en la tienda" corrige la preparación de esos productos.
+
+const PREP_GENERAL = { min: 4, max: 5 } // lo que la tienda promete sin dato propio (config.js)
+const dias = (n: number) => `${n % 1 === 0 ? n : n.toFixed(1)} ${n === 1 ? 'día' : 'días'}`
+const rango = (a: number, b: number) => (a === b ? dias(a) : `${a} a ${b} días`)
+
+type Vista = 'marcas' | 'productos'
+
+export function TiemposReales() {
+  const [datos, setDatos] = useState<Awaited<ReturnType<typeof obtenerTiemposReales>> | null>(null)
+  const [tienda, setTienda] = useState<PreparacionTienda[] | null>(null)
+  const [vista, setVista] = useState<Vista>('marcas')
+  const [buscar, setBuscar] = useState('')
+  const [abierto, setAbierto] = useState<string | null>(null)
+  const [guardando, setGuardando] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return
+    void obtenerTiemposReales().then(setDatos).catch(() => toast.error('No se pudieron leer los tiempos.'))
+    void leerPreparacionTienda().then(setTienda).catch(() => setTienda([]))
+  }, [])
+
+  const tiendaPorCodigo = useMemo(() => new Map((tienda ?? []).map((t) => [t.codigo, t])), [tienda])
+  // Lo que promete la tienda para un grupo: si todos sus productos dicen lo mismo, eso; si no, "varía".
+  const promesa = (g: GrupoTiempos, deMarca: boolean) => {
+    const filas = deMarca ? (tienda ?? []).filter((t) => t.marca === g.marca) : g.codigos.map((c) => tiendaPorCodigo.get(c)).filter((t): t is PreparacionTienda => !!t)
+    const textos = [...new Set(filas.map((t) => (t.prepMin > 0 ? rango(t.prepMin, Math.max(t.prepMin, t.prepMax)) : rango(PREP_GENERAL.min, PREP_GENERAL.max))))]
+    if (!filas.length) return { texto: `${rango(PREP_GENERAL.min, PREP_GENERAL.max)} (general)`, codigos: [] as string[], min: PREP_GENERAL.min }
+    return { texto: textos.length === 1 ? textos[0] : 'Varía por producto', codigos: filas.map((t) => t.codigo), min: Math.min(...filas.map((t) => t.prepMin || PREP_GENERAL.min)) }
+  }
+
+  const usarEnTienda = async (g: GrupoTiempos, deMarca: boolean) => {
+    const p = g.preparacion
+    if (!p) return
+    const { codigos } = promesa(g, deMarca)
+    const lista = deMarca ? codigos : g.codigos
+    if (!lista.length) return toast.error('Ninguno de estos productos está en el admin de la tienda.')
+    if (!window.confirm(`¿Poner "Preparación aprox. ${rango(p.desde, p.hasta)}" a ${lista.length} ${lista.length === 1 ? 'producto' : 'productos'} de ${g.nombre} en la tienda?`)) return
+    setGuardando(g.clave)
+    try {
+      const r = await guardarPreparacionTienda(lista, p.desde, p.hasta)
+      toast.success(`Listo: ${r.cambiados} ${r.cambiados === 1 ? 'producto ahora promete' : 'productos ahora prometen'} ${rango(p.desde, p.hasta)} de preparación.${r.faltan.length ? ` ${r.faltan.length} no están en el admin de la tienda.` : ''}`)
+      setTienda(await leerPreparacionTienda())
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo guardar en la tienda.') } finally { setGuardando(null) }
+  }
+
+  if (!isSupabaseConfigured) return <p className="text-sm text-muted">Disponible con la base conectada.</p>
+  if (!datos) return <div className="h-40 animate-pulse rounded-2xl border border-line bg-panel" />
+  const lista = (vista === 'marcas' ? datos.marcas : datos.productos)
+    .filter((g) => !buscar.trim() || `${g.nombre} ${g.marca} ${g.codigos.join(' ')}`.toLowerCase().includes(buscar.trim().toLowerCase()))
+
+  return <div>
+    <p className="max-w-3xl text-sm text-muted">Cuánto tarda <b className="text-white">de verdad</b> cada producto, medido con tus pedidos: la <b className="text-white">preparación</b> va desde que el pedido pasa a <i>En preparación</i> hasta que lo marcás <i>Control de calidad</i>; el <b className="text-white">envío</b>, desde Control de calidad hasta que llega a Nicaragua.</p>
+
+    <section className="mt-4 grid gap-3 sm:grid-cols-2">
+      <Resumen icon={Timer} titulo="Preparación real (todos)" e={datos.general.preparacion} promesa={`La tienda promete ${rango(PREP_GENERAL.min, PREP_GENERAL.max)} en general`} />
+      <Resumen icon={Plane} titulo="Envío real (todos)" e={datos.general.envio} promesa="La tienda promete 20 a 25 días en total (preparación + envío, estándar)" />
+    </section>
+
+    <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="inline-flex rounded-xl border border-line bg-white/[.02] p-1">
+        {(['marcas', 'productos'] as Vista[]).map((v) => <button key={v} type="button" onClick={() => { setVista(v); setAbierto(null) }} className={`rounded-lg px-4 py-1.5 text-xs font-semibold transition ${vista === v ? 'bg-accent text-black' : 'text-muted hover:text-white'}`}>{v === 'marcas' ? 'Por marca' : 'Por producto'}</button>)}
+      </div>
+      <div className="relative sm:w-64"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={16} /><input className="search-input" value={buscar} onChange={(e) => setBuscar(e.target.value)} placeholder={vista === 'marcas' ? 'Buscar marca' : 'Código o producto'} /></div>
+    </div>
+
+    <div className="mt-3 space-y-2">
+      {lista.map((g) => {
+        const p = g.preparacion, prom = promesa(g, vista === 'marcas')
+        const diferencia = p ? p.mediana - prom.min : 0
+        const tono = !p ? 'text-muted' : diferencia >= 2 ? 'text-amber-200' : diferencia <= -2 ? 'text-emerald-300' : 'text-white'
+        const abiertoAqui = abierto === g.clave
+        return <article key={g.clave} className="rounded-2xl border border-line bg-panel">
+          <button type="button" onClick={() => setAbierto(abiertoAqui ? null : g.clave)} className="grid w-full gap-3 p-4 text-left sm:grid-cols-[minmax(0,1.4fr)_1fr_1fr_1fr_auto] sm:items-center">
+            <div className="min-w-0"><strong className="block truncate text-sm">{g.nombre}</strong><span className="text-[11px] text-muted">{vista === 'productos' ? `${g.codigos[0]} · ${g.marca} · ` : ''}{g.mediciones.length} {g.mediciones.length === 1 ? 'pedido medido' : 'pedidos medidos'}{p && p.n < 3 ? ' · pocos datos' : ''}</span></div>
+            <Dato etiqueta="Preparación real" valor={p ? `${dias(p.mediana)}` : '—'} sub={p ? `normal ${rango(p.desde, p.hasta)}` : 'sin Control de calidad aún'} tono={tono} />
+            <Dato etiqueta="La tienda promete" valor={prom.texto} sub={p && Math.abs(diferencia) >= 2 ? (diferencia > 0 ? `tarda ~${dias(Math.round(diferencia))} más` : `tarda ~${dias(Math.round(-diferencia))} menos`) : p ? 'parecido' : ''} tono={tono} />
+            <Dato etiqueta="Envío real" valor={g.envio ? dias(g.envio.mediana) : '—'} sub={g.envio ? `normal ${rango(g.envio.desde, g.envio.hasta)}` : 'aún no llega'} />
+            <ChevronDown size={16} className={`justify-self-end text-muted transition ${abiertoAqui ? 'rotate-180' : ''}`} />
+          </button>
+          {abiertoAqui && <div className="border-t border-line p-4">
+            {p && <div className="mb-3 flex flex-col gap-2 rounded-xl border border-accent/25 bg-accent/[.05] p-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-white/85"><Store size={13} className="mr-1 inline text-accent" />Prometer en la tienda <b>{rango(p.desde, p.hasta)}</b> de preparación{vista === 'marcas' ? ` a todos los productos de ${g.nombre}` : ''}. {p.n < 3 && <span className="text-amber-200">Con pocos pedidos todavía puede cambiar.</span>}</p>
+              <button type="button" className="primary-button shrink-0 px-4 text-xs" disabled={guardando === g.clave} onClick={() => void usarEnTienda(g, vista === 'marcas')}>{guardando === g.clave ? 'Guardando…' : 'Usar en la tienda'}</button>
+            </div>}
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">Pedidos medidos</p>
+            <div className="grid gap-1 text-xs sm:grid-cols-2">
+              {g.mediciones.slice(0, 30).map((m) => <Link key={m.pedidoId} to={`/pedidos/${m.pedidoId}`} className="flex justify-between gap-3 rounded-lg px-2 py-1 hover:bg-white/[.04]"><span className="font-mono text-white/85">{m.codigoPedido}</span><span className="text-muted"><Clock3 size={11} className="mr-1 inline" />{m.preparacion != null ? `prep. ${dias(m.preparacion)}` : 'prep. —'} · {m.envio != null ? `envío ${dias(m.envio)}` : 'envío —'}</span></Link>)}
+            </div>
+          </div>}
+        </article>
+      })}
+      {!lista.length && <p className="rounded-2xl border border-dashed border-line p-8 text-center text-sm text-muted">Todavía no hay pedidos que hayan pasado de En preparación a Control de calidad{buscar ? ' con esa búsqueda' : ''}.</p>}
+    </div>
+  </div>
+}
+
+function Resumen({ icon: Icon, titulo, e, promesa }: { icon: typeof Timer; titulo: string; e: Estadistica | null; promesa: string }) {
+  return <div className="rounded-2xl border border-line bg-panel p-4">
+    <p className="flex items-center gap-2 text-xs font-semibold text-muted"><Icon size={15} className="text-accent" /> {titulo}</p>
+    <strong className="mt-2 block text-2xl tabular-nums">{e ? dias(e.mediana) : '—'}</strong>
+    <p className="mt-1 text-[11px] text-muted">{e ? `Lo normal: ${rango(e.desde, e.hasta)} · ${e.n} pedidos · más rápido ${dias(e.min)}, más lento ${dias(e.max)}` : 'Sin datos todavía'}</p>
+    <p className="mt-1 text-[11px] text-muted">{promesa}</p>
+  </div>
+}
+
+function Dato({ etiqueta, valor, sub, tono = 'text-white' }: { etiqueta: string; valor: string; sub?: string; tono?: string }) {
+  return <div><span className="block text-[10px] uppercase tracking-wider text-muted">{etiqueta}</span><b className={`block text-sm ${tono}`}>{valor}</b>{sub && <span className="block text-[11px] text-muted">{sub}</span>}</div>
+}
