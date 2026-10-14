@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { Inversion } from '../../types/domain'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
+import { ETAPAS_COMPRA, etapaDeCompra, nombreEtapa, type EtapaCompra } from '../../utils/compraEtapa'
 import { ProductoImg } from '../ui/ProductoImg'
 
 // Tarjeta de una compra libre (Compras libres). Ordenada en bloques: cabecera (foto, código,
@@ -10,8 +11,9 @@ import { ProductoImg } from '../ui/ProductoImg'
 // principales (Vender / Apartar) → barra de herramientas con íconos y nombre.
 
 const ESTADO_LABEL: Record<Inversion['estado'], string> = { en_transito: 'En camino', en_inventario: 'Disponible', reservado: 'Apartado', vendido: 'Vendido', descartado: 'Descartado' }
-// "En camino" sin tracking todavía = el proveedor lo está preparando (solo se ve aquí, en el panel).
-const etiquetaEstado = (item: Pick<Inversion, 'estado' | 'tracking'>) => item.estado === 'en_transito' && !(item.tracking ?? '').trim() ? 'En preparación' : ESTADO_LABEL[item.estado]
+// Lo que viene en camino se ve por etapas, como un pedido (En preparación, Control de calidad…).
+export type EstadoCompra = Inversion['estado'] | EtapaCompra
+const etiquetaEstado = (item: Pick<Inversion, 'estado' | 'tracking' | 'etapa'>) => { const e = etapaDeCompra(item); return e ? nombreEtapa(e) : ESTADO_LABEL[item.estado] }
 const ESTADO_TONO: Record<Inversion['estado'], string> = {
   en_transito: 'border-amber-300/35 bg-amber-300/10 text-amber-200',
   en_inventario: 'border-accent/35 bg-accent/10 text-accent',
@@ -33,7 +35,7 @@ type Props = {
   fotos: number
   quitandoEI: boolean
   imprimiendo: boolean
-  onEstado: (estado: Inversion['estado']) => void
+  onEstado: (estado: EstadoCompra) => void
   onVer: () => void
   onEditar: () => void
   onEliminar: () => void
@@ -94,9 +96,10 @@ export function CompraCard(p: Props) {
               el iPhone no haga zoom al tocarlo). */}
           <label className={`relative inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-full border py-0.5 pl-2.5 pr-2 text-[10.5px] font-bold uppercase tracking-wider ${ESTADO_TONO[item.estado]}`}>
             {etiquetaEstado(item)}<ChevronDown size={11} />
-            <select aria-label="Cambiar estado" value={item.estado} onChange={(e) => p.onEstado(e.target.value as Inversion['estado'])}
+            <select aria-label="Cambiar estado" value={etapaDeCompra(item) ?? item.estado} onChange={(e) => p.onEstado(e.target.value as EstadoCompra)}
               className="absolute inset-0 cursor-pointer opacity-0" style={{ fontSize: 16 }}>
-              {Object.entries(ESTADO_LABEL).map(([v, l]) => <option key={v} value={v}>{v === 'en_transito' ? 'En preparación / En camino' : l}</option>)}
+              {ETAPAS_COMPRA.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              {Object.entries(ESTADO_LABEL).filter(([v]) => v !== 'en_transito').map(([v, l]) => <option key={v} value={v}>{v === 'en_inventario' ? 'Disponible (ya en Nicaragua)' : l}</option>)}
             </select>
           </label>
         </div>
@@ -117,12 +120,18 @@ export function CompraCard(p: Props) {
     {(p.enEI || p.fotos > 0 || item.estado === 'en_transito' || porPagar) && <div className="mx-4 mt-3 flex flex-wrap gap-1.5">
       {porPagar && <Chip tono="border-amber-300/35 bg-amber-300/10 text-amber-200"><Wallet size={11} /> Por pagar al proveedor</Chip>}
       {p.enEI && <Chip tono="border-accent/35 bg-accent/10 text-accent" onQuitar={p.quitandoEI ? undefined : p.onQuitarEI} tituloQuitar="Quitar de Entrega inmediata"><Zap size={11} /> {p.quitandoEI ? 'Quitando…' : 'En Entrega inmediata'}</Chip>}
-      {item.estado === 'en_transito' && (item.mostrar_tienda === false
-        ? <Chip tono="border-line bg-white/[.03] text-muted"><EyeOff size={11} /> No sale en la tienda</Chip>
-        : p.enCaminoPublicado
-        ? <Chip tono="border-amber-300/35 bg-amber-300/10 text-amber-200" onQuitar={p.onMostrarTienda ? () => p.onMostrarTienda?.(false) : undefined} tituloQuitar="Quitar de la tienda"><Truck size={11} /> En la tienda · Llega pronto{item.llega_aprox ? ` · llega aprox. ${item.llega_aprox.split('-').reverse().slice(0, 2).join('/')}` : ''}</Chip>
-        : <Chip tono="border-line bg-white/[.03] text-muted" onQuitar={codigo && p.onMostrarTienda ? () => p.onMostrarTienda?.(false) : undefined} tituloQuitar="No mostrar en la tienda"><Truck size={11} /> {codigo ? 'Publicándose en la tienda…' : 'Sin código: no sale en la tienda'}</Chip>)}
-      {item.estado === 'en_transito' && item.mostrar_tienda === false && codigo && p.onMostrarTienda && <button type="button" onClick={() => p.onMostrarTienda?.(true)} className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[10.5px] font-semibold text-accent hover:bg-accent/20"><Eye size={11} /> Mostrar en la tienda</button>}
+      {item.estado === 'en_transito' && p.onMostrarTienda && (() => {
+        const visible = item.mostrar_tienda !== false
+        return <button type="button" role="switch" aria-checked={visible} disabled={!codigo} onClick={() => p.onMostrarTienda?.(!visible)}
+          className={`flex basis-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition disabled:opacity-60 ${visible ? 'border-amber-300/35 bg-amber-300/[.06] hover:bg-amber-300/10' : 'border-line bg-white/[.02] hover:bg-white/[.04]'}`}>
+          <span className={`relative h-5 w-9 shrink-0 rounded-full transition ${visible ? 'bg-amber-300' : 'bg-white/15'}`}><span className={`absolute top-0.5 size-4 rounded-full bg-white shadow transition-all ${visible ? 'left-[18px]' : 'left-0.5'}`} /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[12px] font-semibold text-white">{visible ? 'Se muestra en la tienda' : 'No se muestra en la tienda'}</span>
+            <span className="block truncate text-[10.5px] text-muted">{!codigo ? 'Sin código: no puede salir en la tienda' : !visible ? 'Solo la ves vos en el panel. Tocá para publicarla.' : p.enCaminoPublicado ? `Sale como “Llega pronto · Apártelo ya”${item.llega_aprox ? ` · llega aprox. ${item.llega_aprox.split('-').reverse().slice(0, 2).join('/')}` : ''}` : 'Publicándose en la tienda…'}</span>
+          </span>
+          {visible ? <Eye size={15} className="shrink-0 text-amber-200" /> : <EyeOff size={15} className="shrink-0 text-muted" />}
+        </button>
+      })()}
       {p.fotos > 0 && <Chip tono="border-sky-400/35 bg-sky-400/10 text-sky-300"><Camera size={11} /> {p.fotos} {p.fotos === 1 ? 'foto' : 'fotos'} de calidad</Chip>}
     </div>}
 

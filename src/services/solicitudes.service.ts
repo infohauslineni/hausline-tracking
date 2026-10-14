@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase'
 import { invalidateComercial } from '../utils/queryCache'
 import type { EstadoPedido } from '../types/domain'
+import { estadoPedidoDesdeEtapa, etapaDeCompra, etapaMasAtrasada, type EtapaCompra } from '../utils/compraEtapa'
 
 // Encargos hechos por clientes desde el catálogo público. Viven aparte de los pedidos:
 // se confirman (→ crean el pedido HS real) o se descartan; si no, se vencen solas.
@@ -168,7 +169,7 @@ export const linkPagoEncargo = (codigo: string) => `https://hauslineshopni.es/ch
 // código y talla) se convierte solo: la compra queda vendida y ligada al pedido, el pedido
 // arranca en "En tránsito internacional" con el costo real de la compra y le pasan las fotos
 // de control de calidad. Así no hay que volver a comprarlo ni pagarle al proveedor.
-type CompraEnCamino = { id: string; codigo: string | null; talla_color: string | null; cantidad: number; costo_unitario: number; gastos_adicionales: number; tracking?: string | null }
+type CompraEnCamino = { id: string; codigo: string | null; talla_color: string | null; cantidad: number; costo_unitario: number; gastos_adicionales: number; tracking?: string | null; etapa?: string | null; mostrar_tienda?: boolean }
 
 // "42", "M BLACK" → "M", "S · Negro" → "S"
 export function tallaDeCompra(t: string | null | undefined) {
@@ -178,9 +179,11 @@ export function tallaDeCompra(t: string | null | undefined) {
 
 export async function comprasEnCamino(): Promise<CompraEnCamino[]> {
   if (!supabase) return []
-  const { data, error } = await supabase.from('inversiones').select('id, codigo, talla_color, cantidad, costo_unitario, gastos_adicionales, tracking').eq('estado', 'en_transito')
+  // select('*') para no fallar si alguna columna nueva (etapa, mostrar_tienda) todavía no existe.
+  const { data, error } = await supabase.from('inversiones').select('*').eq('estado', 'en_transito')
   if (error) throw error
-  return (data ?? []) as CompraEnCamino[]
+  // Las que se ocultaron de la tienda quedan apartadas para otra cosa: no se emparejan solas.
+  return ((data ?? []) as CompraEnCamino[]).filter((c) => c.mostrar_tienda !== false)
 }
 
 // Busca para cada encargo su compra en camino (sin repetir compras).
@@ -204,9 +207,10 @@ export async function convertirComprasEnCamino(codigoPedido: string, grupo: Soli
   //     48 h pasa solo a En tránsito)
   //   · sin fotos y con tracking (ya despachado) → En tránsito internacional
   //   · sin fotos ni tracking → En preparación (al subirle las fotos se pasa a Control de calidad)
+  //   · si la compra ya va más adelante (En tránsito, En Miami…) → el pedido arranca en esa etapa.
   const pares = emparejarEnCamino(grupo, await comprasEnCamino())
-  const conTracking = [...pares.values()].some((c) => (c.tracking ?? '').trim())
-  return pasarComprasAlPedido(codigoPedido, pares, grupo, (_saldo, fotos) => (fotos > 0 ? 'control_calidad' : conTracking ? 'transito_internacional' : 'en_preparacion'))
+  const etapa = etapaMasAtrasada([...pares.values()].map((c) => etapaDeCompra({ estado: 'en_transito', tracking: c.tracking ?? null, etapa: c.etapa })).filter((e): e is EtapaCompra => !!e))
+  return pasarComprasAlPedido(codigoPedido, pares, grupo, (_saldo, fotos) => estadoPedidoDesdeEtapa(etapa, fotos))
 }
 
 // ── Link de pago de ENTREGA INMEDIATA ──────────────────────────────────────────────────────

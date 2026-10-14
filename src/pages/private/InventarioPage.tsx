@@ -17,9 +17,10 @@ import { venderInmediatoComoPedido } from '../../services/pedidos.service'
 import { FotosCompraModal } from '../../components/inventario/FotosCompraModal'
 import { FichaClienteModal } from '../../components/inventario/FichaClienteModal'
 import { LinkPagoModal } from '../../components/inventario/LinkPagoModal'
-import { CompraCard, CompraFila } from '../../components/inventario/CompraCard'
+import { type EstadoCompra, CompraCard, CompraFila } from '../../components/inventario/CompraCard'
 import { LibresTabs } from '../../components/layout/LibresTabs'
 import { ProductoImg } from '../../components/ui/ProductoImg'
+import { esEtapaCompra, etapaDeCompra, estadoPedidoDesdeEtapa } from '../../utils/compraEtapa'
 import { CuantoPuedoInvertir } from '../../components/finanzas/CuantoPuedoInvertir'
 import { pagadoInversion, porPagarInversion, tallasDeTexto } from '../../utils/compraPago'
 
@@ -27,7 +28,7 @@ import { pagadoInversion, porPagarInversion, tallasDeTexto } from '../../utils/c
 // 'pendiente' = todavía no se le pagó al proveedor (queda "por pagar" en la tarjeta);
 // 'parte' = se le dio un adelanto y el resto queda por pagar.
 type Pago = 'ahora' | 'antes' | 'pendiente' | 'parte'
-const empty = { fecha: new Date().toISOString().slice(0, 10), producto_id: '', codigo: '', producto: '', marca: '', talla_color: '', cantidad: '1', costo_unitario: '', gastos_adicionales: '', precio_venta_estimado: '', metodo: 'Transferencia', notas: '', tracking: '', transportista: '', url_tracking: '', llega_aprox: '', mostrar_tienda: true, pago: 'ahora' as Pago, adelanto: '', porTalla: true, estado: 'en_inventario' as Inversion['estado'] }
+const empty = { fecha: new Date().toISOString().slice(0, 10), producto_id: '', codigo: '', producto: '', marca: '', talla_color: '', cantidad: '1', costo_unitario: '', gastos_adicionales: '', precio_venta_estimado: '', metodo: 'Transferencia', notas: '', tracking: '', transportista: '', url_tracking: '', llega_aprox: '', mostrar_tienda: true, preparando: false, pago: 'ahora' as Pago, adelanto: '', porTalla: true, estado: 'en_inventario' as Inversion['estado'] }
 const statusLabel: Record<Inversion['estado'], string> = { en_transito: 'En camino', en_inventario: 'Disponible', reservado: 'Apartado', vendido: 'Vendido', descartado: 'Descartado' }
 // Lo disponible se muestra primero; lo vendido o descartado se va al fondo.
 const statusOrder: Record<Inversion['estado'], number> = { en_inventario: 0, en_transito: 1, reservado: 2, vendido: 3, descartado: 4 }
@@ -119,7 +120,12 @@ export function InventarioPage() {
       window.setTimeout(cargarEI, 4000)
     } catch { toast.error('No se pudo cambiar. ¿Ya se aplicó el SQL 202610140001?') }
   }
-  const updateStatus = async (item: Inversion, estado: Inversion['estado']) => { try { const updated = await cambiarEstadoInversion(item.id, estado); setItems((all) => all.map((current) => current.id === updated.id ? updated : current)); toast.success('Estado actualizado.') } catch { toast.error('No se pudo actualizar.') } }
+  const updateStatus = async (item: Inversion, estadoElegido: EstadoCompra) => { try {
+    // Las etapas (En preparación, Control de calidad, En tránsito…) son estado 'en_transito' + `etapa`.
+    const etapa = esEtapaCompra(estadoElegido) ? estadoElegido : null
+    const estado: Inversion['estado'] = etapa ? 'en_transito' : (estadoElegido as Inversion['estado'])
+    if (etapa && item.etapa === undefined) { toast.error('Falta aplicar el SQL 202610140002 para usar las etapas.'); return }
+    const updated = item.etapa !== undefined ? await actualizarInversion(item.id, { estado, etapa }) : await cambiarEstadoInversion(item.id, estado); setItems((all) => all.map((current) => current.id === updated.id ? updated : current)); toast.success('Estado actualizado.') } catch { toast.error('No se pudo actualizar.') } }
   const remove = async (item: Inversion) => {
     if (!window.confirm(`¿Eliminar "${item.producto}" de Compras libres? Si ya se había pagado, ese monto vuelve a Mi cuenta. Esta acción no se puede deshacer.`)) return
     try { await eliminarInversion(item.id); setItems((all) => all.filter((current) => current.id !== item.id)); toast.success('Producto eliminado del inventario.') } catch { toast.error('No se pudo eliminar el producto.') }
@@ -148,7 +154,7 @@ export function InventarioPage() {
       // En camino → arranca en su etapa real: en preparación (con fotos de calidad pasa sola a
       // Control de calidad y le llega el correo); si ya tiene tracking y no hay fotos, en tránsito.
       // Ya en Nicaragua → listo para entregar.
-      estadoPedido: item.estado === 'en_transito' ? ((fotosCount[item.id] ?? 0) === 0 && (item.tracking ?? '').trim() ? 'transito_internacional' : 'en_preparacion') : 'disponible_entrega',
+      estadoPedido: item.estado === 'en_transito' ? estadoPedidoDesdeEtapa(etapaDeCompra(item), 0) : 'disponible_entrega',
       // Igual que la tienda: el 50% se redondea hacia arriba al dólar (155 → abono 78).
       abono: Math.ceil(precio * 0.5),
       inversionId: item.id,
@@ -330,7 +336,7 @@ function ProductModal({ open, item, inicial, products, onClose, onSaved }: { ope
   const [destino, setDestino] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
   const [tipoCambio, setTipoCambio] = useState(37)
   const [saving, setSaving] = useState(false)
-  useEffect(() => { if (!open) return; setFile(null); setDestino({ cuentaId: null, montoCuenta: 0 }); void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined); setForm(item ? { fecha: item.fecha.slice(0, 10), producto_id: item.producto_id ?? '', codigo: item.codigo ?? '', producto: item.producto, marca: item.marca ?? '', talla_color: item.talla_color ?? '', cantidad: String(item.cantidad), costo_unitario: String(item.costo_unitario), gastos_adicionales: String(item.gastos_adicionales), precio_venta_estimado: String(item.precio_venta_estimado), metodo: 'Transferencia', notas: item.notas ?? '', tracking: item.tracking ?? '', transportista: item.transportista ?? '', url_tracking: item.url_tracking ?? '', llega_aprox: item.llega_aprox ?? '', mostrar_tienda: item.mostrar_tienda !== false, pago: porPagar(item) ? 'pendiente' : 'antes', adelanto: '', porTalla: false, estado: item.estado } : { ...empty, ...(inicial ?? {}) }) }, [item, open, inicial])
+  useEffect(() => { if (!open) return; setFile(null); setDestino({ cuentaId: null, montoCuenta: 0 }); void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined); setForm(item ? { fecha: item.fecha.slice(0, 10), producto_id: item.producto_id ?? '', codigo: item.codigo ?? '', producto: item.producto, marca: item.marca ?? '', talla_color: item.talla_color ?? '', cantidad: String(item.cantidad), costo_unitario: String(item.costo_unitario), gastos_adicionales: String(item.gastos_adicionales), precio_venta_estimado: String(item.precio_venta_estimado), metodo: 'Transferencia', notas: item.notas ?? '', tracking: item.tracking ?? '', transportista: item.transportista ?? '', url_tracking: item.url_tracking ?? '', llega_aprox: item.llega_aprox ?? '', mostrar_tienda: item.mostrar_tienda !== false, preparando: false, pago: porPagar(item) ? 'pendiente' : 'antes', adelanto: '', porTalla: false, estado: item.estado } : { ...empty, ...(inicial ?? {}) }) }, [item, open, inicial])
 
   // Al escribir el código se completa todo solo (nombre, marca, precios y foto) si coincide con un producto del catálogo.
   const aplicarCodigo = (codigo: string) => {
@@ -357,7 +363,10 @@ function ProductModal({ open, item, inicial, products, onClose, onSaved }: { ope
       const pagoCampos = item ? {} : { pagado: form.pago !== 'pendiente', pagado_at: form.pago === 'pendiente' ? null : new Date().toISOString() }
       const input = { fecha: form.fecha, producto_id: form.producto_id || null, codigo: form.codigo || null, producto: form.producto.trim(), marca: form.marca || null, talla_color: form.talla_color || null, cantidad, costo_unitario: costoUnitario, gastos_adicionales: gastosAdicionales, precio_venta_estimado: precioVenta, estado: item?.estado ?? form.estado, notas: form.notas || null, tracking: form.tracking || null, transportista: form.transportista || null, url_tracking: form.url_tracking || null, ...(form.llega_aprox ? { llega_aprox: form.llega_aprox } : item?.llega_aprox ? { llega_aprox: null } : {}), estado_tracking: form.tracking ? (item?.estado_tracking ?? 'Registrado') : null, pedido_id: item?.pedido_id ?? null, ...pagoCampos,
         // Solo se manda si cambia o si la columna ya existe (así no falla antes de aplicar el SQL).
-        ...((item && item.mostrar_tienda !== undefined) || !form.mostrar_tienda ? { mostrar_tienda: form.mostrar_tienda } : {}) }
+        ...((item && item.mostrar_tienda !== undefined) || !form.mostrar_tienda ? { mostrar_tienda: form.mostrar_tienda } : {}),
+        // En preparación: al poner el tracking por primera vez pasa sola a En camino.
+        // Compra nueva que viene en camino: arranca En preparación o En tránsito (según lo elegido).
+        ...(!item && form.estado === 'en_transito' ? { etapa: form.preparando ? 'en_preparacion' : 'transito_internacional' } : {}) }
       if (item) {
         let saved = await actualizarInversion(item.id, input)
         if (file) saved = await actualizarInversion(saved.id, { imagen: await subirImagenCatalogo('inversiones', saved.id, file) })
@@ -404,7 +413,7 @@ function ProductModal({ open, item, inicial, products, onClose, onSaved }: { ope
     <label className="form-field col-span-full"><span>Enlace de tracking (opcional)</span><input value={form.url_tracking} onChange={(event) => setForm({ ...form, url_tracking: event.target.value })} /></label>
     <Field label="Método de pago"><input value={form.metodo} onChange={(event) => setForm({ ...form, metodo: event.target.value })} /></Field><Field label="Notas"><input value={form.notas} onChange={(event) => setForm({ ...form, notas: event.target.value })} /></Field>
     <label className="form-field col-span-full"><span>Foto del producto</span><span className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-line p-4 text-sm text-muted">{previewSrc ? <img src={previewSrc} alt="" className="size-10 shrink-0 rounded-lg object-cover" /> : <ImagePlus size={20} className="text-accent" />}{file ? file.name : usaCatalogo ? 'Foto de la web (automática por código) · toca para reemplazar' : item?.imagen ? 'Cambiar foto actual' : 'Escribe el código y saldrá la foto de la web, o selecciónala'}<input className="hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></span></label>
-    {!item && <Opciones label="¿Dónde está?" value={form.estado} onChange={(estado) => setForm({ ...form, estado: estado as Inversion['estado'] })} options={[['en_inventario', 'Ya lo tengo', 'Disponible para vender o entregar'], ['en_transito', 'Viene en camino', 'Comprado, todavía no llega']]} />}
+    {!item && <Opciones label="¿Dónde está?" value={form.estado === 'en_transito' && form.preparando ? 'en_preparacion' : form.estado} onChange={(estado) => setForm({ ...form, estado: (estado === 'en_preparacion' ? 'en_transito' : estado) as Inversion['estado'], preparando: estado === 'en_preparacion' })} options={[['en_inventario', 'Ya lo tengo', 'Disponible para vender o entregar'], ['en_preparacion', 'En preparación', 'Pagado, el proveedor lo está preparando'], ['en_transito', 'Viene en camino', 'Ya lo enviaron, todavía no llega']]} />}
     {!item && Number(form.cantidad) > 1 && <label className="col-span-full flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-white/[.02] p-3"><input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-accent" checked={form.porTalla} onChange={(event) => setForm({ ...form, porTalla: event.target.checked })} /><span className="flex flex-col"><span className="text-sm font-medium">Registrar un par por talla (recomendado)</span><span className="text-[11px] text-muted">{(() => { const t = tallasDeTexto(form.talla_color); const n = Number(form.cantidad); return t.length === n ? `Se crean ${n} compras de 1 par: ${t.join(', ')}. Cada una se vende o se aparta por separado.` : t.length > 1 ? `Pusiste ${t.length} tallas para ${n} pares: poné una talla por par, separadas por coma.` : `Se crean ${n} compras de 1 par${t[0] ? ` (talla ${t[0]})` : ''}. Cada una se vende o se aparta por separado.` })()}</span></span></label>}
     {!item && <Opciones label="¿Ya se lo pagaste al proveedor?" value={form.pago} onChange={(pago) => setForm({ ...form, pago: pago as Pago })} options={[['ahora', 'Sí, todo ahora', 'Se descuenta de la cuenta que elijas'], ['parte', 'Pagué una parte', 'Un adelanto ahora; el resto queda por pagar'], ['antes', 'Sí, ya estaba pagado', 'Ya salió de caja; no se descuenta otra vez'], ['pendiente', 'Todavía no', 'Queda "por pagar"; lo pagás después desde la tarjeta']]} />}
     {!item && form.pago === 'parte' && <Field label="¿Cuánto le adelantaste? (US$)"><input type="number" min="0" step=".01" value={form.adelanto} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setForm({ ...form, adelanto: event.target.value })} placeholder="Ej: 150" /></Field>}

@@ -342,6 +342,15 @@ export async function aplicarEventoStock(client, item) {
   const { data, error } = await client.from('inversiones').update({ estado_tracking: estado })
     .eq('tracking', info.numero).neq('estado', 'descartado').or('estado_tracking.is.null,estado_tracking.neq.Entregado').select('id')
   if (error) { console.error('track17: update de compra libre falló', error.message); return 0 }
+  // La etapa de la compra (como un pedido) solo avanza, nunca retrocede.
+  const avance = ['InTransit', 'AvailableForPickup', 'OutForDelivery'].includes(info.status)
+    ? { etapa: 'transito_internacional', desde: ['en_preparacion', 'control_calidad'] }
+    : info.status === 'Delivered' ? { etapa: 'recibido_estados_unidos', desde: ['en_preparacion', 'control_calidad', 'transito_internacional'] } : null
+  if (avance) {
+    const { error: etapaError } = await client.from('inversiones').update({ etapa: avance.etapa })
+      .eq('tracking', info.numero).eq('estado', 'en_transito').in('etapa', avance.desde)
+    if (etapaError) console.error('track17: etapa de compra libre', etapaError.message)
+  }
   return data?.length ?? 0
 }
 
