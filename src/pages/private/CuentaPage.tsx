@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { toast } from 'sonner'
 import { CuentasBancarias } from '../../components/finanzas/CuentasBancarias'
+import { CuantoPuedoInvertir } from '../../components/finanzas/CuantoPuedoInvertir'
 import { CuentaSelect, type DestinoPago } from '../../components/finanzas/CuentaSelect'
 import { Modal } from '../../components/ui/Modal'
 import { MoneyField } from '../../components/ui/MoneyField'
@@ -78,6 +79,7 @@ export function CuentaPage() {
   return <div>
     <PageHeader title="Mi cuenta" subtitle="Gastos, ingresos, salidas y saldo — todo tu movimiento de dinero en un solo lugar." onAdd={() => setOpen(true)} button="Registrar ingreso o retiro" />
 
+    <CuantoPuedoInvertir recarga={cuentasKey} />
     <CuentasBancarias refreshKey={cuentasKey} />
 
     <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-white/[.02] px-4 py-3">

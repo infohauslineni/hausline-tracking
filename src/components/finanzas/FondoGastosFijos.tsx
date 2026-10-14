@@ -23,7 +23,7 @@ export function FondoGastosFijos({ recarga = 0 }: { recarga?: number }) {
   const avance = porPagar > 0 ? Math.min(100, (g.apartado / porPagar) * 100) : 100
   return <section className="mt-3 rounded-2xl border border-line bg-panel p-5">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <div><h2 className="flex items-center gap-2 text-sm font-semibold"><Lock size={16} className="text-accent" /> Fondo de gastos fijos · {nombreMes(g.mes)}</h2><p className="mt-1 text-xs text-muted">Dinero guardado para pagar los gastos fijos que faltan este mes. Va aparte de lo que el negocio usa para funcionar.</p></div>
+      <div><h2 className="flex items-center gap-2 text-sm font-semibold"><Lock size={16} className="text-accent" /> Fondo de gastos fijos · {nombreMes(g.mes)}</h2><p className="mt-1 text-xs text-muted">Dinero guardado para pagar los gastos fijos que faltan este mes. Sale de la ganancia de los pedidos entregados ({g.pct}% del negocio para sus gastos, el resto de lo tuyo para los tuyos) y <b className="text-white">solo de dinero que de verdad está en tus cuentas</b> por encima del mínimo.</p></div>
       <div className="shrink-0 text-right"><span className="text-xs text-muted">Guardado</span><strong className="block text-2xl tabular-nums">{usd(g.apartado)}</strong><span className="text-[11px] text-muted">de {usd(porPagar)} por pagar</span></div>
     </div>
     <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-accent transition-all" style={{ width: `${avance}%` }} /></div>
@@ -33,6 +33,7 @@ export function FondoGastosFijos({ recarga = 0 }: { recarga?: number }) {
       {g.apartadoNegocio > 0.005 && <span>Del negocio: <b className="text-white">{usd(g.apartadoNegocio)}</b></span>}
       {g.apartadoDueno > 0.005 && <span>De tu ganancia: <b className="text-white">{usd(g.apartadoDueno)}</b></span>}
       <span>Le queda al negocio: <b className="text-white">{usd(g.negocioLibre)}</b></span>
+      {g.libreReal != null && <span>Libre en tus cuentas: <b className="text-white">{usd(Math.max(0, g.libreReal))}</b></span>}
     </div>
     {pendientes.length > 0 && <div className="mt-3 space-y-1.5 border-t border-line pt-3">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Lo que falta pagar este mes</p>

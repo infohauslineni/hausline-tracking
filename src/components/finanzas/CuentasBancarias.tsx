@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { Modal } from '../ui/Modal'
 import { cargarCuentasPagoClientes, eliminarCuenta, guardarCuenta, listarCuentas, mostrarCuentaAClientes, recibidoPorCuentaMes, transferirEntreCuentas, type CuentaInput } from '../../services/cuentas.service'
 import { obtenerTipoCambio } from '../../services/comercial.service'
+import { guardarMinimo, listarMinimos, type MinimosCuentas } from '../../services/minimosCuentas.service'
 import type { CuentaBancaria, Moneda } from '../../types/domain'
 import { MONEDA_SIMBOLO } from '../../utils/money'
 
@@ -34,9 +35,11 @@ export function CuentasBancarias({ refreshKey = 0 }: { refreshKey?: number }) {
   const [creating, setCreating] = useState(false)
   const [transferOpen, setTransferOpen] = useState(false)
   const [tipoCambio, setTipoCambio] = useState(37)
+  const [minimos, setMinimos] = useState<MinimosCuentas>({})
 
   const load = () => Promise.all([
     listarCuentas(setCuentas).then(setCuentas),
+    listarMinimos().then(setMinimos).catch(() => undefined),
     recibidoPorCuentaMes(setRecibidoMes).then(setRecibidoMes),
   ]).catch(() => undefined).finally(() => setLoading(false))
   useEffect(() => { void load() }, [refreshKey])
@@ -108,6 +111,7 @@ export function CuentasBancarias({ refreshKey = 0 }: { refreshKey?: number }) {
           {cuenta.proposito && cuenta.proposito !== 'ambos' && <span className="mt-2.5 inline-block rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide backdrop-blur">{cuenta.proposito === 'recibir' ? 'Solo recibir' : 'Solo comprar'}</span>}
           <p className="mt-3 text-[11px] text-white/80">Saldo disponible</p>
           <strong className="block text-2xl font-bold tracking-tight">{formatSaldo(cuenta.saldo, cuenta.moneda)}</strong>
+          {Number(minimos[cuenta.id] || 0) > 0 && (() => { const min = Number(minimos[cuenta.id]); const libre = Number(cuenta.saldo || 0) - min; return <span className={`mt-1 inline-block rounded-md px-2 py-0.5 text-[10.5px] font-semibold ${libre < 0 ? 'bg-black/35 text-amber-200' : 'bg-black/20 text-white/85'}`}>{libre < 0 ? `⚠ Debajo del mínimo (${formatSaldo(min, cuenta.moneda)}): faltan ${formatSaldo(-libre, cuenta.moneda)}` : `Mínimo ${formatSaldo(min, cuenta.moneda)} · libre ${formatSaldo(libre, cuenta.moneda)}`}</span> })()}
           {cuenta.limite != null && Number(cuenta.limite) > 0 && (() => {
             const recibido = Math.max(0, Number(recibidoMes[cuenta.id] || 0))
             const pct = Math.min(100, Math.round((recibido / Number(cuenta.limite)) * 100))
@@ -204,6 +208,8 @@ function TransferModal({ open, cuentas, tipoCambio, onClose, onSaved }: { open: 
 }
 
 function CuentaModal({ open, cuenta, onClose, onSaved }: { open: boolean; cuenta: CuentaBancaria | null; onClose: () => void; onSaved: () => void }) {
+  const [minimo, setMinimo] = useState('')
+  useEffect(() => { if (open) { setMinimo(''); if (cuenta) void listarMinimos().then((m) => setMinimo(m[cuenta.id] ? String(m[cuenta.id]) : '')).catch(() => undefined) } }, [open, cuenta])
   const vacio = (): CuentaInput => ({ nombre: '', banco: '', numero: '', titular: '', moneda: 'NIO', emoji: '🏦', saldo: 0, orden: 0, proposito: 'ambos', limite: null })
   const [form, setForm] = useState<CuentaInput>(vacio())
   const [saving, setSaving] = useState(false)
@@ -214,7 +220,8 @@ function CuentaModal({ open, cuenta, onClose, onSaved }: { open: boolean; cuenta
     if (!form.nombre.trim()) return toast.error('Ponle un nombre a la cuenta.')
     setSaving(true)
     try {
-      await guardarCuenta({ ...form, nombre: form.nombre.trim(), banco: form.banco?.trim() || null, numero: form.numero?.trim() || null, titular: form.titular?.trim() || null, saldo: Number(form.saldo || 0), limite: Number(form.limite) > 0 ? Number(form.limite) : null }, cuenta?.id)
+      const guardada = await guardarCuenta({ ...form, nombre: form.nombre.trim(), banco: form.banco?.trim() || null, numero: form.numero?.trim() || null, titular: form.titular?.trim() || null, saldo: Number(form.saldo || 0), limite: Number(form.limite) > 0 ? Number(form.limite) : null }, cuenta?.id)
+      await guardarMinimo(guardada.id, minimo.trim() === '' ? null : Number(minimo))
       toast.success(cuenta ? 'Cuenta actualizada.' : 'Cuenta agregada.')
       onSaved()
     } catch { toast.error('No se pudo guardar la cuenta.') } finally { setSaving(false) }
@@ -238,6 +245,7 @@ function CuentaModal({ open, cuenta, onClose, onSaved }: { open: boolean; cuenta
       <label className="form-field"><span>Saldo actual ({MONEDA_SIMBOLO[form.moneda]})</span><input type="number" step=".01" value={form.saldo} onChange={(e) => setForm({ ...form, saldo: Number(e.target.value) })} /></label>
       <label className="form-field"><span>¿Para qué la usás?</span><select value={form.proposito} onChange={(e) => setForm({ ...form, proposito: e.target.value as CuentaInput['proposito'] })}><option value="ambos">Comprar y recibir</option><option value="recibir">Solo recibir pagos</option><option value="comprar">Solo comprar / pagar</option></select></label>
       <label className="form-field"><span>Límite mensual de recepción ({MONEDA_SIMBOLO[form.moneda]}, opcional)</span><input type="number" min="0" step=".01" value={form.limite ?? ''} onChange={(e) => setForm({ ...form, limite: e.target.value === '' ? null : Number(e.target.value) })} placeholder="Ej: 1500" /></label>
+      <label className="form-field col-span-full"><span>Mínimo que siempre dejo en esta cuenta ({MONEDA_SIMBOLO[form.moneda]}, opcional)</span><input type="number" min="0" step=".01" value={minimo} onChange={(e) => setMinimo(e.target.value)} placeholder={form.moneda === 'USD' ? 'Ej: 200' : 'Ej: 2500'} /><span className="text-[11px] font-normal text-muted">Ese dinero no se cuenta como libre: el fondo de gastos fijos y tu ganancia solo usan lo que está por encima.</span></label>
       <div className="col-span-full flex items-center justify-between gap-2 pt-1">
         {cuenta ? <button type="button" className="inline-flex items-center gap-1.5 text-xs text-red-300 hover:text-red-200" onClick={() => void borrar()}><Trash2 size={14} /> Quitar cuenta</button> : <span />}
         <div className="flex gap-2"><button type="button" className="subtle-button" onClick={onClose}>Cancelar</button><button className="primary-button px-5" disabled={saving}>{saving ? 'Guardando…' : 'Guardar'}</button></div>

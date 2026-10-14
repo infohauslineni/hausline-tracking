@@ -46,7 +46,7 @@ function repartoPedido(p, pct) {
 
 // Cuánto hay de verdad en cada "bolsa" (negocio / dueño) desde la fecha de arranque.
 async function bolsas(db) {
-  const { data: cfg } = await db.from('configuracion').select('clave, valor_json').in('clave', ['finanzas', 'gastos_fijos', 'moneda'])
+  const { data: cfg } = await db.from('configuracion').select('clave, valor_json').in('clave', ['finanzas', 'gastos_fijos', 'moneda', 'minimos_cuentas'])
   const de = (clave) => (cfg ?? []).find((c) => c.clave === clave)?.valor_json
   const fin = de('finanzas') ?? {}
   const desde = fin.ganancia_desde || '2026-10-10'
@@ -55,14 +55,19 @@ async function bolsas(db) {
   const fijos = Array.isArray(de('gastos_fijos')) ? de('gastos_fijos') : []
   const corte = `${desde}T06:00:00Z` // 12 a. m. de ese día en Nicaragua
 
-  const [pedidos, ventas, gastos, retiros] = await Promise.all([
+  const [pedidos, ventas, gastos, retiros, cuentasR] = await Promise.all([
     db.from('pedidos').select('id, total, abono, estado, fecha_entrega, updated_at, pedido_items(producto, cantidad, precio_unitario, pedido_item_costos(precio_compra, envio_internacional, costo_delivery, otros_gastos)), gastos(monto, categoria)')
       .eq('activo', true).eq('estado', 'entregado').gte('updated_at', corte).limit(3000),
     db.from('movimientos_cuenta').select('fecha, monto, inversiones(costo_unitario, cantidad, gastos_adicionales)').eq('tipo', 'ingreso').not('inversion_id', 'is', null).gte('fecha', corte).limit(3000),
     db.from('gastos').select('fecha, monto, pedido_id, inversion_id, observaciones').gte('fecha', desde).limit(5000),
     db.from('movimientos_cuenta').select('fecha, monto').eq('tipo', 'retiro').gte('fecha', corte).limit(3000),
+    db.from('cuentas_bancarias').select('id, nombre, moneda, saldo, activo'),
   ])
-  for (const r of [pedidos, ventas, gastos, retiros]) if (r.error) throw new Error(r.error.message)
+  for (const r of [pedidos, ventas, gastos, retiros, cuentasR]) if (r.error) throw new Error(r.error.message)
+  // DINERO REAL: lo que hay en las cuentas por encima de su mínimo (configuracion.minimos_cuentas).
+  const minimos = de('minimos_cuentas') ?? {}
+  const cuentas = (cuentasR.data ?? []).filter((c) => c.activo !== false)
+  const libreUsd = cuentas.length ? r2(cuentas.reduce((s, c) => { const libre = Math.max(0, Number(c.saldo || 0) - Number(minimos[c.id] || 0)); return s + (c.moneda === 'NIO' ? libre / tc : libre) }, 0)) : null
 
   let negocio = 0, dueno = 0
   for (const p of pedidos.data ?? []) {
@@ -86,7 +91,7 @@ async function bolsas(db) {
     else if (!g.pedido_id && !g.inversion_id) negocioGastado += Number(g.monto || 0)
   }
   const retirado = (retiros.data ?? []).filter((m) => diaNic(m.fecha) >= desde).reduce((s, m) => s + Number(m.monto || 0), 0)
-  return { fijos, tc, negocioNeto: r2(negocio - negocioGastado), duenoNeto: r2(dueno - gastado - retirado) }
+  return { fijos, tc, cuentas, libreUsd, negocioNeto: r2(negocio - negocioGastado), duenoNeto: r2(dueno - gastado - retirado) }
 }
 
 // Gastos fijos que se pagan MAÑANA (hora de Nicaragua), con cuánto de cada uno ya está guardado.
@@ -95,19 +100,20 @@ export async function gastosFijosDeManana(db) {
   const manana = sumarDias(hoyNic(), 1)
   const mes = manana.slice(0, 7)
   const diaM = Number(manana.slice(8, 10))
-  const { fijos, tc, negocioNeto, duenoNeto } = await bolsas(db)
+  const { fijos, tc, cuentas, libreUsd, negocioNeto, duenoNeto } = await bolsas(db)
   const pendientes = fijos
     .filter((g) => g && g.activo && String(g.desde ?? '') <= mes && !(g.ultimo && g.ultimo >= mes))
     .map((g) => ({ g, dia: diaEnMes(g.dia, mes), usd: r2(g.moneda === 'NIO' ? Number(g.monto || 0) / tc : Number(g.monto || 0)) }))
     .sort((a, b) => a.dia - b.dia)
   if (!pendientes.some((p) => p.dia === diaM)) return { fecha: manana, items: [] }
-  const { data: cuentas } = await db.from('cuentas_bancarias').select('id, nombre, moneda, saldo')
   let bolsaNegocio = Math.max(0, negocioNeto), bolsaDueno = Math.max(0, duenoNeto)
+  let real = libreUsd == null ? Number.POSITIVE_INFINITY : Math.max(0, libreUsd) // nunca más que el dinero libre real
   const items = []
   for (const p of pendientes) {
     const disponible = p.g.deGanancia ? bolsaDueno : bolsaNegocio
-    const cubierto = r2(Math.min(p.usd, disponible))
+    const cubierto = r2(Math.max(0, Math.min(p.usd, disponible, real)))
     if (p.g.deGanancia) bolsaDueno -= cubierto; else bolsaNegocio -= cubierto
+    real -= cubierto
     if (p.dia !== diaM) continue
     const cuenta = (cuentas ?? []).find((c) => c.id === p.g.cuentaId) ?? null
     // Lo que sale de la cuenta va en la moneda de ESA cuenta (igual que al registrarlo).

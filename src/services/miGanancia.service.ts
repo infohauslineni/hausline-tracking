@@ -5,6 +5,8 @@ import { listarGastos, listarMovimientos, listarVentasStock, obtenerTipoCambio }
 import { DEFAULT_FINANZAS, obtenerConfiguracionFinanzas } from './finanzas.service'
 import { diaEnMes, listarGastosFijos, type GastoFijo } from './gastosFijos.service'
 import { listarPedidos } from './pedidos.service'
+import { listarCuentas } from './cuentas.service'
+import { dineroLibre, listarMinimos, type LibreCuenta } from './minimosCuentas.service'
 
 export { MARCA_GASTO_GANANCIA, esGastoDeGanancia, observacionesConMarca, observacionesSinMarca } from '../utils/marcaGanancia'
 
@@ -49,6 +51,9 @@ export type BaseGanancia = {
   pagadoMes: number // fijos del mes ya registrados
   pendienteNegocio: number // fijos del negocio que faltan por pagar este mes
   pendienteDueno: number // fijos "de mi ganancia" que faltan por pagar este mes
+  // DINERO REAL: lo que hay en las cuentas por encima de su mínimo (US$). null = sin cuentas → sin tope.
+  libreReal: number | null
+  cuentasLibres: LibreCuenta[]
 }
 export type MiGanancia = BaseGanancia & {
   apartadoNegocio: number // guardado de la parte del negocio para los fijos pendientes
@@ -56,20 +61,29 @@ export type MiGanancia = BaseGanancia & {
   apartado: number // el fondo: lo que hay guardado y no se toca
   faltaApartar: number // lo que todavía no alcanza a cubrirse con lo ganado
   negocioLibre: number // lo que le queda al negocio para funcionar, ya sin el fondo
-  disponible: number // lo que le queda al dueño, ya sin el fondo
+  disponible: number // TU GANANCIA AHORA: lo del dueño sin el fondo, y nunca más que el dinero libre real
+  disponibleContable: number // lo mismo según las cuentas, sin mirar el saldo de los bancos
+  limitadoPorCaja: boolean // true cuando el banco tiene menos de lo que dicen las cuentas
 }
 
 // Reparte el fondo sobre una base (se puede recalcular sumando un pedido recién entregado).
 export function resumenGanancia(b: BaseGanancia): MiGanancia {
   const negocioNeto = b.negocio - b.negocioGastado
   const duenoNeto = b.ganado - b.gastado - b.retirado
-  const apartadoNegocio = r2(Math.min(Math.max(0, negocioNeto), b.pendienteNegocio))
-  const apartadoDueno = r2(Math.min(Math.max(0, duenoNeto), b.pendienteDueno))
+  // Nada puede ser más que el dinero que de verdad está libre en las cuentas (sobre el mínimo).
+  let real = b.libreReal == null ? Number.POSITIVE_INFINITY : Math.max(0, b.libreReal)
+  const tomar = (v: number) => { const x = r2(Math.max(0, Math.min(v, real))); real -= x; return x }
+  const apartadoNegocio = tomar(Math.min(Math.max(0, negocioNeto), b.pendienteNegocio))
+  const apartadoDueno = tomar(Math.min(Math.max(0, duenoNeto), b.pendienteDueno))
   const apartado = r2(apartadoNegocio + apartadoDueno)
+  const disponibleContable = r2(duenoNeto - apartadoDueno)
+  const disponible = disponibleContable > 0 ? tomar(disponibleContable) : disponibleContable
+  const negocioContable = r2(negocioNeto - apartadoNegocio)
+  const negocioLibre = negocioContable > 0 ? tomar(negocioContable) : negocioContable
   return {
     ...b, apartadoNegocio, apartadoDueno, apartado,
     faltaApartar: r2(Math.max(0, b.pendienteNegocio + b.pendienteDueno - apartado)),
-    negocioLibre: r2(negocioNeto - apartadoNegocio), disponible: r2(duenoNeto - apartadoDueno),
+    negocioLibre, disponible, disponibleContable, limitadoPorCaja: disponible < disponibleContable - 0.005,
   }
 }
 
@@ -93,10 +107,11 @@ export async function obtenerBaseGanancia(excluirPedidoId?: string): Promise<Bas
   const config = await obtenerConfiguracionFinanzas().catch(() => DEFAULT_FINANZAS)
   const desde = config.ganancia_desde || DEFAULT_FINANZAS.ganancia_desde
   const pct = config.porcentaje_reserva_negocio
-  const [pedidos, gastos, movimientos, ventas, fijos, tipoCambio] = await Promise.all([
+  const [pedidos, gastos, movimientos, ventas, fijos, tipoCambio, cuentas, minimos] = await Promise.all([
     listarPedidos().catch(() => []), listarGastos().catch(() => []), listarMovimientos().catch(() => []), listarVentasStock().catch(() => []),
-    listarGastosFijos().catch(() => []), obtenerTipoCambio().catch(() => 37),
+    listarGastosFijos().catch(() => []), obtenerTipoCambio().catch(() => 37), listarCuentas().catch(() => []), listarMinimos().catch(() => ({})),
   ])
+  const libre = dineroLibre(cuentas, minimos, tipoCambio)
   let ganado = 0, negocio = 0, cuenta = 0
   for (const pedido of pedidos) {
     if (pedido.id === excluirPedidoId || !cuentaParaGanancia(pedido, desde)) continue
@@ -119,6 +134,7 @@ export async function obtenerBaseGanancia(excluirPedidoId?: string): Promise<Bas
   return {
     desde, pct, pedidos: cuenta, ganado: r2(ganado), negocio: r2(negocio), gastado: r2(gastado), retirado: r2(retirado), negocioGastado: r2(negocioGastado),
     mes, ...fijosDelMes(fijos, mes, tipoCambio),
+    libreReal: libre.porCuenta.length ? libre.libreUsd : null, cuentasLibres: libre.porCuenta,
   }
 }
 
@@ -129,13 +145,16 @@ export function coberturaFijos(fijos: GastoFijo[], b: BaseGanancia, tipoCambio: 
   const tc = tipoCambio > 0 ? tipoCambio : 37
   let bolsaNegocio = Math.max(0, b.negocio - b.negocioGastado)
   let bolsaDueno = Math.max(0, b.ganado - b.gastado - b.retirado)
+  // Y nunca más que el dinero libre real de las cuentas.
+  let real = b.libreReal == null ? Number.POSITIVE_INFINITY : Math.max(0, b.libreReal)
   return fijos
     .filter((g) => g.activo && g.desde <= b.mes && !(g.ultimo && g.ultimo >= b.mes))
     .map((g) => ({ g, dia: diaEnMes(g.dia, b.mes), usd: r2(g.moneda === 'NIO' ? g.monto / tc : g.monto) }))
     .sort((x, y) => x.dia - y.dia)
     .map(({ g, dia, usd }) => {
-      const cubierto = r2(Math.min(usd, g.deGanancia ? bolsaDueno : bolsaNegocio))
+      const cubierto = r2(Math.max(0, Math.min(usd, g.deGanancia ? bolsaDueno : bolsaNegocio, real)))
       if (g.deGanancia) bolsaDueno -= cubierto; else bolsaNegocio -= cubierto
+      real -= cubierto
       return { id: g.id, descripcion: g.descripcion, deGanancia: g.deGanancia, usd, fecha: `${b.mes}-${String(dia).padStart(2, '0')}`, cubierto, falta: r2(usd - cubierto) }
     })
 }
