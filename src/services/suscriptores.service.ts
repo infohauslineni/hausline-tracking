@@ -26,6 +26,18 @@ export async function campanaRedes(accion: 'estado' | 'prueba' | 'iniciar' | 'au
   return { suscriptores: j.suscriptores ?? 0, prueba: j.prueba, campana: j.campana ?? null }
 }
 
+// Correos que no funcionan (rebotaron o el dominio no existe): el sistema ya no les manda nada.
+export type ListaCorreosNoFuncionan = { lista: { correo: string; motivo: string; fecha: string }[]; revisado_at: string | null; resultado?: { nuevos: number; revisadosImap: number; correosRevisados: number; errorImap: string | null } | null }
+export async function correosNoFuncionan(accion: 'listar' | 'revisar' | 'quitar', correo?: string): Promise<ListaCorreosNoFuncionan> {
+  const { data: sessionData } = await client().auth.getSession()
+  const token = sessionData.session?.access_token
+  if (!token) throw new Error('Sesión no disponible.')
+  const res = await fetch('/api/notificar-estado', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token }, body: JSON.stringify({ correosNoFuncionan: accion, correo }) })
+  const j = await res.json().catch(() => ({})) as Partial<ListaCorreosNoFuncionan> & { ok?: boolean; error?: string }
+  if (!res.ok || !j.ok) throw new Error(j.error || 'No se pudo (HTTP ' + res.status + ').')
+  return { lista: j.lista ?? [], revisado_at: j.revisado_at ?? null, resultado: j.resultado ?? null }
+}
+
 // Suscriptores ACTIVOS y con consentimiento: los que aceptaron recibir promociones y no se
 // dieron de baja. Es la lista que se exporta para las campañas de Brevo. Del más nuevo al viejo.
 export async function listarSuscriptores(): Promise<Suscriptor[]> {

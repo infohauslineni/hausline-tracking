@@ -15,6 +15,7 @@ import { enviarCorreoBajaPrecio, enviarCorreoCarritoAbandonado, enviarCorreoAvis
 import { cerrarEmail, reservarEmail } from './_email-eventos.js'
 import { hacerRespaldo } from './_respaldo.js'
 import { gastosFijosDeManana } from './_fondo.js'
+import { leerLista, revisarRebotes } from './_rebotes.js'
 import { obtenerCatalogoMergeado } from './_catalogo.js'
 
 const HORA = 3_600_000
@@ -413,11 +414,21 @@ async function reporteDiario(db) {
   return unaVez(`reporte:${hoy}`, 'reporte_diario', { destinatario: to }, () => enviarCorreoReporteDiario({ to, r }))
 }
 
+// REBOTES: una vez por hora se leen los avisos de "no se entregó" de Gmail y esas direcciones
+// pasan a "correos que no funcionan" (ya no se les envía nada). Va primero en la vuelta.
+async function rebotesGmail(db) {
+  const { revisado_at } = await leerLista(db)
+  if (revisado_at && Date.now() - Date.parse(revisado_at) < 55 * 60_000) return 0
+  const r = await revisarRebotes({ dias: 3 })
+  return r.nuevos.length
+}
+
 export async function automatizaciones() {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.SMTP_USER) return null
   const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
   const res = {}
   const paso = async (nombre, fn) => { try { res[nombre] = await fn(db) } catch (e) { res[nombre] = 'error'; console.error(`auto ${nombre}:`, e?.message) } }
+  await paso('rebotes', rebotesGmail)
   await paso('reporte', reporteDiario)
   await paso('saldo', recordatorioSaldo)
   await paso('carritos', carritosAbandonados)

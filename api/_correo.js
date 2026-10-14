@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer'
 import { facturaPdfBuffer } from './_factura-pdf.js'
+import { filtrarDestinatarios } from './_rebotes.js'
 
 // Lógica de correo compartida por las funciones /api (aviso al crear el pedido y al
 // cambiar de estado). Vercel no convierte los archivos con "_" en endpoints, pero sí
@@ -964,6 +965,11 @@ export function transporteSmtp() {
   })
   const enviar = t.sendMail.bind(t)
   t.sendMail = async (opciones) => {
+    // Correos que no funcionan (rebotaron o el dominio no existe): no se les manda nada.
+    const { quedan, quitados } = await filtrarDestinatarios(opciones.to).catch(() => ({ quedan: [].concat(opciones.to ?? []), quitados: [] }))
+    if (quitados.length) console.log(`correo-no-funciona: no se envía a ${quitados.map((q) => q.correo).join(', ')} · ${opciones.subject ?? ''}`)
+    if (!quedan.length) return { messageId: null, accepted: [], rejected: quitados.map((q) => q.correo), omitido: 'correo-no-funciona' }
+    if (quitados.length) opciones = { ...opciones, to: quedan.length === 1 ? quedan[0] : quedan }
     const info = await enviar(opciones)
     await marcarCopiaNoLeida(opciones, info)
     return info

@@ -6,6 +6,7 @@ import { cerrarEmail, reservarEmail } from './_email-eventos.js'
 import { automatizaciones } from './_automatico.js'
 import { hacerRespaldo } from './_respaldo.js'
 import { enviarCorreoCuponCliente, enviarCorreoRedes } from './_correo-auto.js'
+import { leerLista, quitarDeLista, revisionCompleta } from './_rebotes.js'
 
 // La tarea de cada 15 min hace varias cosas (avisos, recordatorios, reporte): le damos margen.
 export const config = { maxDuration: 60 }
@@ -304,6 +305,28 @@ async function campanaRedesPanel(response, body, authorization) {
     return response.status(200).json({ ok: true, suscriptores: count ?? 0, campana: actual })
   } catch (e) {
     console.error('campaña redes: falló', e?.message)
+    return response.status(200).json({ ok: false, error: e?.message || 'No se pudo.' })
+  }
+}
+
+async function correosNoFuncionanPanel(response, body, authorization) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(500).json({ ok: false, error: 'Falta configuración del servidor.' })
+  const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  const token = String(authorization).replace(/^Bearer\s+/i, '').trim()
+  if (!token) return response.status(401).json({ ok: false })
+  const { data: userData } = await admin.auth.getUser(token).catch(() => ({ data: { user: null } }))
+  if (!userData?.user) return response.status(401).json({ ok: false })
+  const { data: perfil } = await admin.from('perfiles').select('rol, activo').eq('id', userData.user.id).maybeSingle()
+  if (!perfil || !perfil.activo || perfil.rol !== 'admin') return response.status(403).json({ ok: false, error: 'Solo el administrador.' })
+  try {
+    const accion = String(body.correosNoFuncionan)
+    let resultado = null
+    if (accion === 'revisar') { const r = await revisionCompleta(); resultado = { nuevos: r.nuevos.length, revisadosImap: r.revisadosImap, correosRevisados: r.correosRevisados, errorImap: r.errorImap } }
+    if (accion === 'quitar' && body.correo) await quitarDeLista(String(body.correo), admin)
+    const { lista, revisado_at } = await leerLista(admin)
+    return response.status(200).json({ ok: true, lista, revisado_at, resultado })
+  } catch (e) {
+    console.error('correos que no funcionan: falló', e?.message)
     return response.status(200).json({ ok: false, error: e?.message || 'No se pudo.' })
   }
 }
@@ -759,6 +782,8 @@ export default async function handler(request, response) {
   if (body.respaldoAhora) return respaldoManual(response, authorization)
   // Campaña "síganos en redes" (JWT del admin): prueba al propio correo, lanzar o ver cómo va.
   if (body.campanaRedes) return campanaRedesPanel(response, body, authorization)
+  // Correos que no funcionan (JWT del admin): ver la lista, revisar rebotes/dominios o quitar uno.
+  if (body.correosNoFuncionan) return correosNoFuncionanPanel(response, body, authorization)
   // "Poner en Entrega inmediata" desde Compras libres (JWT del admin).
   if (body.entregaInmediataCompra) return entregaInmediataDesdeCompra(response, body, authorization)
   // Correo de cancelación desde el panel (también con JWT del usuario).
