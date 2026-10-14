@@ -22,6 +22,8 @@ type Props = {
   // Dentro de la ficha "Ver detalles" (modal): sin marco propio y foto más grande.
   enModal?: boolean
   costo: number
+  /** Lo que falta pagarle al proveedor (descuenta adelantos). */
+  pendiente?: number
   gastosAsociados: number
   enEI: boolean
   enCaminoPublicado: boolean
@@ -126,7 +128,7 @@ export function CompraCard(p: Props) {
 
     {/* Acciones principales */}
     <div className="px-4 pt-4">
-      {porPagar && <button className="mb-2 flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300/30 bg-amber-300/[.07] py-2.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-300/[.13]" onClick={p.onPagar}><Wallet size={15} /> Registrar pago al proveedor · {usd(p.costo)}</button>}
+      {porPagar && <button className="mb-2 flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300/30 bg-amber-300/[.07] py-2.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-300/[.13]" onClick={p.onPagar}><Wallet size={15} /> {p.pendiente != null && p.pendiente < p.costo - 0.005 ? 'Pagar lo que falta' : 'Registrar pago al proveedor'} · {usd(p.pendiente ?? p.costo)}</button>}
       {activo && <div className={`grid gap-2 ${item.estado === 'en_transito' || item.estado === 'en_inventario' ? 'grid-cols-1' : 'grid-cols-2'}`}>
         {item.estado !== 'en_transito' && <button className="primary-button justify-center py-2.5" style={{ fontSize: 13 }} onClick={p.onVender}><Tag size={15} /> Vender ahora</button>}
         {item.estado !== 'en_inventario' && <button className={`${item.estado === 'en_transito' ? 'primary-button' : 'subtle-button'} justify-center py-2.5`} style={{ fontSize: 13 }} onClick={p.onApartar}><Bookmark size={15} /> Apartar (50%)</button>}

@@ -241,7 +241,8 @@ export async function reasignarCuentaMovimiento(movimiento: Pick<MovimientoCuent
 }
 
 // Select común de compras libres: incluye gastos asociados y el pedido en que se convirtió (si se apartó).
-const INV_SELECT = '*, productos(nombre,codigo), gastos(id,monto,categoria), pedidos!inversiones_pedido_id_fkey(codigo)'
+// movimientos_cuenta: para saber cuánto ya se le abonó al proveedor de una compra "por pagar".
+const INV_SELECT = '*, productos(nombre,codigo), gastos(id,monto,categoria), pedidos!inversiones_pedido_id_fkey(codigo), movimientos_cuenta(monto,tipo)'
 export async function listarInversiones(onFresh?: (value: Inversion[]) => void) { return cachedQuery('inversiones', async () => { const { data, error } = await client().from('inversiones').select(INV_SELECT).order('fecha', { ascending: false }); if (error) throw error; return data as unknown as Inversion[] }, 45_000, onFresh) }
 export async function registrarInversion(input: Omit<Inversion, 'id' | 'created_at' | 'productos'>, metodo: string, descontarDeCuenta = true, destino?: DestinoCuenta) {
   const { data, error } = await client().from('inversiones').insert(input).select(INV_SELECT).single()
@@ -261,7 +262,17 @@ export async function registrarInversion(input: Omit<Inversion, 'id' | 'created_
 // Pago al proveedor de una compra que quedó "por pagar": sale de la cuenta elegida ahora
 // (mismo movimiento tipo inversion que al registrarla pagada, así borrarla lo revierte).
 export async function pagarInversion(item: Inversion, opts: { fecha: string; metodo: string }, destino?: DestinoCuenta) {
-  const monto = Number(item.costo_unitario) * Number(item.cantidad) + Number(item.gastos_adicionales)
+  // Si ya tenía abonos (adelanto), solo se paga lo que falta.
+  const costo = Number(item.costo_unitario) * Number(item.cantidad) + Number(item.gastos_adicionales)
+  const { data: abonos } = await client().from('movimientos_cuenta').select('monto').eq('inversion_id', item.id).eq('tipo', 'inversion')
+  const yaPagado = (abonos ?? []).reduce((s, m) => s + Number(m.monto || 0), 0)
+  const monto = Math.max(0, Math.round((costo - yaPagado) * 100) / 100)
+  if (monto <= 0.005) {
+    const { data, error } = await client().from('inversiones').update({ pagado: true, pagado_at: new Date().toISOString() }).eq('id', item.id).select(INV_SELECT).single()
+    if (error) throw error
+    invalidateComercial()
+    return data as unknown as Inversion
+  }
   const cuentaId = destino?.cuentaId || null
   const deltaCuenta = cuentaId ? -Math.abs(Number(destino?.montoCuenta ?? monto)) : null
   const { error: movementError } = await client().from('movimientos_cuenta').insert({ fecha: `${opts.fecha}T12:00:00`, tipo: 'inversion', descripcion: `Inversión en ${item.producto}`, monto, metodo: opts.metodo || null, inversion_id: item.id, cuenta_id: cuentaId, monto_cuenta: deltaCuenta, observaciones: 'Pago al proveedor registrado después de la compra' })
@@ -272,6 +283,80 @@ export async function pagarInversion(item: Inversion, opts: { fecha: string; met
   invalidateComercial()
   return data as unknown as Inversion
 }
+// ABONO PARCIAL al proveedor (adelanto): sale de la cuenta y queda ligado a la compra. Si con
+// esto ya se cubre todo el costo, la compra pasa a pagada.
+export async function abonarInversion(item: Inversion, monto: number, opts: { fecha: string; metodo: string }, destino?: DestinoCuenta) {
+  const costo = Number(item.costo_unitario) * Number(item.cantidad) + Number(item.gastos_adicionales)
+  const cuentaId = destino?.cuentaId || null
+  const deltaCuenta = cuentaId ? -Math.abs(Number(destino?.montoCuenta ?? monto)) : null
+  const { error: movementError } = await client().from('movimientos_cuenta').insert({ fecha: `${opts.fecha}T12:00:00`, tipo: 'inversion', descripcion: `Adelanto al proveedor · ${item.producto}`, monto, metodo: opts.metodo || null, inversion_id: item.id, cuenta_id: cuentaId, monto_cuenta: deltaCuenta, observaciones: 'Abono parcial a una compra libre' })
+  if (movementError) throw movementError
+  if (deltaCuenta) await ajustarSaldoCuenta(cuentaId!, deltaCuenta)
+  const { data: abonos } = await client().from('movimientos_cuenta').select('monto').eq('inversion_id', item.id).eq('tipo', 'inversion')
+  const completo = (abonos ?? []).reduce((s, m) => s + Number(m.monto || 0), 0) >= costo - 0.005
+  const { data, error } = await client().from('inversiones').update({ pagado: completo, pagado_at: completo ? new Date().toISOString() : null }).eq('id', item.id).select(INV_SELECT).single()
+  if (error) throw error
+  invalidateComercial()
+  return data as unknown as Inversion
+}
+
+// Registrar una compra libre (una o varias filas: con varios pares, una por talla) y su pago:
+//   'ahora' = se paga todo · 'antes' = ya estaba pagado · 'pendiente' = nada todavía ·
+//   'parte' = un adelanto: cubre pares completos en orden y lo que sobra queda abonado al siguiente.
+// destino.montoCuenta es lo que sale de la cuenta (en su moneda) por TODO el monto pagado ahora.
+export type PagoCompra = { modo: 'ahora' | 'antes' | 'pendiente' | 'parte'; adelanto?: number; metodo: string; destino?: DestinoCuenta }
+export async function registrarCompraLibre(inputs: Omit<Inversion, 'id' | 'created_at' | 'productos'>[], pago: PagoCompra): Promise<Inversion[]> {
+  const r2 = (n: number) => Math.round(n * 100) / 100
+  const costoDe = (i: { costo_unitario: number; cantidad: number; gastos_adicionales: number }) => r2(Number(i.costo_unitario) * Number(i.cantidad) + Number(i.gastos_adicionales))
+  const total = r2(inputs.reduce((s, i) => s + costoDe(i), 0))
+  const pagaAhora = pago.modo === 'ahora' ? total : pago.modo === 'parte' ? Math.min(total, Math.max(0, Number(pago.adelanto) || 0)) : 0
+  const enCuenta = Number(pago.destino?.montoCuenta ?? pagaAhora)
+  const ratio = pagaAhora > 0 ? enCuenta / pagaAhora : 1
+  const cuentaId = pago.destino?.cuentaId || null
+  let restante = pagaAhora
+  let salidoCuenta = 0
+  const enCuentaDe = (usd: number) => { const ultimo = restante - usd <= 0.005; const v = ultimo ? r2(enCuenta - salidoCuenta) : r2(usd * ratio); salidoCuenta = r2(salidoCuenta + v); return v }
+  const ahora = new Date().toISOString()
+  const hechas: Inversion[] = []
+  for (const input of inputs) {
+    const costo = costoDe(input)
+    if (pago.modo === 'antes') { hechas.push(await registrarInversion({ ...input, pagado: true, pagado_at: ahora }, pago.metodo, false)); continue }
+    if (restante >= costo - 0.005 && restante > 0) {
+      const mc = enCuentaDe(costo)
+      hechas.push(await registrarInversion({ ...input, pagado: true, pagado_at: ahora }, pago.metodo, true, { cuentaId, montoCuenta: mc }))
+      restante = r2(restante - costo)
+    } else if (restante > 0.005) {
+      const fila = await registrarInversion({ ...input, pagado: false, pagado_at: null }, pago.metodo, false)
+      const mc = enCuentaDe(restante)
+      hechas.push(await abonarInversion(fila, restante, { fecha: input.fecha, metodo: pago.metodo }, { cuentaId, montoCuenta: mc }))
+      restante = 0
+    } else {
+      hechas.push(await registrarInversion({ ...input, pagado: false, pagado_at: null }, pago.metodo, false))
+    }
+  }
+  return hechas
+}
+
+// Separar una compra de varios pares en una fila por talla (para venderlas o apartarlas por
+// separado). Solo si no tiene un abono parcial (si está pagada o sin pagar, se copia ese estado).
+export async function separarCompraLibre(item: Inversion, tallas: string[]): Promise<Inversion[]> {
+  const n = Math.max(1, Number(item.cantidad) || 1)
+  if (n < 2) return [item]
+  const abonado = (item.movimientos_cuenta ?? []).filter((m) => m.tipo === 'inversion').reduce((s, m) => s + Number(m.monto || 0), 0)
+  if (item.pagado === false && abonado > 0.005) throw new Error('Esta compra tiene un adelanto parcial: no se puede separar.')
+  const gastoPar = Math.floor((Number(item.gastos_adicionales || 0) / n) * 100) / 100
+  const restoGasto = Math.round((Number(item.gastos_adicionales || 0) - gastoPar * (n - 1)) * 100) / 100
+  const tallaDe = (i: number) => tallas.length === n ? tallas[i] : (item.talla_color ?? null)
+  const { data: primera, error } = await client().from('inversiones').update({ cantidad: 1, talla_color: tallaDe(0), gastos_adicionales: restoGasto }).eq('id', item.id).select(INV_SELECT).single()
+  if (error) throw error
+  const base = { fecha: item.fecha, producto_id: item.producto_id, codigo: item.codigo, producto: item.producto, marca: item.marca, cantidad: 1, costo_unitario: item.costo_unitario, gastos_adicionales: gastoPar, precio_venta_estimado: item.precio_venta_estimado, estado: item.estado, pagado: item.pagado, pagado_at: item.pagado_at ?? null, notas: item.notas, imagen: item.imagen ?? null, tracking: item.tracking ?? null, transportista: item.transportista ?? null, url_tracking: item.url_tracking ?? null, llega_aprox: item.llega_aprox ?? null }
+  const filas = Array.from({ length: n - 1 }, (_, i) => ({ ...base, talla_color: tallaDe(i + 1) }))
+  const { data: nuevas, error: e2 } = await client().from('inversiones').insert(filas).select(INV_SELECT)
+  if (e2) throw e2
+  invalidateComercial()
+  return [primera as unknown as Inversion, ...((nuevas ?? []) as unknown as Inversion[])]
+}
+
 export async function cambiarEstadoInversion(id: string, estado: Inversion['estado']) { const { data, error } = await client().from('inversiones').update({ estado }).eq('id', id).select(INV_SELECT).single(); if (error) throw error; invalidateComercial(); return data as unknown as Inversion }
 
 // Venta directa de stock inmediato: registra el ingreso y marca el producto como vendido,

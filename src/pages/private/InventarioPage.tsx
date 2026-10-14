@@ -1,4 +1,4 @@
-import { Boxes, CircleDollarSign, Zap, ImagePlus, PackageCheck, Plus, Printer, Search, ShoppingBag, TrendingUp, Wallet, X } from 'lucide-react'
+import { Boxes, CircleDollarSign, Zap, ImagePlus, PackageCheck, Plus, Printer, Scissors, Search, ShoppingBag, TrendingUp, Wallet, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { useNavigate } from 'react-router-dom'
@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { Modal } from '../../components/ui/Modal'
 import { CuentaSelect, type DestinoPago } from '../../components/finanzas/CuentaSelect'
 import { subirImagenCatalogo } from '../../services/catalogoImagenes.service'
-import { actualizarInversion, cambiarEstadoInversion, eliminarInversion, listarInversiones, listarProductos, listarVentasStock, obtenerTipoCambio, pagarInversion, registrarInversion, venderStockInmediato, type VentaStock } from '../../services/comercial.service'
+import { actualizarInversion, cambiarEstadoInversion, eliminarInversion, listarInversiones, listarProductos, listarVentasStock, obtenerTipoCambio, abonarInversion, pagarInversion, registrarCompraLibre, separarCompraLibre, venderStockInmediato, type VentaStock } from '../../services/comercial.service'
 import type { Inversion, Producto } from '../../types/domain'
 import { enviarReciboStockCorreo, imprimirReciboStock } from '../../utils/reciboStock'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
@@ -20,11 +20,13 @@ import { LinkPagoModal } from '../../components/inventario/LinkPagoModal'
 import { CompraCard, CompraFila } from '../../components/inventario/CompraCard'
 import { LibresTabs } from '../../components/layout/LibresTabs'
 import { ProductoImg } from '../../components/ui/ProductoImg'
+import { pagadoInversion, porPagarInversion, tallasDeTexto } from '../../utils/compraPago'
 
 // pago: 'ahora' = se descuenta de la cuenta al registrar; 'antes' = ya estaba pagado/descontado;
-// 'pendiente' = todavía no se le pagó al proveedor (queda "por pagar" en la tarjeta).
-type Pago = 'ahora' | 'antes' | 'pendiente'
-const empty = { fecha: new Date().toISOString().slice(0, 10), producto_id: '', codigo: '', producto: '', marca: '', talla_color: '', cantidad: '1', costo_unitario: '', gastos_adicionales: '', precio_venta_estimado: '', metodo: 'Transferencia', notas: '', tracking: '', transportista: '', url_tracking: '', llega_aprox: '', pago: 'ahora' as Pago, estado: 'en_inventario' as Inversion['estado'] }
+// 'pendiente' = todavía no se le pagó al proveedor (queda "por pagar" en la tarjeta);
+// 'parte' = se le dio un adelanto y el resto queda por pagar.
+type Pago = 'ahora' | 'antes' | 'pendiente' | 'parte'
+const empty = { fecha: new Date().toISOString().slice(0, 10), producto_id: '', codigo: '', producto: '', marca: '', talla_color: '', cantidad: '1', costo_unitario: '', gastos_adicionales: '', precio_venta_estimado: '', metodo: 'Transferencia', notas: '', tracking: '', transportista: '', url_tracking: '', llega_aprox: '', pago: 'ahora' as Pago, adelanto: '', porTalla: true, estado: 'en_inventario' as Inversion['estado'] }
 const statusLabel: Record<Inversion['estado'], string> = { en_transito: 'En camino', en_inventario: 'Disponible', reservado: 'Apartado', vendido: 'Vendido', descartado: 'Descartado' }
 // Lo disponible se muestra primero; lo vendido o descartado se va al fondo.
 const statusOrder: Record<Inversion['estado'], number> = { en_inventario: 0, en_transito: 1, reservado: 2, vendido: 3, descartado: 4 }
@@ -94,7 +96,7 @@ export function InventarioPage() {
   const metrics = useMemo(() => items.reduce((result, item) => {
     const cost = totalCost(item), sale = Number(item.precio_venta_estimado) * Number(item.cantidad)
     result.invested += cost
-    if (porPagar(item) && item.estado !== 'descartado') { result.debt += cost; result.debtCount++ }
+    if (porPagar(item) && item.estado !== 'descartado') { result.debt += porPagarInversion(item, cost); result.debtCount++ }
     if (activo(item.estado)) { result.units += item.cantidad; result.costActive += cost; result.potential += sale }
     return result
   }, { invested: 0, units: 0, costActive: 0, potential: 0, debt: 0, debtCount: 0 }), [items])
@@ -112,6 +114,19 @@ export function InventarioPage() {
     if (!window.confirm(`¿Eliminar "${item.producto}" de Compras libres? Si ya se había pagado, ese monto vuelve a Mi cuenta. Esta acción no se puede deshacer.`)) return
     try { await eliminarInversion(item.id); setItems((all) => all.filter((current) => current.id !== item.id)); toast.success('Producto eliminado del inventario.') } catch { toast.error('No se pudo eliminar el producto.') }
   }
+  // Separar una compra de varios pares en una por talla, para venderlas o apartarlas por separado.
+  const separar = async (item: Inversion) => {
+    const tallas = tallasDeTexto(item.talla_color)
+    const n = Number(item.cantidad)
+    if (tallas.length > 1 && tallas.length !== n) return toast.error(`La compra tiene ${tallas.length} tallas para ${n} pares: editala y poné una talla por par, separadas por coma.`)
+    if (!window.confirm(`¿Separar esta compra en ${n} compras de 1 par${tallas.length === n ? ` (${tallas.join(', ')})` : ''}? El pago y los datos se copian a cada una.`)) return
+    try {
+      const filas = await separarCompraLibre(item, tallas)
+      setItems((all) => [...filas.slice(1), ...all.map((c) => c.id === item.id ? filas[0] : c)])
+      toast.success(`Listo: ahora son ${filas.length} compras, una por talla.`)
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo separar.') }
+  }
+
   // Apartar = convertir este producto de stock en un pedido normal (con cliente, abono y saldo).
   // Lleva el costo real como precio de compra para que la ganancia salga bien; ese costo NO se
   // vuelve a descontar (ya se pagó al traerlo). Al guardar el pedido, el producto sale del stock.
@@ -156,7 +171,8 @@ export function InventarioPage() {
       const luego = (fn: () => void) => () => fn()
       const saliendo = (fn: () => void) => () => { setDetalleId(null); fn() }
       return <Modal open onClose={() => setDetalleId(null)} title="Detalles de la compra" description={`${item.codigo ? `${item.codigo} · ` : ''}comprada el ${new Date(item.fecha + 'T12:00:00').toLocaleDateString('es-NI', { day: 'numeric', month: 'short', year: 'numeric' })}`}>
-        <CompraCard enModal item={item} costo={totalCost(item)} gastosAsociados={linkedExpenses(item)}
+        {Number(item.cantidad) > 1 && activo(item.estado) && <div className="mb-3 flex flex-col gap-2 rounded-xl border border-amber-300/30 bg-amber-300/[.06] p-3 text-xs sm:flex-row sm:items-center sm:justify-between"><span className="text-amber-100">Esta compra tiene <b>{item.cantidad} pares</b> en un solo registro: si vendés o apartás uno, se marcan todos. Separala para manejar cada par aparte.</span><button className="subtle-button shrink-0" onClick={() => void separar(item)}><Scissors size={14} /> Separar por talla</button></div>}
+        <CompraCard enModal item={item} costo={totalCost(item)} pendiente={porPagarInversion(item, totalCost(item))} gastosAsociados={linkedExpenses(item)}
           enEI={!!cod && (ei ?? []).some((p) => p.codigo.toUpperCase() === cod)} enCaminoPublicado={!!cod && enCaminoTienda.has(cod)}
           fotos={fotosCount[item.id] ?? 0} quitandoEI={quitandoEI === (item.codigo ?? '').trim()} imprimiendo={printingId === item.id}
           onEstado={(estado) => void updateStatus(item, estado)} onVer={luego(() => setPreview(item))} onEditar={luego(() => { setEditing(item); setOpen(true) })}
@@ -167,9 +183,9 @@ export function InventarioPage() {
     })()}
     {!items.length && <div className="mt-6 rounded-2xl border border-dashed border-line p-10 text-center text-sm text-muted">Todavía no hay compras libres. Registrá lo que compraste por tu cuenta para vender, esté pagado o no.</div>}
     {items.length > 0 && !visible.length && <div className="mt-6 rounded-2xl border border-dashed border-line p-10 text-center text-sm text-muted">Ningún producto coincide con esta búsqueda.</div>}
-    <ProductModal open={open} item={editing} inicial={inicial} products={products} onClose={() => { setOpen(false); setEditing(null); setInicial(null) }} onSaved={(item) => { setItems((all) => editing ? all.map((current) => current.id === item.id ? item : current) : [item, ...all]); setOpen(false); setEditing(null); setInicial(null) }} />
+    <ProductModal open={open} item={editing} inicial={inicial} products={products} onClose={() => { setOpen(false); setEditing(null); setInicial(null) }} onSaved={(guardadas) => { setItems((all) => editing ? all.map((current) => guardadas.find((g) => g.id === current.id) ?? current) : [...guardadas, ...all]); setOpen(false); setEditing(null); setInicial(null) }} />
     <SellModal item={selling} onClose={() => setSelling(null)} onSold={(item) => { setItems((all) => all.map((current) => current.id === item.id ? item : current)); setSelling(null); void listarVentasStock().then(setVentas).catch(() => undefined) }} />
-    <PayModal item={paying} onClose={() => setPaying(null)} onPaid={(item) => { setItems((all) => all.map((current) => current.id === item.id ? item : current)); setPaying(null) }} />
+    <PayModal item={paying} items={items} onClose={() => setPaying(null)} onPaid={(pagadas) => { setItems((all) => all.map((current) => pagadas.find((p) => p.id === current.id) ?? current)); setPaying(null) }} />
     <ClientPreview item={preview} onClose={() => setPreview(null)} />
     {fichaDe && <FichaClienteModal item={fichaDe} onClose={() => setFichaDe(null)} />}
     {linkDe && <LinkPagoModal item={linkDe} onClose={() => setLinkDe(null)} onMarcada={(nuevo) => { setItems((all) => all.map((x) => x.id === nuevo.id ? nuevo : x)); setLinkDe(nuevo) }} />}
@@ -179,26 +195,55 @@ export function InventarioPage() {
 }
 
 // Pago al proveedor de una compra que se registró "por pagar": sale de la cuenta elegida ahora.
-function PayModal({ item, onClose, onPaid }: { item: Inversion | null; onClose: () => void; onPaid: (item: Inversion) => void }) {
+function PayModal({ item, items, onClose, onPaid }: { item: Inversion | null; items: Inversion[]; onClose: () => void; onPaid: (items: Inversion[]) => void }) {
+  const [conHermanas, setConHermanas] = useState(true)
+  // Vacío = se paga todo lo que falta; un número menor = abono parcial (cuota).
+  const [parcial, setParcial] = useState('')
   const [form, setForm] = useState({ fecha: new Date().toISOString().slice(0, 10), metodo: 'Transferencia' })
   const [destino, setDestino] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
   const [tipoCambio, setTipoCambio] = useState(37)
   const [saving, setSaving] = useState(false)
-  useEffect(() => { if (item) { setForm({ fecha: new Date().toISOString().slice(0, 10), metodo: 'Transferencia' }); setDestino({ cuentaId: null, montoCuenta: 0 }); void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined) } }, [item])
+  useEffect(() => { if (item) { setForm({ fecha: new Date().toISOString().slice(0, 10), metodo: 'Transferencia' }); setDestino({ cuentaId: null, montoCuenta: 0 }); setParcial(''); void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined) } }, [item])
   if (!item) return null
-  const monto = totalCost(item)
+  // Los otros pares de la MISMA compra (mismo código, fecha y costo) que también están por pagar.
+  const hermanas = items.filter((x) => x.id !== item.id && x.pagado === false && x.estado !== 'descartado' && (x.codigo ?? '') === (item.codigo ?? '') && x.fecha === item.fecha && Number(x.costo_unitario) === Number(item.costo_unitario))
+  const aPagar = [item, ...(conHermanas ? hermanas : [])]
+  const faltaDe = (x: Inversion) => porPagarInversion(x, Number(x.costo_unitario) * Number(x.cantidad) + Number(x.gastos_adicionales))
+  const monto = Math.round(aPagar.reduce((s, x) => s + faltaDe(x), 0) * 100) / 100
+  const abonado = pagadoInversion(item, totalCost(item))
+  const pagaAhora = parcial.trim() ? Math.min(monto, Math.max(0, Number(parcial) || 0)) : monto
+  const esParcial = pagaAhora < monto - 0.005
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     if (!destino.cuentaId) return toast.error('Elegí de qué cuenta sale el pago.')
+    if (pagaAhora <= 0.005) return toast.error('Escribí cuánto le pagás ahora.')
     setSaving(true)
-    try { onPaid(await pagarInversion(item, form, destino)); toast.success('Pago al proveedor registrado.') } catch { toast.error('No se pudo registrar el pago.') } finally { setSaving(false) }
+    try {
+      // Lo pagado cubre los pares en orden (completos primero); si sobra una parte, queda abonada al
+      // siguiente. Lo que sale de la cuenta se reparte en la misma proporción.
+      const ratio = pagaAhora > 0 ? destino.montoCuenta / pagaAhora : 1
+      let restante = pagaAhora
+      let salido = 0
+      const enCuenta = (usd: number) => { const v = restante - usd <= 0.005 ? Math.round((destino.montoCuenta - salido) * 100) / 100 : Math.round(usd * ratio * 100) / 100; salido += v; return v }
+      const pagadas: Inversion[] = []
+      for (const x of aPagar) {
+        const falta = faltaDe(x)
+        if (restante <= 0.005) break
+        if (restante >= falta - 0.005) { pagadas.push(await pagarInversion(x, form, { cuentaId: destino.cuentaId, montoCuenta: enCuenta(falta) })); restante -= falta }
+        else { pagadas.push(await abonarInversion(x, Math.round(restante * 100) / 100, form, { cuentaId: destino.cuentaId, montoCuenta: enCuenta(restante) })); restante = 0 }
+      }
+      onPaid(pagadas)
+      toast.success(esParcial ? `Abono de USD ${pagaAhora.toFixed(2)} registrado. Quedan USD ${(monto - pagaAhora).toFixed(2)} por pagar.` : pagadas.length > 1 ? `Pago registrado: ${pagadas.length} pares de esta compra quedaron pagados.` : 'Pago al proveedor registrado.')
+    } catch { toast.error('No se pudo registrar el pago.') } finally { setSaving(false) }
   }
   return <Modal open={Boolean(item)} onClose={onClose} title={`Pagar al proveedor · ${item.producto}`} description="La compra quedó por pagar. Registrá el pago cuando se lo hagas al proveedor.">
     <form className="form-grid" onSubmit={(event) => void submit(event)}>
       <Field label="Fecha del pago"><input type="date" value={form.fecha} onChange={(event) => setForm({ ...form, fecha: event.target.value })} /></Field>
       <Field label="Método de pago"><input value={form.metodo} onChange={(event) => setForm({ ...form, metodo: event.target.value })} /></Field>
-      <CuentaSelect requerido proposito="comprar" montoUsd={monto} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" />
-      <div className="col-span-full rounded-xl border border-accent/20 bg-accent/[.05] p-4 text-sm">Se descontarán <strong className="text-accent">USD {monto.toFixed(2)}</strong> de la cuenta elegida y la compra quedará como pagada.</div>
+      <label className="form-field col-span-full"><span>¿Cuánto le pagás ahora? (US$)</span><input type="number" min="0" step=".01" value={parcial} onChange={(event) => setParcial(event.target.value)} placeholder={`Todo lo que falta: ${monto.toFixed(2)}`} /></label>
+      <CuentaSelect requerido proposito="comprar" montoUsd={pagaAhora} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" />
+      {hermanas.length > 0 && <label className="col-span-full flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-white/[.02] p-3"><input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-accent" checked={conHermanas} onChange={(event) => setConHermanas(event.target.checked)} /><span className="flex flex-col"><span className="text-sm font-medium">Pagar también los otros {hermanas.length} {hermanas.length === 1 ? 'par' : 'pares'} de esta compra</span><span className="text-[11px] text-muted">{hermanas.map((x) => x.talla_color || 's/t').join(', ')} · comprados el mismo día</span></span></label>}
+      <div className="col-span-full rounded-xl border border-accent/20 bg-accent/[.05] p-4 text-sm">{abonado > 0.005 && <span className="mb-1 block text-xs text-muted">De este par ya adelantaste USD {abonado.toFixed(2)}.</span>}Se descontarán <strong className="text-accent">USD {pagaAhora.toFixed(2)}</strong> de la cuenta elegida{esParcial ? <> como abono; quedan <strong className="text-accent">USD {(monto - pagaAhora).toFixed(2)}</strong> por pagar.</> : <> y {aPagar.length > 1 ? `los ${aPagar.length} pares quedarán como pagados` : 'la compra quedará como pagada'}.</>}</div>
       <div className="col-span-full flex justify-end gap-2"><button type="button" className="subtle-button" onClick={onClose}>Cancelar</button><button className="primary-button px-5" disabled={saving}>{saving ? 'Registrando…' : 'Registrar pago'}</button></div>
     </form>
   </Modal>
@@ -268,13 +313,13 @@ function SellModal({ item, onClose, onSold }: { item: Inversion | null; onClose:
   </Modal>
 }
 
-function ProductModal({ open, item, inicial, products, onClose, onSaved }: { open: boolean; item: Inversion | null; inicial?: Partial<typeof empty> | null; products: Producto[]; onClose: () => void; onSaved: (item: Inversion) => void }) {
+function ProductModal({ open, item, inicial, products, onClose, onSaved }: { open: boolean; item: Inversion | null; inicial?: Partial<typeof empty> | null; products: Producto[]; onClose: () => void; onSaved: (items: Inversion[]) => void }) {
   const [form, setForm] = useState(empty)
   const [file, setFile] = useState<File | null>(null)
   const [destino, setDestino] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
   const [tipoCambio, setTipoCambio] = useState(37)
   const [saving, setSaving] = useState(false)
-  useEffect(() => { if (!open) return; setFile(null); setDestino({ cuentaId: null, montoCuenta: 0 }); void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined); setForm(item ? { fecha: item.fecha.slice(0, 10), producto_id: item.producto_id ?? '', codigo: item.codigo ?? '', producto: item.producto, marca: item.marca ?? '', talla_color: item.talla_color ?? '', cantidad: String(item.cantidad), costo_unitario: String(item.costo_unitario), gastos_adicionales: String(item.gastos_adicionales), precio_venta_estimado: String(item.precio_venta_estimado), metodo: 'Transferencia', notas: item.notas ?? '', tracking: item.tracking ?? '', transportista: item.transportista ?? '', url_tracking: item.url_tracking ?? '', llega_aprox: item.llega_aprox ?? '', pago: porPagar(item) ? 'pendiente' : 'antes', estado: item.estado } : { ...empty, ...(inicial ?? {}) }) }, [item, open, inicial])
+  useEffect(() => { if (!open) return; setFile(null); setDestino({ cuentaId: null, montoCuenta: 0 }); void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined); setForm(item ? { fecha: item.fecha.slice(0, 10), producto_id: item.producto_id ?? '', codigo: item.codigo ?? '', producto: item.producto, marca: item.marca ?? '', talla_color: item.talla_color ?? '', cantidad: String(item.cantidad), costo_unitario: String(item.costo_unitario), gastos_adicionales: String(item.gastos_adicionales), precio_venta_estimado: String(item.precio_venta_estimado), metodo: 'Transferencia', notas: item.notas ?? '', tracking: item.tracking ?? '', transportista: item.transportista ?? '', url_tracking: item.url_tracking ?? '', llega_aprox: item.llega_aprox ?? '', pago: porPagar(item) ? 'pendiente' : 'antes', adelanto: '', porTalla: false, estado: item.estado } : { ...empty, ...(inicial ?? {}) }) }, [item, open, inicial])
 
   // Al escribir el código se completa todo solo (nombre, marca, precios y foto) si coincide con un producto del catálogo.
   const aplicarCodigo = (codigo: string) => {
@@ -287,18 +332,40 @@ function ProductModal({ open, item, inicial, products, onClose, onSaved }: { ope
     event.preventDefault()
     const cantidad = Number(form.cantidad), costoUnitario = Number(form.costo_unitario), gastosAdicionales = Number(form.gastos_adicionales), precioVenta = Number(form.precio_venta_estimado)
     if (!form.producto.trim() || cantidad < 1 || precioVenta <= 0) return toast.error('Completa producto, cantidad y precio de venta.')
-    const descuenta = !item && form.pago === 'ahora'
+    const descuenta = !item && (form.pago === 'ahora' || form.pago === 'parte')
+    const adelanto = Number(form.adelanto) || 0
+    if (!item && form.pago === 'parte' && (adelanto <= 0 || adelanto >= cantidad * costoUnitario + gastosAdicionales)) return toast.error('Escribí cuánto le adelantaste (menos que el total de la compra).')
     if (descuenta && !destino.cuentaId) return toast.error('Elegí de qué cuenta sale el pago.')
+    // Varios pares: una compra por talla (las tallas separadas por coma, una por par).
+    const tallas = tallasDeTexto(form.talla_color)
+    const separar = !item && form.porTalla && cantidad > 1
+    if (separar && tallas.length > 1 && tallas.length !== cantidad) return toast.error(`Pusiste ${tallas.length} tallas para ${cantidad} pares: poné una talla por par, separadas por coma.`)
     setSaving(true)
     try {
       // Al editar no se toca el pago (se registra con "Registrar pago al proveedor" en la tarjeta).
       const pagoCampos = item ? {} : { pagado: form.pago !== 'pendiente', pagado_at: form.pago === 'pendiente' ? null : new Date().toISOString() }
       const input = { fecha: form.fecha, producto_id: form.producto_id || null, codigo: form.codigo || null, producto: form.producto.trim(), marca: form.marca || null, talla_color: form.talla_color || null, cantidad, costo_unitario: costoUnitario, gastos_adicionales: gastosAdicionales, precio_venta_estimado: precioVenta, estado: item?.estado ?? form.estado, notas: form.notas || null, tracking: form.tracking || null, transportista: form.transportista || null, url_tracking: form.url_tracking || null, ...(form.llega_aprox ? { llega_aprox: form.llega_aprox } : item?.llega_aprox ? { llega_aprox: null } : {}), estado_tracking: form.tracking ? (item?.estado_tracking ?? 'Registrado') : null, pedido_id: item?.pedido_id ?? null, ...pagoCampos }
-      let saved = item ? await actualizarInversion(item.id, input) : await registrarInversion(input, form.metodo, descuenta, destino)
-      if (file) saved = await actualizarInversion(saved.id, { imagen: await subirImagenCatalogo('inversiones', saved.id, file) })
-      else if (!saved.imagen && catalogImagen) saved = await actualizarInversion(saved.id, { imagen: catalogImagen })
-      onSaved(saved)
-      toast.success(item ? 'Compra actualizada.' : form.pago === 'ahora' ? 'Compra registrada y descontada de Mi cuenta.' : form.pago === 'antes' ? 'Compra registrada sin descontarla otra vez.' : 'Compra registrada como por pagar al proveedor.')
+      if (item) {
+        let saved = await actualizarInversion(item.id, input)
+        if (file) saved = await actualizarInversion(saved.id, { imagen: await subirImagenCatalogo('inversiones', saved.id, file) })
+        else if (!saved.imagen && catalogImagen) saved = await actualizarInversion(saved.id, { imagen: catalogImagen })
+        onSaved([saved])
+        toast.success('Compra actualizada.')
+        return
+      }
+      // Filas a crear: una sola, o una por par (con su talla y su parte del envío/otros gastos).
+      const n = separar ? cantidad : 1
+      const gastoPar = Math.floor((gastosAdicionales / n) * 100) / 100
+      const inputs = Array.from({ length: n }, (_, i) => separar
+        ? { ...input, cantidad: 1, talla_color: tallas.length === cantidad ? tallas[i] : (form.talla_color || null), gastos_adicionales: i === n - 1 ? Math.round((gastosAdicionales - gastoPar * (n - 1)) * 100) / 100 : gastoPar }
+        : input)
+      let creadas = await registrarCompraLibre(inputs, { modo: form.pago, adelanto, metodo: form.metodo, destino })
+      // Foto: la subida (una vez) o la del catálogo, para todas las filas.
+      const foto = file ? await subirImagenCatalogo('inversiones', creadas[0].id, file) : (!creadas[0].imagen && catalogImagen ? catalogImagen : null)
+      if (foto) creadas = await Promise.all(creadas.map((c) => actualizarInversion(c.id, { imagen: foto })))
+      onSaved(creadas)
+      const cuantas = creadas.length > 1 ? `${creadas.length} compras (una por talla)` : 'Compra'
+      toast.success(form.pago === 'ahora' ? `${cuantas} registrada${creadas.length > 1 ? 's' : ''} y descontada${creadas.length > 1 ? 's' : ''} de Mi cuenta.` : form.pago === 'antes' ? `${cuantas} registrada${creadas.length > 1 ? 's' : ''} sin descontarla otra vez.` : form.pago === 'parte' ? `${cuantas} registrada${creadas.length > 1 ? 's' : ''}: adelanto de US$ ${adelanto.toFixed(2)} descontado; el resto queda por pagar.` : `${cuantas} registrada${creadas.length > 1 ? 's' : ''} como por pagar al proveedor.`)
     } catch (error) { toast.error(error instanceof Error ? error.message : 'No se pudo guardar el producto.') } finally { setSaving(false) }
   }
 
@@ -325,9 +392,11 @@ function ProductModal({ open, item, inicial, products, onClose, onSaved }: { ope
     <Field label="Método de pago"><input value={form.metodo} onChange={(event) => setForm({ ...form, metodo: event.target.value })} /></Field><Field label="Notas"><input value={form.notas} onChange={(event) => setForm({ ...form, notas: event.target.value })} /></Field>
     <label className="form-field col-span-full"><span>Foto del producto</span><span className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-line p-4 text-sm text-muted">{previewSrc ? <img src={previewSrc} alt="" className="size-10 shrink-0 rounded-lg object-cover" /> : <ImagePlus size={20} className="text-accent" />}{file ? file.name : usaCatalogo ? 'Foto de la web (automática por código) · toca para reemplazar' : item?.imagen ? 'Cambiar foto actual' : 'Escribe el código y saldrá la foto de la web, o selecciónala'}<input className="hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></span></label>
     {!item && <Opciones label="¿Dónde está?" value={form.estado} onChange={(estado) => setForm({ ...form, estado: estado as Inversion['estado'] })} options={[['en_inventario', 'Ya lo tengo', 'Disponible para vender o entregar'], ['en_transito', 'Viene en camino', 'Comprado, todavía no llega']]} />}
-    {!item && <Opciones label="¿Ya se lo pagaste al proveedor?" value={form.pago} onChange={(pago) => setForm({ ...form, pago: pago as Pago })} options={[['ahora', 'Sí, lo pago ahora', 'Se descuenta de la cuenta que elijas'], ['antes', 'Sí, ya estaba pagado', 'Ya salió de caja; no se descuenta otra vez'], ['pendiente', 'Todavía no', 'Queda "por pagar"; lo pagás después desde la tarjeta']]} />}
-    {!item && form.pago === 'ahora' && <CuentaSelect requerido proposito="comprar" montoUsd={total} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" />}
-    <div className="col-span-full rounded-xl border border-accent/20 bg-accent/[.05] p-4 text-sm">{item ? 'Se actualizará esta compra sin registrar un pago nuevo.' : <>Compra de <strong className="text-accent">USD {total.toFixed(2)}</strong>{form.pago === 'ahora' ? ': se descontará de Mi cuenta.' : form.pago === 'antes' ? ': no se descuenta otra vez de Mi cuenta.' : ': queda por pagar al proveedor (no sale de caja todavía).'}</>}</div>
+    {!item && Number(form.cantidad) > 1 && <label className="col-span-full flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-white/[.02] p-3"><input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-accent" checked={form.porTalla} onChange={(event) => setForm({ ...form, porTalla: event.target.checked })} /><span className="flex flex-col"><span className="text-sm font-medium">Registrar un par por talla (recomendado)</span><span className="text-[11px] text-muted">{(() => { const t = tallasDeTexto(form.talla_color); const n = Number(form.cantidad); return t.length === n ? `Se crean ${n} compras de 1 par: ${t.join(', ')}. Cada una se vende o se aparta por separado.` : t.length > 1 ? `Pusiste ${t.length} tallas para ${n} pares: poné una talla por par, separadas por coma.` : `Se crean ${n} compras de 1 par${t[0] ? ` (talla ${t[0]})` : ''}. Cada una se vende o se aparta por separado.` })()}</span></span></label>}
+    {!item && <Opciones label="¿Ya se lo pagaste al proveedor?" value={form.pago} onChange={(pago) => setForm({ ...form, pago: pago as Pago })} options={[['ahora', 'Sí, todo ahora', 'Se descuenta de la cuenta que elijas'], ['parte', 'Pagué una parte', 'Un adelanto ahora; el resto queda por pagar'], ['antes', 'Sí, ya estaba pagado', 'Ya salió de caja; no se descuenta otra vez'], ['pendiente', 'Todavía no', 'Queda "por pagar"; lo pagás después desde la tarjeta']]} />}
+    {!item && form.pago === 'parte' && <Field label="¿Cuánto le adelantaste? (US$)"><input type="number" min="0" step=".01" value={form.adelanto} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setForm({ ...form, adelanto: event.target.value })} placeholder="Ej: 150" /></Field>}
+    {!item && (form.pago === 'ahora' || form.pago === 'parte') && <CuentaSelect requerido proposito="comprar" montoUsd={form.pago === 'parte' ? (Number(form.adelanto) || 0) : total} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" />}
+    <div className="col-span-full rounded-xl border border-accent/20 bg-accent/[.05] p-4 text-sm">{item ? 'Se actualizará esta compra sin registrar un pago nuevo.' : <>Compra de <strong className="text-accent">USD {total.toFixed(2)}</strong>{form.pago === 'ahora' ? ': se descontará de Mi cuenta.' : form.pago === 'antes' ? ': no se descuenta otra vez de Mi cuenta.' : form.pago === 'parte' ? <>: ahora salen <strong className="text-accent">USD {(Number(form.adelanto) || 0).toFixed(2)}</strong> de adelanto y quedan <strong className="text-accent">USD {Math.max(0, total - (Number(form.adelanto) || 0)).toFixed(2)}</strong> por pagar.{form.porTalla && Number(form.cantidad) > 1 && Number(form.costo_unitario) > 0 ? ` El adelanto cubre ${Math.floor((Number(form.adelanto) || 0) / (Number(form.costo_unitario) + (Number(form.gastos_adicionales) || 0) / Number(form.cantidad)))} par(es) completos; el resto queda por pagar.` : ''}</> : ': queda por pagar al proveedor (no sale de caja todavía).'}</>}</div>
     <div className="col-span-full flex justify-end gap-2"><button type="button" className="subtle-button" onClick={onClose}>Cancelar</button><button className="primary-button px-5" disabled={saving}>{saving ? 'Guardando…' : item ? 'Guardar cambios' : 'Registrar compra'}</button></div>
   </form></Modal>
 }
