@@ -141,7 +141,7 @@ async function historiaJpeg(pedido: Pedido, opts: HistoriaOpts): Promise<Blob> {
   ctx.fillStyle = BLACK; ctx.textAlign = 'center'; ctx.font = '600 74px "Cormorant Garamond", Georgia, serif'
   ctx.letterSpacing = '1px'; ctx.fillText(opts.inmediata ? '¡Vendido!' : '¡Pedido entregado!', CX, 540); ctx.letterSpacing = '0px'
   ctx.fillStyle = '#6b6b6b'; ctx.font = '400 27px Jost, Arial'
-  ctx.fillText(opts.inmediata ? 'Entrega inmediata · ya tiene dueño.' : 'Tu pedido fue entregado con éxito.', CX, 598)
+  ctx.fillText(opts.inmediata ? 'Entrega inmediata.' : 'Tu pedido fue entregado con éxito.', CX, 598)
 
   // Datos del pedido (anonimizados).
   const items = pedido.pedido_items ?? []
