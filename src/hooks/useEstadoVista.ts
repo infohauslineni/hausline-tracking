@@ -27,3 +27,10 @@ export function useEstadoVista<T>(clave: string, inicial: T | (() => T)) {
   }, [clave])
   return [valor, cambiar] as const
 }
+
+// Deja preparado el valor de una vista ANTES de entrar a ella (p. ej. el buscador global abre
+// Compras libres ya filtrada por el código buscado).
+export function fijarEstadoVista<T>(clave: string, valor: T) {
+  memoria.set(clave, valor)
+  try { sessionStorage.setItem(PREFIJO + clave, JSON.stringify(valor)) } catch { /* solo memoria */ }
+}

@@ -19,6 +19,21 @@ async function fotoProducto(codigo) {
   } catch { return '' }
 }
 
+// Vuelve a leer los encargos justo antes del correo al cliente: el comprobante puede subirse
+// unos segundos después de crearlos. Best-effort: sin service role o si falla, false.
+async function pagoYaReportado(encargos) {
+  const base = process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const ids = encargos.map((s) => s.id).filter(Boolean)
+  if (!base || !key || !ids.length) return false
+  try {
+    const res = await fetch(`${base.replace(/\/$/, '')}/rest/v1/solicitudes?select=id&id=in.(${ids.map(encodeURIComponent).join(',')})&or=(pago_reportado_at.not.is.null,comprobante_url.not.is.null)`, { headers: { apikey: key, authorization: `Bearer ${key}` } })
+    if (!res.ok) return false
+    const rows = await res.json()
+    return Array.isArray(rows) && rows.length > 0
+  } catch { return false }
+}
+
 // Reclama de forma ATÓMICA (marca aviso_admin_at) los encargos pendientes AÚN SIN AVISAR del
 // mismo cliente creados en los últimos minutos, y los devuelve. Como el UPDATE bloquea las
 // filas, de todas las invocaciones concurrentes del carrito SOLO UNA se lleva las filas (las
@@ -131,7 +146,11 @@ export default async function handler(request, response) {
   console.log('notificar-encargo INSERT →', JSON.stringify({ avisoAdmin, destinoAdmin: destinoAdmin ? destinoAdmin.replace(/(.{2}).*(@.*)/, '$1***$2') : '(vacío)', count: encargos.length }))
 
   // Correo automático AL CLIENTE (uno solo con todos sus códigos). Best-effort.
+  // Si el cliente YA reportó el pago (subió el comprobante en el checkout mientras esperábamos
+  // el carrito), no tiene sentido decirle "esperamos su pago": no se le manda.
   let avisoCliente = false
+  const yaReporto = encargos.some((s) => s.pago_reportado_at || s.comprobante_url) || await pagoYaReportado(encargos)
+  if (yaReporto) return response.status(200).json({ ok: true, avisoAdmin, avisoCliente, skipped: 'cliente ya reportó el pago', count: encargos.length })
   const correoCliente = String(encargos[0].cliente_correo || '').trim()
   if (correoCliente) {
     try {

@@ -357,6 +357,48 @@ export async function separarCompraLibre(item: Inversion, tallas: string[]): Pro
   return [primera as unknown as Inversion, ...((nuevas ?? []) as unknown as Inversion[])]
 }
 
+// Reparte lo que sale de la cuenta (en su moneda) en la misma proporción que los montos en USD.
+function repartirEnCuenta(montos: number[], montoCuenta: number) {
+  const total = montos.reduce((s, m) => s + m, 0)
+  let salido = 0
+  return montos.map((m, i) => {
+    const v = i === montos.length - 1 ? Math.round((montoCuenta - salido) * 100) / 100 : Math.round((total > 0 ? (m / total) * montoCuenta : 0) * 100) / 100
+    salido += v
+    return v
+  })
+}
+
+// ENVÍO A NICARAGUA de un paquete con varias compras (zapatos y camisas juntos): un gasto
+// "Envío" ligado a cada compra con su parte, así cada producto carga su costo real.
+export async function registrarEnvioCompras(partes: { item: Inversion; monto: number }[], opts: { fecha: string; metodo: string; descripcion?: string }, destino?: DestinoCuenta) {
+  const filas = partes.filter((p) => p.monto > 0.004)
+  const enCuenta = destino?.cuentaId ? repartirEnCuenta(filas.map((p) => p.monto), Number(destino.montoCuenta ?? filas.reduce((s, p) => s + p.monto, 0))) : []
+  for (const [i, { item, monto }] of filas.entries()) {
+    await registrarGasto({ fecha: opts.fecha, categoria: 'Envío', monto, moneda: 'USD', monto_original: monto, tipo_cambio: null, metodo_pago: opts.metodo || null, pedido_id: null, inversion_id: item.id, proveedor_id: null, descripcion: `${opts.descripcion || 'Envío a Nicaragua'} · ${item.producto}${item.talla_color ? ` (${item.talla_color})` : ''}`, observaciones: filas.length > 1 ? `Paquete de ${filas.length} productos` : null }, destino?.cuentaId ? { cuentaId: destino.cuentaId, montoCuenta: enCuenta[i] } : undefined)
+  }
+  invalidateComercial()
+}
+
+// PAGAR VARIAS compras de una vez (p. ej. todo lo que está por pagar) con UN pago que ya trae la
+// comisión de PayPal. `extras[i]` es la parte de la comisión que le toca a cada compra: se suma a
+// su costo (otros gastos) y después se paga lo que le falta.
+export async function pagarVariasCompras(items: Inversion[], extras: number[], opts: { fecha: string; metodo: string }, destino?: DestinoCuenta) {
+  const faltas: number[] = []
+  const conComision: Inversion[] = []
+  for (const [i, item] of items.entries()) {
+    const extra = Math.round((extras[i] || 0) * 100) / 100
+    const actual = Math.abs(extra) > 0.004 ? await actualizarInversion(item.id, { gastos_adicionales: Math.round((Number(item.gastos_adicionales || 0) + extra) * 100) / 100 }) : item
+    const costo = Number(actual.costo_unitario) * Number(actual.cantidad) + Number(actual.gastos_adicionales)
+    const abonado = (actual.movimientos_cuenta ?? []).filter((m) => m.tipo === 'inversion').reduce((s, m) => s + Number(m.monto || 0), 0)
+    faltas.push(Math.max(0, Math.round((costo - abonado) * 100) / 100))
+    conComision.push(actual)
+  }
+  const enCuenta = destino?.cuentaId ? repartirEnCuenta(faltas, Number(destino.montoCuenta ?? faltas.reduce((s, f) => s + f, 0))) : []
+  const pagadas: Inversion[] = []
+  for (const [i, item] of conComision.entries()) pagadas.push(await pagarInversion(item, opts, destino?.cuentaId ? { cuentaId: destino.cuentaId, montoCuenta: enCuenta[i] } : undefined))
+  return pagadas
+}
+
 export async function cambiarEstadoInversion(id: string, estado: Inversion['estado']) { const { data, error } = await client().from('inversiones').update({ estado }).eq('id', id).select(INV_SELECT).single(); if (error) throw error; invalidateComercial(); return data as unknown as Inversion }
 
 // Venta directa de stock inmediato: registra el ingreso y marca el producto como vendido,
@@ -405,7 +447,10 @@ export async function actualizarInversion(id: string, input: Partial<Omit<Invers
   if (error) throw error
   if (input.costo_unitario !== undefined || input.cantidad !== undefined || input.gastos_adicionales !== undefined || input.producto !== undefined) {
     const updated = data as unknown as Inversion
-    await client().from('movimientos_cuenta').update({ descripcion: `Inversión en ${updated.producto}`, monto: Number(updated.costo_unitario) * Number(updated.cantidad) + Number(updated.gastos_adicionales), observaciones: updated.notas }).eq('inversion_id', id)
+    // Solo el pago ÚNICO de una compra ya pagada sigue al costo. Nunca se tocan las ventas
+    // (ingresos de la misma compra) ni los abonos parciales.
+    const pagos = (updated.movimientos_cuenta ?? []).filter((m) => m.tipo === 'inversion')
+    if (updated.pagado !== false && pagos.length === 1) await client().from('movimientos_cuenta').update({ descripcion: `Inversión en ${updated.producto}`, monto: Number(updated.costo_unitario) * Number(updated.cantidad) + Number(updated.gastos_adicionales), observaciones: updated.notas }).eq('inversion_id', id).eq('tipo', 'inversion')
   }
   invalidateComercial()
   return data as unknown as Inversion

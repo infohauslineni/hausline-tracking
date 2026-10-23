@@ -8,6 +8,7 @@ import { AuthProvider } from './contexts/AuthContext'
 import { recargarUnaVez } from './lib/reloadOnce'
 import { aplicarTemaPanel } from './utils/temaPanel'
 import './styles.css'
+import './tema-claro.css'
 
 // Tras un deploy, una pestaña abierta puede pedir un chunk con el hash viejo (ya no existe).
 // Vite emite este evento cuando falla la precarga de un módulo: recargamos (como máximo una

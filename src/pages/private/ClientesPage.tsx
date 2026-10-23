@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
+import { ClientesTabs } from '../../components/layout/LibresTabs'
 import { Download, Edit3, MapPin, MessageCircle, Plus, Search, Ticket, Trash2, Users } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
@@ -74,6 +75,7 @@ export function ClientesPage() {
   }
 
   return <div>
+    <ClientesTabs />
     {!isSupabaseConfigured && <PreviewBanner />}
     <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Directorio</p><h1 className="page-title">Clientes</h1><p className="page-subtitle">Información de contacto y pedidos por cliente.</p></div><div className="flex flex-wrap gap-2"><button className="subtle-button px-4" onClick={exportarConCorreo} title="Descarga un archivo para Excel con los clientes que tienen correo"><Download size={16} /> Exportar con correo</button><button className="primary-button px-5" onClick={openNew}><Plus size={18} /> Nuevo cliente</button></div></div>
     <div className="mt-7 flex items-center gap-3"><div className="relative max-w-md flex-1"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" size={18} /><input className="search-input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nombre, WhatsApp o ciudad" /></div><span className="hidden text-xs text-muted sm:block">{filtered.length} clientes</span></div>

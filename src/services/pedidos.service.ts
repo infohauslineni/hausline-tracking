@@ -165,6 +165,12 @@ async function aprenderCostoProducto(client: NonNullable<typeof supabase>, item:
   if (Number(data.precio_compra || 0) > 0) return // ya tiene costo: no lo tocamos
   await client.from('productos').update({ precio_compra: costo }).eq('id', data.id)
 }
+// Un pedido que salió de una compra libre (apartado/vendido de stock) no le enseña su costo
+// al catálogo: viene de una compra en conjunto y cambia cada vez.
+async function vieneDeCompraLibre(client: NonNullable<typeof supabase>, pedidoId: string) {
+  const { data } = await client.from('inversiones').select('id').eq('pedido_id', pedidoId).limit(1)
+  return Boolean(data?.length)
+}
 
 // De los ítems de un pedido, devuelve los que son PRODUCTOS reales (con producto_id o
 // código), excluyendo servicios como el envío rápido o el delivery cobrado.
@@ -570,7 +576,9 @@ export async function crearPedido(input: NuevoPedidoInput, caja?: CajaPedido, op
   // aún no tiene costo en el catálogo (mismo criterio que al ajustar el costo real).
   const productosCreados = itemsProducto(items)
   const distintosCrear = new Set(productosCreados.map((it) => it.producto_id || (it.codigo_producto ?? '').trim().toUpperCase()))
-  if (productosCreados.length && distintosCrear.size === 1) {
+  // De una compra libre NO se aprende: ese costo sale de una compra en conjunto (reparto de
+  // comisión y envío) y varía de una compra a otra; no debe quedar como costo del catálogo.
+  if (productosCreados.length && distintosCrear.size === 1 && !opts?.desdeInversion) {
     await aprenderCostoProducto(client, productosCreados[0], Number(productosCreados[0].precio_compra || 0))
   }
 
@@ -657,7 +665,7 @@ async function ajustarCostoProveedor(client: NonNullable<typeof supabase>, pedid
     const { data: itemsPedido } = await client.from('pedido_items').select('producto_id, codigo_producto, cantidad, notas').eq('pedido_id', pedidoId)
     const productos = itemsProducto(itemsPedido ?? [])
     const distintos = new Set(productos.map((it) => it.producto_id || (it.codigo_producto ?? '').trim().toUpperCase()))
-    if (productos.length && distintos.size === 1) {
+    if (productos.length && distintos.size === 1 && !(await vieneDeCompraLibre(client, pedidoId))) {
       const cantidad = productos.reduce((sum, it) => sum + Number(it.cantidad || 1), 0) || 1
       await aprenderCostoProducto(client, productos[0], nuevoCosto / cantidad)
     }
@@ -746,7 +754,7 @@ export async function pagarProveedorPedido(pedidoId: string, input: PagoProveedo
     const { data: itemsPedido } = await client.from('pedido_items').select('producto_id, codigo_producto, cantidad, notas').eq('pedido_id', pedidoId)
     const productos = itemsProducto(itemsPedido ?? [])
     const distintos = new Set(productos.map((it) => it.producto_id || (it.codigo_producto ?? '').trim().toUpperCase()))
-    if (productos.length && distintos.size === 1) {
+    if (productos.length && distintos.size === 1 && !(await vieneDeCompraLibre(client, pedidoId))) {
       const cantidad = productos.reduce((sum, it) => sum + Number(it.cantidad || 1), 0) || 1
       await aprenderCostoProducto(client, productos[0], nuevoCosto / cantidad)
     }

@@ -51,19 +51,21 @@ export function CuentaSelect({ montoUsd, tipoCambio, value, onChange, modo = 'su
 
   if (!cuentas.length) return null
 
+  // Un toque por cuenta (chips). El monto en la moneda de la cuenta solo se pide cuando hace falta
+  // convertir (cuenta en córdobas); en dólares es el mismo monto y no se muestra.
+  const elegir = (c: CuentaBancaria | null) => { editado.current = false; onChange({ cuentaId: c?.id ?? null, montoCuenta: c ? sugerido(c) : 0 }) }
+  const chip = (activo: boolean) => `inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition ${activo ? 'border-accent bg-accent/15 text-white' : 'border-line text-muted hover:border-white/25 hover:text-white'}`
   return <div className="form-field col-span-full">
-    <span>{titulo} <span className="text-muted">({resta ? 'se resta de' : 'suma a'} la tarjeta)</span></span>
-    <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
-      <select value={value.cuentaId ?? ''} onChange={(e) => { editado.current = false; const c = cuentas.find((x) => x.id === e.target.value) ?? null; onChange({ cuentaId: c?.id ?? null, montoCuenta: c ? sugerido(c) : 0 }) }}>
-        {!requerido && <option value="">No asignar a ninguna cuenta</option>}
-        {cuentas.map((c) => <option key={c.id} value={c.id}>{c.emoji} {c.nombre} ({MONEDA_SIMBOLO[c.moneda]})</option>)}
-      </select>
-      {cuenta && (
-        <label className="flex items-center gap-2 text-xs text-muted">
-          <span className="shrink-0">{resta ? 'Se resta' : 'Se suma'} {MONEDA_SIMBOLO[cuenta.moneda]}</span>
-          <input type="number" step=".01" className="w-28" value={value.montoCuenta} onChange={(e) => { editado.current = true; onChange({ cuentaId: cuenta.id, montoCuenta: Number(e.target.value) }) }} />
-        </label>
-      )}
+    <span>{titulo}</span>
+    <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={titulo}>
+      {cuentas.map((c) => <button type="button" role="radio" aria-checked={value.cuentaId === c.id} key={c.id} className={chip(value.cuentaId === c.id)} onClick={() => elegir(c)}><span>{c.emoji}</span>{c.nombre}<span className="text-[10px] text-muted">{MONEDA_SIMBOLO[c.moneda]}</span></button>)}
+      {!requerido && <button type="button" role="radio" aria-checked={!value.cuentaId} className={chip(!value.cuentaId)} onClick={() => elegir(null)}>{resta ? 'No descontar' : 'Ninguna'}</button>}
     </div>
+    {cuenta && cuenta.moneda !== 'USD' && (
+      <label className="mt-1.5 flex items-center gap-2 text-xs text-muted">
+        <span className="shrink-0">{resta ? 'Salieron' : 'Entraron'} {MONEDA_SIMBOLO[cuenta.moneda]}</span>
+        <input type="number" step=".01" className="w-32" value={value.montoCuenta} onChange={(e) => { editado.current = true; onChange({ cuentaId: cuenta.id, montoCuenta: Number(e.target.value) }) }} />
+      </label>
+    )}
   </div>
 }

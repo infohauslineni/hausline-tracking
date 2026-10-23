@@ -1,4 +1,5 @@
 import { Check, EyeOff, Plus, Star, Trash2, X } from 'lucide-react'
+import { ClientesTabs } from '../../components/layout/LibresTabs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { toast } from 'sonner'
@@ -51,6 +52,7 @@ export function ResenasPage() {
 
   return (
     <div>
+      <ClientesTabs />
       {!isSupabaseConfigured && <div className="preview-banner"><strong>Vista previa local:</strong> las reseñas requieren conexión a Supabase.</div>}
 
       <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">

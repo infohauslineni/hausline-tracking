@@ -1,4 +1,4 @@
-import { ArrowUpRight, BarChart3, Bell, Bike, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, MoreHorizontal, PackagePlus, PackageSearch, Plus, ReceiptText, RotateCcw, Settings, ShoppingBag, Star, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
+import { ArrowUpRight, BarChart3, Bell, Bike, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, Moon, MoreHorizontal, PackagePlus, PackageSearch, Plus, ReceiptText, RotateCcw, Settings, ShoppingBag, Sun, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { RestaurarScroll } from './Navegacion'
@@ -8,7 +8,9 @@ import { isSupabaseConfigured, supabase } from '../../lib/supabase'
 import { prefetchRoute, warmDashboard } from '../../utils/prefetchDashboard'
 import { playEncargoChime, primeEncargoAudio } from '../../utils/notify'
 import { calcularAlertas, contarUrgentes, type Alerta } from '../../utils/alertas'
-import { Brand } from '../ui/Brand'
+import { HauslineLogo } from '../ui/HauslineLogo'
+import { guardarModoPanel, modoPanelGuardado, type ModoPanel } from '../../utils/temaPanel'
+import { BuscadorGlobal } from './BuscadorGlobal'
 
 type Badges = Record<string, number>
 // Contadores de "requiere atención" del menú + alertas para la campana. Se calculan de
@@ -40,7 +42,7 @@ async function calcularEstado(): Promise<{ badges: Badges; alertas: Alerta[] }> 
     '/reembolsos': reembolsos,
     // Salud de clientes vive dentro de Configuración: el contador de errores sale ahí.
     '/configuracion': erroresClientes,
-    '/pagos': pedidos.filter((p) => (p.estado === 'disponible_entrega' || p.estado === 'entregado') && Number(p.saldo) > 0.01).length,
+    '/cuenta': pedidos.filter((p) => (p.estado === 'disponible_entrega' || p.estado === 'entregado') && Number(p.saldo) > 0.01).length,
     '/logistica': pedidos.filter((p) => p.estado === 'incidencia').length,
     // Disponibles a los que todavía no se les avisó por WhatsApp.
     '/entregas': pedidos.filter((p) => p.estado === 'disponible_entrega' && !p.aviso_disponible_at).length,
@@ -56,12 +58,12 @@ type NavItem = { to: string; label: string; icon: typeof CircleGauge; nuevo?: bo
 const operaciones: NavItem[] = [
   { to: '/dashboard', label: 'Resumen', icon: CircleGauge },
   { to: '/pedidos', label: 'Pedidos', icon: Boxes },
-  { to: '/ventas', label: 'Ventas', icon: ShoppingBag },
   { to: '/solicitudes', label: 'Encargos web', icon: Inbox },
+  { to: '/ventas', label: 'Ventas', icon: ShoppingBag },
 ]
 const clientesProductos: NavItem[] = [
-  { to: '/clientes', label: 'Clientes', icon: Users },
-  { to: '/resenas', label: 'Reseñas', icon: Star },
+  // Clientes y Reseñas van juntos (pestañas dentro del mismo apartado).
+  { to: '/clientes', label: 'Clientes y reseñas', icon: Users, tambien: ['/resenas'] },
   { to: '/productos', label: 'Productos', icon: PackageSearch },
   // Un solo apartado con dos pestañas (Compras libres / Venta libre): siguen siendo páginas aparte.
   { to: '/stock', label: 'Compras y ventas libres', icon: HandCoins, tambien: ['/venta-libre'] },
@@ -69,15 +71,15 @@ const clientesProductos: NavItem[] = [
 // "Mi cuenta" es el hub de dinero: gastos, ingresos, salidas, estado de cuenta y saldo.
 // Por eso "Gastos" ya no es una entrada aparte (se registran desde Mi cuenta).
 const finanzas: NavItem[] = [
-  { to: '/pagos', label: 'Pagos', icon: CreditCard },
-  { to: '/gastos', label: 'Gastos', icon: ReceiptText, nuevo: true },
-  { to: '/reembolsos', label: 'Reembolsos', icon: RotateCcw, nuevo: true },
-  { to: '/cuenta', label: 'Mi cuenta', icon: Wallet },
-  { to: '/reportes', label: 'Reportes', icon: BarChart3, nuevo: true },
+  // Los pagos de clientes viven dentro de Mi cuenta (pestaña Pagos).
+  { to: '/cuenta', label: 'Mi cuenta y pagos', icon: Wallet, tambien: ['/pagos'] },
+  { to: '/gastos', label: 'Gastos', icon: ReceiptText },
+  { to: '/reembolsos', label: 'Reembolsos', icon: RotateCcw },
+  { to: '/reportes', label: 'Reportes', icon: BarChart3 },
 ]
 const logistica: NavItem[] = [
   { to: '/logistica', label: 'Logística', icon: Truck },
-  { to: '/entregas', label: 'Entregas', icon: Bike, nuevo: true },
+  { to: '/entregas', label: 'Entregas', icon: Bike },
 ]
 // Opciones administrativas (agrupadas aparte; se pueden ocultar por rol más adelante).
 const administracion: NavItem[] = [
@@ -95,9 +97,9 @@ const navGroups = [
 // solo para el admin. La seguridad real está en el servidor (RLS); esto es la capa visual.
 const RUTAS_OPERADOR = new Set(['/pedidos', '/solicitudes', '/logistica', '/entregas'])
 // Barra inferior en móvil (admin): Resumen · Pedidos · (+) · Ventas · Más.
-const mobileLinks = [operaciones[0], operaciones[1], operaciones[2]]
+const mobileLinks = [operaciones[0], operaciones[1], operaciones[3]]
 // Barra inferior en móvil (operador): Pedidos · Encargos · Logística · Más (sin botón "+").
-const mobileLinksOperador = [operaciones[1], operaciones[3], logistica[0]]
+const mobileLinksOperador = [operaciones[1], operaciones[2], logistica[0]]
 // Accesos rápidos del botón central "+" en móvil.
 const quickActions: NavItem[] = [
   { to: '/pedidos/nuevo', label: 'Nuevo pedido', icon: PackagePlus },
@@ -112,6 +114,10 @@ export function PrivateLayout() {
   const [badges, setBadges] = useState<Badges>({})
   const [alertas, setAlertas] = useState<Alerta[]>([])
   const [bellOpen, setBellOpen] = useState(false)
+  const [cuentaOpen, setCuentaOpen] = useState(false)
+  // Modo claro/oscuro (se cambia desde la barra superior o Configuración → Apariencia).
+  const [modo, setModo] = useState<ModoPanel>(modoPanelGuardado)
+  useEffect(() => { const f = (e: Event) => setModo((e as CustomEvent<ModoPanel>).detail); window.addEventListener('hausline:modo', f); return () => window.removeEventListener('hausline:modo', f) }, [])
   const { user, signOut, esAdmin } = useAuth()
   const location = useLocation()
   // Menú lateral filtrado por rol: el operador solo ve sus rutas operativas.
@@ -203,57 +209,72 @@ export function PrivateLayout() {
 
   return (
     <div className="min-h-screen bg-app text-white">
-      {open && <button aria-label="Cerrar menú" className="fixed inset-0 z-30 bg-black/70 lg:hidden" onClick={() => setOpen(false)} />}
-      <aside className={`fixed inset-y-0 left-0 z-40 flex w-[280px] flex-col border-r border-line bg-panel p-5 transition-transform lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="flex items-center justify-between">
-          <Brand />
-          <button className="icon-button lg:hidden!" onClick={() => setOpen(false)} aria-label="Cerrar menú"><X size={20} /></button>
+      {/* Barra superior a todo el ancho (estilo tienda grande): marca, buscador al centro y,
+          a la derecha, modo claro/oscuro, alertas y la cuenta. */}
+      <header className="topbar fixed inset-x-0 top-0 z-40 flex h-14 items-center gap-2 px-3 sm:px-4">
+        <button className="topbar-icon lg:hidden!" onClick={() => setOpen(true)} aria-label="Abrir menú"><Menu size={20} /></button>
+        <Link to={esAdmin ? '/dashboard' : '/pedidos'} className="flex shrink-0 items-center gap-2.5 lg:w-[224px]" aria-label="Inicio del panel">
+          <HauslineLogo size={30} className="shrink-0 rounded-lg" />
+          <span className="hidden leading-tight sm:block"><strong className="block text-[13px] font-extrabold tracking-[0.16em]" style={{ color: 'var(--top-ink)' }}>HAUSLINE</strong><span className="block text-[9.5px] font-semibold uppercase tracking-[0.2em]" style={{ color: '#a3a3a3' }}>Panel</span></span>
+        </Link>
+        <div className="mx-auto flex min-w-0 flex-1 justify-center"><BuscadorGlobal esAdmin={esAdmin} pantallas={visibleGroups.flatMap((g) => g.items.map(({ to, label }) => ({ to, label })))} /></div>
+        <div className="flex shrink-0 items-center gap-1">
+          <button type="button" className="topbar-icon hidden! sm:grid!" onClick={() => guardarModoPanel(modo === 'claro' ? 'oscuro' : 'claro')} title={modo === 'claro' ? 'Modo oscuro' : 'Modo claro'} aria-label="Cambiar modo claro u oscuro">{modo === 'claro' ? <Moon size={17} /> : <Sun size={17} />}</button>
+          <div className="relative">
+            <button type="button" className="topbar-icon" onClick={() => setBellOpen((v) => !v)} title="Alertas" aria-label="Alertas"><Bell size={18} />{contarUrgentes(alertas) > 0 && <span className="absolute right-0.5 top-0.5 grid min-w-[16px] place-items-center rounded-full px-1 text-[9px] font-bold leading-4" style={{ background: '#e51c00', color: '#fff' }}>{contarUrgentes(alertas)}</span>}</button>
+            {bellOpen && <>
+              <button className="fixed inset-0 z-40 cursor-default" aria-label="Cerrar alertas" onClick={() => setBellOpen(false)} />
+              <div className="absolute right-0 z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-line bg-panel text-white shadow-2xl">
+                <div className="flex items-center justify-between border-b border-line px-4 py-3"><strong className="text-sm">Alertas</strong><span className="text-[11px] text-muted">{alertas.length} {alertas.length === 1 ? 'activa' : 'activas'}</span></div>
+                <div className="max-h-[70vh] overflow-y-auto">
+                  {alertas.length === 0 ? <p className="px-4 py-8 text-center text-xs text-muted">Todo en orden. Sin alertas.</p>
+                    : alertas.map((a) => <Link key={a.id} to={a.to} onClick={() => setBellOpen(false)} className="flex gap-3 border-b border-line px-4 py-3 transition last:border-0 hover:bg-white/[.03]"><span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg text-sm ${a.prioridad === 'alta' ? 'bg-red-400/12' : a.prioridad === 'media' ? 'bg-amber-400/12' : 'bg-sky-400/12'}`}>{a.icono}</span><span className="min-w-0 flex-1"><strong className="block text-xs">{a.titulo}</strong><span className="block text-[11px] leading-4 text-muted">{a.descripcion}</span></span><ArrowUpRight size={14} className="mt-1 shrink-0 text-muted" /></Link>)}
+                </div>
+              </div>
+            </>}
+          </div>
+          <div className="relative">
+            <button type="button" onClick={() => setCuentaOpen((v) => !v)} className="flex items-center gap-2 rounded-lg p-1 transition hover:bg-[rgba(255,255,255,.1)] md:pr-2" aria-label="Mi usuario">
+              <span className="grid size-7 place-items-center rounded-md text-[12px] font-bold" style={{ background: '#36fba1', color: '#0b3b26' }}>{(user?.email ?? 'A').charAt(0).toUpperCase()}</span>
+              <span className="hidden max-w-[140px] truncate text-xs font-medium md:block" style={{ color: 'var(--top-ink)' }}>{esAdmin ? 'HAUSLINE' : (user?.email ?? 'Usuario')}</span>
+            </button>
+            {cuentaOpen && <>
+              <button className="fixed inset-0 z-40 cursor-default" aria-label="Cerrar menú de usuario" onClick={() => setCuentaOpen(false)} />
+              <div className="absolute right-0 z-50 mt-2 w-64 overflow-hidden rounded-xl border border-line bg-panel text-white shadow-2xl">
+                <div className="border-b border-line px-4 py-3"><p className="truncate text-sm font-semibold">{user?.email ?? 'Usuario'}</p><p className="text-[11px] text-muted">{esAdmin ? 'Administrador' : 'Operador'}</p></div>
+                <div className="p-1.5">
+                  {esAdmin && <Link to="/configuracion" onClick={() => setCuentaOpen(false)} className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm hover:bg-white/[.05]"><Settings size={16} className="text-muted" /> Configuración</Link>}
+                  <button type="button" onClick={() => guardarModoPanel(modo === 'claro' ? 'oscuro' : 'claro')} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm hover:bg-white/[.05]">{modo === 'claro' ? <Moon size={16} className="text-muted" /> : <Sun size={16} className="text-muted" />} {modo === 'claro' ? 'Modo oscuro' : 'Modo claro'}</button>
+                  <button type="button" onClick={() => { setCuentaOpen(false); void handleSignOut() }} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-red-300 hover:bg-red-400/10"><LogOut size={16} /> Cerrar sesión</button>
+                </div>
+              </div>
+            </>}
+          </div>
         </div>
-        <nav className="mt-7 flex flex-1 flex-col gap-5 overflow-y-auto pr-1">
+      </header>
+
+      {open && <button aria-label="Cerrar menú" className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setOpen(false)} />}
+      <aside className={`sidebar fixed bottom-0 left-0 top-0 z-50 flex w-[260px] flex-col transition-transform lg:top-14 lg:z-30 lg:w-[240px] lg:translate-x-0 ${open ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`}>
+        <div className="flex h-14 items-center justify-between px-4 lg:hidden"><span className="text-sm font-bold">Menú</span><button className="icon-button" onClick={() => setOpen(false)} aria-label="Cerrar menú"><X size={18} /></button></div>
+        <nav className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 py-3">
           {visibleGroups.map((group) => (
             <div key={group.title}>
-              <p className="nav-group-title">{group.title}</p>
-              <div className="mt-1.5 flex flex-col gap-0.5">
-                {group.items.map(({ to, label, icon: Icon, nuevo, tambien }) => (
-                  <NavLink key={to} to={to} onPointerEnter={() => prefetchRoute(to)} onFocus={() => prefetchRoute(to)} onClick={() => setOpen(false)} className={({ isActive }) => `nav-link ${isActive || tambien?.some((r) => location.pathname.startsWith(r)) ? 'nav-link-active' : ''}`}>
-                    <Icon size={18} /><span>{label}</span>
-                    {badges[to] > 0
-                      ? <span className="ml-auto grid min-w-5 place-items-center rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold text-app">{badges[to]}</span>
-                      : nuevo ? <span className="ml-auto rounded-full bg-accent/15 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-accent">Nuevo</span> : null}
+              <p className="side-group mb-1">{group.title}</p>
+              <div className="flex flex-col gap-px">
+                {group.items.map(({ to, label, icon: Icon, tambien }) => (
+                  <NavLink key={to} to={to} onPointerEnter={() => prefetchRoute(to)} onFocus={() => prefetchRoute(to)} onClick={() => setOpen(false)} className={({ isActive }) => `side-link ${isActive || tambien?.some((r) => location.pathname.startsWith(r)) ? 'is-active' : ''}`}>
+                    <Icon size={17} strokeWidth={2} className="shrink-0" /><span className="min-w-0 flex-1 truncate">{label}</span>
+                    {badges[to] > 0 && <span className="side-badge">{badges[to]}</span>}
                   </NavLink>
                 ))}
               </div>
             </div>
           ))}
         </nav>
-        <div className="mt-4 flex items-center gap-3 rounded-2xl border border-line bg-white/[0.03] p-3">
-          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-accent/15 text-sm font-bold text-accent">{(user?.email ?? 'A').charAt(0).toUpperCase()}</span>
-          <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{user?.email ?? 'Usuario'}</p><p className="text-[11px] text-muted">{esAdmin ? 'Administrador' : 'Operador'}</p></div>
-          <button className="icon-button" onClick={handleSignOut} title="Cerrar sesión" aria-label="Cerrar sesión"><LogOut size={16} /></button>
-        </div>
+        {esAdmin && <div className="border-t border-line p-3"><Link to="/pedidos/nuevo" onClick={() => setOpen(false)} className="primary-button w-full"><Plus size={16} /> Nuevo pedido</Link></div>}
       </aside>
-      <div className="lg:pl-[280px]">
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-line bg-app/90 px-4 backdrop-blur-xl sm:px-6 lg:px-8">
-          <button className="icon-button lg:hidden!" onClick={() => setOpen(true)} aria-label="Abrir menú"><Menu size={21} /></button>
-          <span className="hidden text-xs font-semibold uppercase tracking-[0.2em] text-muted lg:block">Panel de operaciones</span>
-          <div className="ml-auto flex items-center gap-3">
-            <div className="relative">
-              <button type="button" className="icon-button relative" onClick={() => setBellOpen((v) => !v)} title="Alertas" aria-label="Alertas"><Bell size={18} />{contarUrgentes(alertas) > 0 && <span className="absolute -right-1 -top-1 grid min-w-[16px] place-items-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white">{contarUrgentes(alertas)}</span>}</button>
-              {bellOpen && <>
-                <button className="fixed inset-0 z-40 cursor-default" aria-label="Cerrar alertas" onClick={() => setBellOpen(false)} />
-                <div className="absolute right-0 z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-line bg-panel shadow-2xl">
-                  <div className="flex items-center justify-between border-b border-line px-4 py-3"><strong className="text-sm">Alertas</strong><span className="text-[11px] text-muted">{alertas.length} {alertas.length === 1 ? 'activa' : 'activas'}</span></div>
-                  <div className="max-h-[70vh] overflow-y-auto">
-                    {alertas.length === 0 ? <p className="px-4 py-8 text-center text-xs text-muted">Todo en orden. Sin alertas. ✅</p>
-                      : alertas.map((a) => <Link key={a.id} to={a.to} onClick={() => setBellOpen(false)} className="flex gap-3 border-b border-line px-4 py-3 transition last:border-0 hover:bg-white/[.03]"><span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg text-sm ${a.prioridad === 'alta' ? 'bg-red-400/12' : a.prioridad === 'media' ? 'bg-amber-400/12' : 'bg-sky-400/12'}`}>{a.icono}</span><span className="min-w-0 flex-1"><strong className="block text-xs">{a.titulo}</strong><span className="block text-[11px] leading-4 text-muted">{a.descripcion}</span></span><ArrowUpRight size={14} className="mt-1 shrink-0 text-muted" /></Link>)}
-                  </div>
-                </div>
-              </>}
-            </div>
-            <span className="status-dot" /> <span className="hidden text-xs text-muted sm:inline">Sistema operativo</span>
-          </div>
-        </header>
-        <main className="mx-auto max-w-[1500px] p-4 pb-24 sm:p-6 lg:p-8"><RestaurarScroll /><Outlet /></main>
+      <div className="pt-14 lg:pl-[240px]">
+        <main className="mx-auto max-w-[1400px] p-4 pb-24 sm:p-6 lg:px-8 lg:pb-10"><RestaurarScroll /><Outlet /></main>
       </div>
       {/* Hoja de accesos rápidos del botón central "+" (solo móvil, solo admin: todas las
           acciones rápidas mueven dinero). */}

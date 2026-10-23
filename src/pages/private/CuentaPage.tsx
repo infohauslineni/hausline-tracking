@@ -1,4 +1,5 @@
 import { ArrowDownRight, ArrowUpRight, CalendarRange, Pencil, ReceiptText, Sparkles, Trash2, Wallet } from 'lucide-react'
+import { CuentaTabs } from '../../components/layout/LibresTabs'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { toast } from 'sonner'
@@ -77,6 +78,7 @@ export function CuentaPage() {
   const mesActual = items.filter((movement) => { const dia = movement.fecha.slice(0, 10); return dia >= periodo.desde && dia <= periodo.hasta })
 
   return <div>
+    <CuentaTabs />
     <PageHeader title="Mi cuenta" subtitle="Gastos, ingresos, salidas y saldo — todo tu movimiento de dinero en un solo lugar." onAdd={() => setOpen(true)} button="Registrar ingreso o retiro" />
 
     <CuantoPuedoInvertir recarga={cuentasKey} />

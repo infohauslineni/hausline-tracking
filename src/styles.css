@@ -370,3 +370,5 @@ html:has(.hsc) { background:#fbfbfa; }
 /* Opciones de los <select> legibles: en Windows la lista desplegable salía con letra blanca sobre fondo blanco. */
 select option, select optgroup { background-color:#141414; color:#fff; }
 .hs-portal select option, .hsc-field select option { background-color:#fff; color:#111; }
+/* Filas de pestañas desplazables sin barra visible (Compras libres, Pedidos). */
+.sin-barra { scrollbar-width:none; }.sin-barra::-webkit-scrollbar { display:none; }

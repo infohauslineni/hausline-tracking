@@ -1,4 +1,4 @@
-import { Boxes, CircleDollarSign, Zap, ImagePlus, PackageCheck, Plus, Printer, Scissors, Search, ShoppingBag, TrendingUp, Wallet, X } from 'lucide-react'
+import { Boxes, CircleDollarSign, Zap, ImagePlus, Layers, PackageCheck, Plus, Printer, Scissors, Search, ShoppingBag, TrendingUp, Truck, Wallet, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { useNavigate } from 'react-router-dom'
@@ -21,8 +21,10 @@ import { type EstadoCompra, CompraCard, CompraFila } from '../../components/inve
 import { LibresTabs } from '../../components/layout/LibresTabs'
 import { ProductoImg } from '../../components/ui/ProductoImg'
 import { esEtapaCompra, etapaDeCompra, estadoPedidoDesdeEtapa } from '../../utils/compraEtapa'
-import { CuantoPuedoInvertir } from '../../components/finanzas/CuantoPuedoInvertir'
+import { CompraLoteModal } from '../../components/inventario/CompraLoteModal'
+import { PagarVariasModal, RepartirEnvioModal } from '../../components/inventario/VariasComprasModals'
 import { pagadoInversion, porPagarInversion, tallasDeTexto } from '../../utils/compraPago'
+import { loteDe } from '../../utils/repartoCompra'
 
 // pago: 'ahora' = se descuenta de la cuenta al registrar; 'antes' = ya estaba pagado/descontado;
 // 'pendiente' = todavía no se le pagó al proveedor (queda "por pagar" en la tarjeta);
@@ -39,6 +41,9 @@ const porPagar = (item: Inversion) => item.pagado === false
 // asociaron después desde la página de Gastos (item.gastos). Así el envío agregado luego sí suma.
 const linkedExpenses = (item: Inversion) => (item.gastos ?? []).reduce((sum, expense) => sum + Number(expense.monto || 0), 0)
 const totalCost = (item: Inversion) => Number(item.costo_unitario) * Number(item.cantidad) + Number(item.gastos_adicionales) + linkedExpenses(item)
+// Pestañas de la lista: "Activas" (lo que tenés o viene) es la vista de todos los días.
+type Filtro = 'activos' | 'todos' | 'por_pagar' | Inversion['estado']
+const usdTxt = (n: number) => `US$ ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 export function InventarioPage() {
   const navigate = useNavigate()
@@ -58,7 +63,13 @@ export function InventarioPage() {
   // Ficha "Ver detalles" de una compra (se lee de la lista para que refleje los cambios).
   const [detalleId, setDetalleId] = useState<string | null>(null)
   const [search, setSearch] = useEstadoVista('stock.busqueda', '')
-  const [filter, setFilter] = useEstadoVista<'todos' | Inversion['estado']>('stock.filtro', 'todos')
+  const [filter, setFilter] = useEstadoVista<Filtro>('stock.filtro', 'activos')
+  // Compra en conjunto (varios productos, un pago) y selección de varias compras.
+  const [loteOpen, setLoteOpen] = useState(false)
+  const [seleccion, setSeleccion] = useState<Set<string>>(new Set())
+  const [enviando, setEnviando] = useState<Inversion[] | null>(null)
+  const [pagandoVarias, setPagandoVarias] = useState<Inversion[] | null>(null)
+  const alternar = (id: string) => setSeleccion((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
   // Datos para "Registrar costo" de un producto de entrega inmediata (abre el formulario ya lleno).
   const [inicial, setInicial] = useState<Partial<typeof empty> | null>(null)
   // Productos que la tienda muestra hoy como Entrega inmediata (catálogo web).
@@ -95,21 +106,30 @@ export function InventarioPage() {
     } catch { toast.error('No se pudo generar el recibo.') } finally { setPrintingId(null) }
   }
   // Métrica de capital: total invertido sobre TODO (visión de inversiones) y detalle sobre lo activo (visión de stock).
+  // Números simples, sin cuentas: cuánto tenés metido en mercadería, cuánto debés, cuánto ya
+  // vendiste y cuánto ganaste (lo vendido menos lo que costó, con comisión y envío).
   const metrics = useMemo(() => items.reduce((result, item) => {
     const cost = totalCost(item), sale = Number(item.precio_venta_estimado) * Number(item.cantidad)
-    result.invested += cost
     if (porPagar(item) && item.estado !== 'descartado') { result.debt += porPagarInversion(item, cost); result.debtCount++ }
     if (activo(item.estado)) { result.units += item.cantidad; result.costActive += cost; result.potential += sale }
+    if (item.estado === 'vendido') { result.sold += sale; result.earned += sale - cost; result.soldCount++ }
     return result
-  }, { invested: 0, units: 0, costActive: 0, potential: 0, debt: 0, debtCount: 0 }), [items])
+  }, { units: 0, costActive: 0, potential: 0, debt: 0, debtCount: 0, sold: 0, earned: 0, soldCount: 0 }), [items])
   const [paying, setPaying] = useState<Inversion | null>(null)
   const counts = useMemo(() => items.reduce((acc, item) => { acc[item.estado] = (acc[item.estado] ?? 0) + 1; return acc }, {} as Record<Inversion['estado'], number>), [items])
+  const deben = useMemo(() => items.filter((i) => porPagar(i) && i.estado !== 'descartado'), [items])
+  // Cuántas compras tiene cada lote (compra en conjunto).
+  const lotes = useMemo(() => items.reduce((m, i) => { const l = loteDe(i.notas); if (l) m.set(l, (m.get(l) ?? 0) + 1); return m }, new Map<string, number>()), [items])
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase()
+    const pasa = (item: Inversion) => filter === 'todos' ? true : filter === 'activos' ? activo(item.estado) : filter === 'por_pagar' ? porPagar(item) && item.estado !== 'descartado' : item.estado === filter
     return items
-      .filter((item) => (filter === 'todos' || item.estado === filter) && (!term || [item.producto, item.codigo, item.marca, item.talla_color, item.tracking].some((v) => v?.toLowerCase().includes(term))))
-      .sort((a, b) => statusOrder[a.estado] - statusOrder[b.estado])
+      .filter((item) => pasa(item) && (!term || [item.producto, item.codigo, item.marca, item.talla_color, item.tracking, loteDe(item.notas)].some((v) => v?.toLowerCase().includes(term))))
+      // Por estado y, dentro, lo más nuevo primero; las compras de un mismo lote quedan juntas.
+      .sort((a, b) => statusOrder[a.estado] - statusOrder[b.estado] || b.fecha.localeCompare(a.fecha) || (loteDe(a.notas) ?? '').localeCompare(loteDe(b.notas) ?? ''))
   }, [items, search, filter])
+  const seleccionadas = useMemo(() => items.filter((i) => seleccion.has(i.id)), [items, seleccion])
+  const elegirLote = (lote: string) => setSeleccion(new Set(items.filter((i) => loteDe(i.notas) === lote && i.estado !== 'descartado').map((i) => i.id)))
   const detalle = detalleId ? items.find((i) => i.id === detalleId) ?? null : null
   // Mostrar / ocultar en la tienda sin tocar el estado (la base de datos avisa al catálogo sola).
   const mostrarTienda = async (item: Inversion, mostrar: boolean) => {
@@ -168,7 +188,7 @@ export function InventarioPage() {
     } } })
   }
 
-  return <div><LibresTabs /><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Compras propias · sin pedido de cliente</p><h1 className="page-title">Compras libres</h1><p className="page-subtitle">Lo que compras por tu cuenta para vender (ej. unos Golden Goose para stock): si ya lo pagaste o no, si viene en camino o ya lo tenés, y apartalo a un cliente como pedido normal.</p></div><button className="primary-button px-5" onClick={() => { setEditing(null); setOpen(true) }}><Plus size={17} /> Registrar compra</button></div>
+  return <div className={seleccion.size ? 'pb-24' : ''}><LibresTabs /><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Stock propio · sin pedido de cliente</p><h1 className="page-title">Compras libres</h1><p className="page-subtitle">Lo que comprás por tu cuenta para vender. Registrá una compra en conjunto y el costo, la comisión y el envío se reparten solos.</p></div><div className="flex flex-wrap gap-2"><button className="subtle-button px-4" onClick={() => { setEditing(null); setOpen(true) }}><Plus size={16} /> Un producto</button><button className="primary-button px-5" onClick={() => setLoteOpen(true)}><Layers size={17} /> Compra en conjunto</button></div></div>
     {(() => {
       // Vendidas o apartadas que la tienda sigue mostrando como Entrega inmediata (y no queda otra
       // compra disponible de ese código): se quitan con un toque.
@@ -186,18 +206,39 @@ export function InventarioPage() {
         </div>)}</div>
       </section>
     })()}
-    <CuantoPuedoInvertir recarga={items.length} />
-    <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5"><Metric icon={CircleDollarSign} label="Capital invertido" value={`USD ${metrics.invested.toFixed(2)}`} /><Metric icon={Wallet} label={`Por pagar al proveedor${metrics.debtCount ? ` (${metrics.debtCount})` : ''}`} value={`USD ${metrics.debt.toFixed(2)}`} warn={metrics.debt > 0} /><Metric icon={Boxes} label="Unidades activas" value={String(metrics.units)} /><Metric icon={ShoppingBag} label="Venta potencial" value={`USD ${metrics.potential.toFixed(2)}`} /><Metric icon={TrendingUp} label="Ganancia potencial" value={`USD ${Math.max(0, metrics.potential - metrics.costActive).toFixed(2)}`} accent /></div>
-    <div className="mt-6 grid gap-3 sm:grid-cols-[1fr_240px]"><div className="relative"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" size={18} /><input className="search-input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Producto, código, marca o tracking" /></div><select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}><option value="todos">Todos los estados ({items.length})</option>{(Object.keys(statusLabel) as Inversion['estado'][]).map((estado) => <option value={estado} key={estado}>{statusLabel[estado]} ({counts[estado] ?? 0})</option>)}</select></div>
-    <div className="mt-6 space-y-2">
-      <div className="hidden grid-cols-[56px_minmax(0,2.2fr)_130px_minmax(0,1.4fr)_minmax(0,1.6fr)_auto] gap-4 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted md:grid"><span /><span>Producto</span><span>Estado</span><span>Etiquetas</span><span className="text-right">Costo · Venta · Ganancia</span><span className="w-[110px]" /></div>
+    <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <Metric icon={Boxes} label={`En mercadería · ${metrics.units} ud`} value={usdTxt(metrics.costActive)} hint="Lo que costó lo que tenés o viene" />
+      <Metric icon={ShoppingBag} label="Si lo vendés todo" value={usdTxt(metrics.potential)} hint={`Ganarías ${usdTxt(Math.max(0, metrics.potential - metrics.costActive))}`} />
+      <Metric icon={CircleDollarSign} label={`Vendido · ${metrics.soldCount}`} value={usdTxt(metrics.sold)} hint="Lo que ya cobraste" />
+      <Metric icon={TrendingUp} label="Ganancia ganada" value={usdTxt(metrics.earned)} hint="Venta − costo, comisión y envío" accent />
+      <Metric icon={Wallet} label={`Por pagar · ${metrics.debtCount}`} value={usdTxt(metrics.debt)} hint={metrics.debtCount ? 'Tocá para pagarlas juntas' : 'Todo pagado'} warn={metrics.debt > 0} onClick={metrics.debtCount ? () => setPagandoVarias(deben) : undefined} />
+    </div>
+    <div className="mt-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="sin-barra -mx-1 flex gap-1 overflow-x-auto px-1 pb-1 lg:flex-wrap" role="tablist" aria-label="Filtrar compras">
+        {([['activos', 'Activas', items.filter((i) => activo(i.estado)).length], ['en_inventario', 'Disponibles', counts.en_inventario ?? 0], ['en_transito', 'En camino', counts.en_transito ?? 0], ['reservado', 'Apartadas', counts.reservado ?? 0], ['por_pagar', 'Por pagar', deben.length], ['vendido', 'Vendidas', counts.vendido ?? 0], ['todos', 'Todas', items.length]] as [Filtro, string, number][]).map(([valor, texto, n]) =>
+          <button key={valor} role="tab" aria-selected={filter === valor} onClick={() => setFilter(valor)} className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${filter === valor ? 'border-accent bg-accent text-app' : 'border-line text-muted hover:border-white/25 hover:text-white'}`}>{texto}<span className={`rounded-full px-1.5 text-[10px] ${filter === valor ? 'bg-black/15' : 'bg-white/[.06]'}`}>{n}</span></button>)}
+      </div>
+      <div className="relative lg:w-80"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" size={18} /><input className="search-input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Producto, código, marca, talla o tracking" /></div>
+    </div>
+    <div className="mt-4 space-y-2">
+      <div className="hidden grid-cols-[56px_minmax(0,2.2fr)_130px_minmax(0,1.4fr)_minmax(0,1.6fr)_auto] gap-4 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted md:grid"><button type="button" className="text-left hover:text-white" onClick={() => setSeleccion(seleccion.size === visible.length && visible.length ? new Set() : new Set(visible.map((i) => i.id)))}>{seleccion.size && seleccion.size === visible.length ? 'Ninguna' : 'Todas'}</button><span>Producto</span><span>Estado</span><span>Etiquetas</span><span className="text-right">Costo · Venta · Ganancia</span><span className="w-[110px]" /></div>
       {visible.map((item) => {
         const cod = (item.codigo ?? '').trim().toUpperCase()
+        const lote = loteDe(item.notas)
         return <CompraFila key={item.id} item={item} costo={totalCost(item)} fotos={fotosCount[item.id] ?? 0}
           enEI={!!cod && (ei ?? []).some((p) => p.codigo.toUpperCase() === cod)} enCaminoPublicado={!!cod && enCaminoTienda.has(cod)}
+          seleccionado={seleccion.has(item.id)} onSeleccionar={() => alternar(item.id)}
+          lote={lote ? lotes.get(lote) : undefined} onLote={lote ? () => elegirLote(lote) : undefined}
           onDetalles={() => setDetalleId(item.id)} />
       })}
     </div>
+    {/* Barra de acciones de la selección: pagar juntas (con comisión) o repartir el envío del paquete. */}
+    {seleccion.size > 0 && <div className="reveal-up fixed inset-x-3 bottom-20 z-30 mx-auto flex max-w-3xl flex-wrap items-center gap-2 rounded-2xl border border-accent/40 bg-panel/95 p-3 shadow-2xl backdrop-blur-xl lg:bottom-5 lg:left-[300px]">
+      <span className="mr-auto px-1 text-sm"><b>{seleccion.size}</b> {seleccion.size === 1 ? 'seleccionada' : 'seleccionadas'} <span className="text-xs text-muted">· costo {usdTxt(seleccionadas.reduce((s, i) => s + totalCost(i), 0))}</span></span>
+      <button className="subtle-button" onClick={() => setEnviando(seleccionadas)}><Truck size={15} /> Repartir envío</button>
+      <button className="subtle-button text-amber-100!" disabled={!seleccionadas.some((i) => porPagar(i))} onClick={() => setPagandoVarias(seleccionadas.filter((i) => porPagar(i)))}><Wallet size={15} /> Pagar juntas</button>
+      <button className="icon-button" onClick={() => setSeleccion(new Set())} aria-label="Quitar selección"><X size={16} /></button>
+    </div>}
     {detalle && !preview && !fotosDe && !fichaDe && !linkDe && !poniendoEI && !selling && !paying && !open && (() => {
       const item = detalle
       const cod = (item.codigo ?? '').trim().toUpperCase()
@@ -218,6 +259,9 @@ export function InventarioPage() {
     {!items.length && <div className="mt-6 rounded-2xl border border-dashed border-line p-10 text-center text-sm text-muted">Todavía no hay compras libres. Registrá lo que compraste por tu cuenta para vender, esté pagado o no.</div>}
     {items.length > 0 && !visible.length && <div className="mt-6 rounded-2xl border border-dashed border-line p-10 text-center text-sm text-muted">Ningún producto coincide con esta búsqueda.</div>}
     <ProductModal open={open} item={editing} inicial={inicial} products={products} onClose={() => { setOpen(false); setEditing(null); setInicial(null) }} onSaved={(guardadas) => { setItems((all) => editing ? all.map((current) => guardadas.find((g) => g.id === current.id) ?? current) : [...guardadas, ...all]); setOpen(false); setEditing(null); setInicial(null) }} />
+    <CompraLoteModal open={loteOpen} products={products} onClose={() => setLoteOpen(false)} onSaved={(creadas) => { setItems((all) => [...creadas, ...all]); setLoteOpen(false); setFilter('activos'); load() }} />
+    <RepartirEnvioModal items={enviando} onClose={() => setEnviando(null)} onListo={() => { setEnviando(null); setSeleccion(new Set()); load() }} />
+    <PagarVariasModal items={pagandoVarias} onClose={() => setPagandoVarias(null)} onPagadas={(pagadas) => { setItems((all) => all.map((c) => pagadas.find((p) => p.id === c.id) ?? c)); setPagandoVarias(null); setSeleccion(new Set()) }} />
     <SellModal item={selling} onClose={() => setSelling(null)} onSold={(item) => { setItems((all) => all.map((current) => current.id === item.id ? item : current)); setSelling(null); void listarVentasStock().then(setVentas).catch(() => undefined) }} />
     <PayModal item={paying} items={items} onClose={() => setPaying(null)} onPaid={(pagadas) => { setItems((all) => all.map((current) => pagadas.find((p) => p.id === current.id) ?? current)); setPaying(null) }} />
     <ClientPreview item={preview} onClose={() => setPreview(null)} />
@@ -249,7 +293,7 @@ function PayModal({ item, items, onClose, onPaid }: { item: Inversion | null; it
   const esParcial = pagaAhora < monto - 0.005
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!destino.cuentaId) return toast.error('Elegí de qué cuenta sale el pago.')
+    if (!destino.cuentaId && !window.confirm('No elegiste de qué cuenta salió. ¿Registrar el pago sin descontarlo de ninguna cuenta?')) return
     if (pagaAhora <= 0.005) return toast.error('Escribí cuánto le pagás ahora.')
     setSaving(true)
     try {
@@ -275,7 +319,7 @@ function PayModal({ item, items, onClose, onPaid }: { item: Inversion | null; it
       <Field label="Fecha del pago"><input type="date" value={form.fecha} onChange={(event) => setForm({ ...form, fecha: event.target.value })} /></Field>
       <Field label="Método de pago"><input value={form.metodo} onChange={(event) => setForm({ ...form, metodo: event.target.value })} /></Field>
       <label className="form-field col-span-full"><span>¿Cuánto le pagás ahora? (US$)</span><input type="number" min="0" step=".01" value={parcial} onChange={(event) => setParcial(event.target.value)} placeholder={`Todo lo que falta: ${monto.toFixed(2)}`} /></label>
-      <CuentaSelect requerido proposito="comprar" montoUsd={pagaAhora} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" />
+      <CuentaSelect proposito="comprar" montoUsd={pagaAhora} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" />
       {hermanas.length > 0 && <label className="col-span-full flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-white/[.02] p-3"><input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-accent" checked={conHermanas} onChange={(event) => setConHermanas(event.target.checked)} /><span className="flex flex-col"><span className="text-sm font-medium">Pagar también los otros {hermanas.length} {hermanas.length === 1 ? 'par' : 'pares'} de esta compra</span><span className="text-[11px] text-muted">{hermanas.map((x) => x.talla_color || 's/t').join(', ')} · comprados el mismo día</span></span></label>}
       <div className="col-span-full rounded-xl border border-accent/20 bg-accent/[.05] p-4 text-sm">{abonado > 0.005 && <span className="mb-1 block text-xs text-muted">De este par ya adelantaste USD {abonado.toFixed(2)}.</span>}Se descontarán <strong className="text-accent">USD {pagaAhora.toFixed(2)}</strong> de la cuenta elegida{esParcial ? <> como abono; quedan <strong className="text-accent">USD {(monto - pagaAhora).toFixed(2)}</strong> por pagar.</> : <> y {aPagar.length > 1 ? `los ${aPagar.length} pares quedarán como pagados` : 'la compra quedará como pagada'}.</>}</div>
       <div className="col-span-full flex justify-end gap-2"><button type="button" className="subtle-button" onClick={onClose}>Cancelar</button><button className="primary-button px-5" disabled={saving}>{saving ? 'Registrando…' : 'Registrar pago'}</button></div>
@@ -369,7 +413,7 @@ function ProductModal({ open, item, inicial, products, onClose, onSaved }: { ope
     const descuenta = !item && (form.pago === 'ahora' || form.pago === 'parte')
     const adelanto = Number(form.adelanto) || 0
     if (!item && form.pago === 'parte' && (adelanto <= 0 || adelanto >= cantidad * costoUnitario + gastosAdicionales)) return toast.error('Escribí cuánto le adelantaste (menos que el total de la compra).')
-    if (descuenta && !destino.cuentaId) return toast.error('Elegí de qué cuenta sale el pago.')
+    if (descuenta && !destino.cuentaId && !window.confirm('No elegiste de qué cuenta salió. ¿Registrar la compra sin descontarla de ninguna cuenta?')) return
     // Varios pares: una compra por talla (las tallas separadas por coma, una por par).
     const tallas = tallasDeTexto(form.talla_color)
     const separar = !item && form.porTalla && cantidad > 1
@@ -434,14 +478,21 @@ function ProductModal({ open, item, inicial, products, onClose, onSaved }: { ope
     {!item && Number(form.cantidad) > 1 && <label className="col-span-full flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-white/[.02] p-3"><input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-accent" checked={form.porTalla} onChange={(event) => setForm({ ...form, porTalla: event.target.checked })} /><span className="flex flex-col"><span className="text-sm font-medium">Registrar un par por talla (recomendado)</span><span className="text-[11px] text-muted">{(() => { const t = tallasDeTexto(form.talla_color); const n = Number(form.cantidad); return t.length === n ? `Se crean ${n} compras de 1 par: ${t.join(', ')}. Cada una se vende o se aparta por separado.` : t.length > 1 ? `Pusiste ${t.length} tallas para ${n} pares: poné una talla por par, separadas por coma.` : `Se crean ${n} compras de 1 par${t[0] ? ` (talla ${t[0]})` : ''}. Cada una se vende o se aparta por separado.` })()}</span></span></label>}
     {!item && <Opciones label="¿Ya se lo pagaste al proveedor?" value={form.pago} onChange={(pago) => setForm({ ...form, pago: pago as Pago })} options={[['ahora', 'Sí, todo ahora', 'Se descuenta de la cuenta que elijas'], ['parte', 'Pagué una parte', 'Un adelanto ahora; el resto queda por pagar'], ['antes', 'Sí, ya estaba pagado', 'Ya salió de caja; no se descuenta otra vez'], ['pendiente', 'Todavía no', 'Queda "por pagar"; lo pagás después desde la tarjeta']]} />}
     {!item && form.pago === 'parte' && <Field label="¿Cuánto le adelantaste? (US$)"><input type="number" min="0" step=".01" value={form.adelanto} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setForm({ ...form, adelanto: event.target.value })} placeholder="Ej: 150" /></Field>}
-    {!item && (form.pago === 'ahora' || form.pago === 'parte') && <CuentaSelect requerido proposito="comprar" montoUsd={form.pago === 'parte' ? (Number(form.adelanto) || 0) : total} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" />}
+    {!item && (form.pago === 'ahora' || form.pago === 'parte') && <CuentaSelect proposito="comprar" montoUsd={form.pago === 'parte' ? (Number(form.adelanto) || 0) : total} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" />}
     <div className="col-span-full rounded-xl border border-accent/20 bg-accent/[.05] p-4 text-sm">{item ? 'Se actualizará esta compra sin registrar un pago nuevo.' : <>Compra de <strong className="text-accent">USD {total.toFixed(2)}</strong>{form.pago === 'ahora' ? ': se descontará de Mi cuenta.' : form.pago === 'antes' ? ': no se descuenta otra vez de Mi cuenta.' : form.pago === 'parte' ? <>: ahora salen <strong className="text-accent">USD {(Number(form.adelanto) || 0).toFixed(2)}</strong> de adelanto y quedan <strong className="text-accent">USD {Math.max(0, total - (Number(form.adelanto) || 0)).toFixed(2)}</strong> por pagar.{form.porTalla && Number(form.cantidad) > 1 && Number(form.costo_unitario) > 0 ? ` El adelanto cubre ${Math.floor((Number(form.adelanto) || 0) / (Number(form.costo_unitario) + (Number(form.gastos_adicionales) || 0) / Number(form.cantidad)))} par(es) completos; el resto queda por pagar.` : ''}</> : ': queda por pagar al proveedor (no sale de caja todavía).'}</>}</div>
     <div className="col-span-full flex justify-end gap-2"><button type="button" className="subtle-button" onClick={onClose}>Cancelar</button><button className="primary-button px-5" disabled={saving}>{saving ? 'Guardando…' : item ? 'Guardar cambios' : 'Registrar compra'}</button></div>
   </form></Modal>
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="form-field"><span>{label}</span>{children}</label> }
-function Metric({ icon: Icon, label, value, accent, warn }: { icon: typeof Boxes; label: string; value: string; accent?: boolean; warn?: boolean }) { return <article className="metric-card"><Icon size={19} className={warn ? 'text-amber-200' : 'text-accent'} /><p className="mt-5 text-xs text-muted">{label}</p><strong className={`mt-1 block text-2xl ${accent ? 'text-accent' : warn ? 'text-amber-200' : ''}`}>{value}</strong></article> }
+function Metric({ icon: Icon, label, value, hint, accent, warn, onClick }: { icon: typeof Boxes; label: string; value: string; hint?: string; accent?: boolean; warn?: boolean; onClick?: () => void }) {
+  const Tag = onClick ? 'button' : 'article'
+  return <Tag type={onClick ? 'button' : undefined} onClick={onClick} className={`metric-card min-w-0 text-left ${onClick ? 'cursor-pointer hover:border-amber-300/40' : ''} ${warn ? 'border-amber-300/25!' : ''}`}>
+    <div className="flex items-center justify-between gap-2"><p className="truncate text-[11px] font-medium text-muted">{label}</p><Icon size={16} className={warn ? 'shrink-0 text-amber-200' : 'shrink-0 text-accent'} /></div>
+    <strong className={`mt-2 block truncate text-xl tabular-nums sm:text-2xl ${accent ? 'text-accent' : warn ? 'text-amber-200' : ''}`}>{value}</strong>
+    {hint && <p className="mt-1 truncate text-[11px] text-muted">{hint}</p>}
+  </Tag>
+}
 // Grupo de opciones tipo tarjeta (una sola elegida): [valor, título, ayuda].
 function Opciones({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: [string, string, string][] }) {
   return <fieldset className="col-span-full"><legend className="mb-2 text-xs font-semibold text-muted">{label}</legend><div className={`grid gap-2 ${options.length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>{options.map(([valor, titulo, ayuda]) => <label key={valor} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm transition ${value === valor ? 'border-accent/50 bg-accent/[.07]' : 'border-line hover:border-white/25'}`}><input type="radio" className="mt-0.5 size-4 accent-accent" checked={value === valor} onChange={() => onChange(valor)} /><span><strong className="block">{titulo}</strong><small className="mt-0.5 block text-muted">{ayuda}</small></span></label>)}</div></fieldset>

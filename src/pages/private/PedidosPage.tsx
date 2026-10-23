@@ -20,6 +20,8 @@ export function PedidosPage() {
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [search, setSearch] = useEstadoVista('pedidos.busqueda', '')
   const [estado, setEstado] = useEstadoVista<EstadoPedido | 'todos'>('pedidos.estado', 'todos')
+  const [orden, setOrden] = useEstadoVista<Orden>('pedidos.orden', 'recientes')
+  const [soloSaldo, setSoloSaldo] = useEstadoVista('pedidos.saldo', false)
   const [cancelando, setCancelando] = useState<Pedido | null>(null)
   // Lista de compra: pedidos confirmados que todavía no se le han pedido al proveedor.
   const [listaOpen, setListaOpen] = useState(false)
@@ -52,10 +54,19 @@ export function PedidosPage() {
     const term = search.toLowerCase().trim()
     return delMes.filter((p) => {
       if (!coincide(p, term)) return false
+      if (soloSaldo && !(Number(p.saldo) > 0.01)) return false
       if (estado !== 'todos') return etapaBase(p.estado) === estado
       return p.estado !== 'entregado' && p.estado !== 'cancelado'
-    })
-  }, [estado, delMes, search])
+    }).sort(ORDENES[orden].fn)
+  }, [estado, delMes, search, soloSaldo, orden])
+  // Cuántos hay en cada etapa (con la búsqueda aplicada), para las pestañas.
+  const porEtapa = useMemo(() => {
+    const term = search.toLowerCase().trim()
+    const m = new Map<string, number>()
+    for (const p of delMes) if (coincide(p, term) && (!soloSaldo || Number(p.saldo) > 0.01)) { const e = etapaBase(p.estado); m.set(e, (m.get(e) ?? 0) + 1) }
+    return m
+  }, [delMes, search, soloSaldo])
+  const activosN = [...porEtapa.entries()].filter(([e]) => e !== 'entregado' && e !== 'cancelado').reduce((s, [, n]) => s + n, 0)
 
   // Cancelados del mes: van en su propio apartado, abajo (fuera de la lista principal).
   const cancelados = useMemo(() => {
@@ -90,7 +101,13 @@ export function PedidosPage() {
         <MiniMetric label="Completados" value={delMes.filter((p) => p.estado === 'entregado').length} icon={CheckCircle2} tone="emerald" />
         <MiniMetric label="Cancelados" value={delMes.filter((p) => p.estado === 'cancelado').length} icon={XCircle} tone="danger" />
       </>}</section>
-    <div className="mt-6 flex flex-col gap-3 sm:flex-row"><div className="relative max-w-lg flex-1"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" size={18} /><input className="search-input" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Código, cliente, WhatsApp o producto" /></div><select className="select-input sm:w-52!" value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Filtro de pedidos"><option value="pendientes">🕐 Pendientes · todos los meses</option>{meses.map((m) => <option key={m} value={m}>{capitalizar(mesLabel(m))}</option>)}</select><select className="select-input sm:w-52!" value={estado} onChange={(e) => setEstado(e.target.value as EstadoPedido | 'todos')}><option value="todos">Todos los estados</option>{ESTADOS_PEDIDO.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
+    <div className="mt-6 flex flex-col gap-3 sm:flex-row"><div className="relative max-w-lg flex-1"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" size={18} /><input className="search-input" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Código, cliente, WhatsApp o producto" /></div><select className="select-input sm:w-52!" value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Filtro de pedidos"><option value="pendientes">🕐 Pendientes · todos los meses</option>{meses.map((m) => <option key={m} value={m}>{capitalizar(mesLabel(m))}</option>)}</select><select className="select-input sm:w-48!" value={orden} onChange={(e) => setOrden(e.target.value as Orden)} aria-label="Ordenar pedidos">{(Object.keys(ORDENES) as Orden[]).map((o) => <option key={o} value={o}>{ORDENES[o].label}</option>)}</select></div>
+    <div className="sin-barra -mx-1 mt-3 flex gap-1 overflow-x-auto px-1 pb-1 lg:flex-wrap" role="tablist" aria-label="Filtrar por estado">
+      <Pestana activa={estado === 'todos'} onClick={() => setEstado('todos')} texto="Activos" n={activosN} />
+      {[...ESTADOS_PEDIDO, { value: 'incidencia' as EstadoPedido, label: 'Requiere atención' }, { value: 'cancelado' as EstadoPedido, label: 'Cancelados' }].filter((item) => (porEtapa.get(item.value) ?? 0) > 0 || estado === item.value).map((item) => <Pestana key={item.value} activa={estado === item.value} onClick={() => setEstado(item.value)} texto={item.label} n={porEtapa.get(item.value) ?? 0} alerta={item.value === 'incidencia'} />)}
+      <span className="mx-1 w-px shrink-0 bg-line" />
+      <Pestana activa={soloSaldo} onClick={() => setSoloSaldo(!soloSaldo)} texto="Con saldo" icono />
+    </div>
     <ListaCompraModal open={listaOpen} pedidos={pedidos} onClose={() => setListaOpen(false)} onMarcados={(ids, notas) => setPedidos((all) => all.map((p) => ids.includes(p.id) ? { ...p, notas_internas: notas.get(p.id) ?? `[EN_LISTA_PROVEEDOR] ${p.notas_internas ?? ''}`.trim() } : p))} />
     {loading ? <div className="mt-5 h-80 animate-pulse rounded-2xl border border-line bg-panel" /> : <>
       {filtered.length === 0 ? <div className="mt-6 grid min-h-64 place-items-center rounded-2xl border border-dashed border-line text-center"><div><Boxes className="mx-auto text-muted" /><h2 className="mt-3 font-semibold">{enPendientes ? 'No tienes pedidos pendientes' : `Sin pedidos en ${capitalizar(mesLabel(mes))}`}</h2><p className="mt-1 text-sm text-muted">{enPendientes ? 'Todo entregado 🎉 Elige un mes para ver el historial.' : 'Prueba otro mes, término o filtro.'}</p></div></div> : <>
@@ -124,7 +141,21 @@ const mesActual = () => { const d = new Date(); return `${d.getFullYear()}-${Str
 const mesLabel = (ym: string) => { const [y, m] = ym.split('-').map(Number); if (!y || !m) return ym; return new Intl.DateTimeFormat('es-NI', { month: 'long', year: 'numeric' }).format(new Date(y, m - 1, 1)) }
 const capitalizar = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 // ¿El pedido coincide con el término de búsqueda? (código, cliente, WhatsApp o producto)
-const coincide = (p: Pedido, term: string) => !term || [p.codigo, p.clientes?.nombre, p.clientes?.whatsapp, ...(p.pedido_items?.map((i) => i.producto) ?? [])].some((v) => v?.toLowerCase().includes(term))
+const coincide = (p: Pedido, term: string) => !term || [p.codigo, p.clientes?.nombre, p.clientes?.whatsapp, ...(p.pedido_items?.flatMap((i) => [i.producto, i.codigo_producto, i.marca, i.talla]) ?? [])].some((v) => v?.toLowerCase().includes(term)) || (term.replace(/D/g, '').length >= 4 && (p.clientes?.whatsapp ?? '').replace(/D/g, '').includes(term.replace(/D/g, '')))
+
+// Orden de la lista (se recuerda al volver).
+const fechaDe = (p: Pedido) => String(p.fecha_pedido || p.created_at || '')
+const ORDENES = {
+  recientes: { label: 'Más recientes', fn: (a: Pedido, b: Pedido) => fechaDe(b).localeCompare(fechaDe(a)) },
+  antiguos: { label: 'Más antiguos', fn: (a: Pedido, b: Pedido) => fechaDe(a).localeCompare(fechaDe(b)) },
+  llegada: { label: 'Llegan antes', fn: (a: Pedido, b: Pedido) => String(a.fecha_estimada || '9999').localeCompare(String(b.fecha_estimada || '9999')) },
+  saldo: { label: 'Mayor saldo', fn: (a: Pedido, b: Pedido) => Number(b.saldo) - Number(a.saldo) },
+  cliente: { label: 'Cliente A → Z', fn: (a: Pedido, b: Pedido) => (a.clientes?.nombre ?? '').localeCompare(b.clientes?.nombre ?? '', 'es') },
+} as const
+type Orden = keyof typeof ORDENES
+function Pestana({ activa, onClick, texto, n, alerta, icono }: { activa: boolean; onClick: () => void; texto: string; n?: number; alerta?: boolean; icono?: boolean }) {
+  return <button type="button" role="tab" aria-selected={activa} onClick={onClick} className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${activa ? 'border-accent bg-accent text-app' : alerta ? 'border-red-400/40 text-red-200 hover:bg-red-400/10' : 'border-line text-muted hover:border-white/25 hover:text-white'}`}>{icono && <CircleDollarSign size={13} />}{texto}{n != null && <span className={`rounded-full px-1.5 text-[10px] ${activa ? 'bg-black/15' : 'bg-white/[.06]'}`}>{n}</span>}</button>
+}
 
 // Recuento del pedido: cuántos días lleva desde que se hizo, cuándo llega aprox. y cuántos faltan
 // (o cuánto se pasó). La barrita = días que lleva sobre el total estimado.
@@ -137,24 +168,24 @@ function recuentoDe(pedido: Pedido): { titulo: string; detalle: string; tono: st
   const inicio = diaLocal(String(pedido.fecha_pedido || pedido.created_at || ''))
   const lleva = Math.max(0, difDias(inicio, hoy))
   const titulo = 'Lleva ' + plural(lleva)
-  if (pedido.estado === 'cancelado') return { titulo: 'Cancelado', detalle: 'Duró ' + plural(lleva), tono: '#8a8f98', pct: null }
-  if (pedido.estado === 'entregado') { const fin = new Date(pedido.updated_at); fin.setHours(0, 0, 0, 0); return { titulo: 'Entregado', detalle: 'Tomó ' + plural(Math.max(0, difDias(inicio, fin))), tono: '#62eaa0', pct: 100 } }
-  if (YA_AQUI.includes(pedido.estado)) return { titulo, detalle: 'Ya llegó · listo para entregar', tono: '#62eaa0', pct: 100 }
-  if (!pedido.fecha_estimada) return { titulo, detalle: 'Sin fecha estimada', tono: '#8a8f98', pct: null }
+  if (pedido.estado === 'cancelado') return { titulo: 'Cancelado', detalle: 'Duró ' + plural(lleva), tono: 'var(--tono-neutro)', pct: null }
+  if (pedido.estado === 'entregado') { const fin = new Date(pedido.updated_at); fin.setHours(0, 0, 0, 0); return { titulo: 'Entregado', detalle: 'Tomó ' + plural(Math.max(0, difDias(inicio, fin))), tono: 'var(--tono-ok)', pct: 100 } }
+  if (YA_AQUI.includes(pedido.estado)) return { titulo, detalle: 'Ya llegó · listo para entregar', tono: 'var(--tono-ok)', pct: 100 }
+  if (!pedido.fecha_estimada) return { titulo, detalle: 'Sin fecha estimada', tono: 'var(--tono-neutro)', pct: null }
   const est = diaLocal(pedido.fecha_estimada)
   const faltan = difDias(hoy, est)
   const total = Math.max(1, difDias(inicio, est))
   const fecha = new Intl.DateTimeFormat('es-NI', { day: 'numeric', month: 'short' }).format(est)
-  if (faltan < 0) return { titulo, detalle: 'Se pasó ' + plural(-faltan) + ' (' + fecha + ')', tono: '#ff8a7a', pct: 100 }
-  return { titulo, detalle: faltan === 0 ? 'Llega hoy aprox.' : 'Faltan ' + plural(faltan) + ' · ' + fecha, tono: faltan <= 3 ? '#fcd34d' : '#9fb4c7', pct: Math.min(100, Math.round((lleva / total) * 100)) }
+  if (faltan < 0) return { titulo, detalle: 'Se pasó ' + plural(-faltan) + ' (' + fecha + ')', tono: 'var(--tono-tarde)', pct: 100 }
+  return { titulo, detalle: faltan === 0 ? 'Llega hoy aprox.' : 'Faltan ' + plural(faltan) + ' · ' + fecha, tono: faltan <= 3 ? 'var(--tono-pronto)' : 'var(--tono-info)', pct: Math.min(100, Math.round((lleva / total) * 100)) }
 }
 // Con <div> y estilos en línea: los <span> de .data-table traen color/tamaño propios.
 function Recuento({ pedido, derecha = false }: { pedido: Pedido; derecha?: boolean }) {
   const r = recuentoDe(pedido)
   return <div style={{ minWidth: 140, textAlign: derecha ? 'right' : 'left' }}>
-    <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{r.titulo}</div>
+    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-white)' }}>{r.titulo}</div>
     <div style={{ fontSize: 11, color: r.tono, marginTop: 2 }}>{r.detalle}</div>
-    {r.pct != null && <div style={{ marginTop: 6, marginLeft: derecha ? 'auto' : 0, height: 4, borderRadius: 4, background: 'rgba(255,255,255,.08)', overflow: 'hidden', maxWidth: 150 }}><div style={{ width: Math.max(4, r.pct) + '%', height: '100%', borderRadius: 4, background: r.tono }} /></div>}
+    {r.pct != null && <div style={{ marginTop: 6, marginLeft: derecha ? 'auto' : 0, height: 4, borderRadius: 4, background: 'var(--color-line)', overflow: 'hidden', maxWidth: 150 }}><div style={{ width: Math.max(4, r.pct) + '%', height: '100%', borderRadius: 4, background: r.tono }} /></div>}
   </div>
 }
 

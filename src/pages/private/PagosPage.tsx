@@ -1,4 +1,5 @@
 import { CalendarRange, CircleDollarSign, Download, MessageCircle, Plus } from 'lucide-react'
+import { CuentaTabs } from '../../components/layout/LibresTabs'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { toast } from 'sonner'
@@ -22,7 +23,7 @@ export function PagosPage() {
   const enviarWhatsApp = async (pago: Pago) => { const pedido = pedidos.find((item) => item.id === pago.pedido_id); if (!pedido) return toast.error('No se encontró el pedido de este pago.'); try { const result = await enviarReciboWhatsApp(pago, pedido); if (result === 'cancelled') return; if (result === 'shared') return void toast.success('Comprobante compartido.'); toast.success(result === 'downloaded_no_whatsapp' ? 'Comprobante descargado. Este cliente no tiene WhatsApp guardado.' : 'Comprobante descargado y WhatsApp abierto: adjunta la imagen en el chat.') } catch (error) { if (error instanceof DOMException && error.name === 'AbortError') return; toast.error('No se pudo generar el comprobante.') } }
   const visible = verTodo ? pagos : pagos.filter((p) => { const dia = p.fecha.slice(0, 10); return dia >= periodo.desde && dia <= periodo.hasta })
   const total = visible.filter((p) => p.tipo !== 'reembolso').reduce((sum, p) => sum + Number(p.monto), 0)
-  return <div><PageHeader title="Pagos" subtitle="Abonos y pagos finales de clientes." onAdd={() => setOpen(true)} button="Registrar pago" />
+  return <div><CuentaTabs /><PageHeader title="Pagos" subtitle="Abonos y pagos finales de clientes." onAdd={() => setOpen(true)} button="Registrar pago" />
     <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-line bg-accent/[.035] p-5 sm:flex-row sm:items-center sm:justify-between">
       <div><span className="flex items-center gap-2 text-xs capitalize text-muted"><CalendarRange size={14} className="text-accent" /> {verTodo ? 'Todos los pagos' : periodo.etiqueta}</span><strong className="mt-1 block text-2xl text-accent">USD {total.toFixed(2)}</strong></div>
       <button className="subtle-button" onClick={() => setVerTodo((value) => !value)}>{verTodo ? 'Ver solo este mes' : 'Ver todos los meses'}</button>

@@ -182,15 +182,17 @@ export function CompraCard(p: Props) {
 
 // Barra horizontal de la lista (como un pedido): foto, código y nombre, estado, etiquetas,
 // números y "Ver detalles" (abre la ficha completa con todas las acciones).
-export function CompraFila({ item, costo, enEI, enCaminoPublicado, fotos, onDetalles }: { item: Inversion; costo: number; enEI: boolean; enCaminoPublicado: boolean; fotos: number; onDetalles: () => void }) {
+// `seleccionado`/`onSeleccionar`: casilla para elegir varias (pagar juntas, repartir envío).
+// `lote`: cuántas compras se registraron juntas (compra en conjunto); tocarlo elige todo el lote.
+export function CompraFila({ item, costo, enEI, enCaminoPublicado, fotos, onDetalles, seleccionado, onSeleccionar, lote, onLote }: { item: Inversion; costo: number; enEI: boolean; enCaminoPublicado: boolean; fotos: number; onDetalles: () => void; seleccionado?: boolean; onSeleccionar?: () => void; lote?: number; onLote?: () => void }) {
   const unidades = Number(item.cantidad) || 1
   const venta = Number(item.precio_venta_estimado) * unidades
   const ganancia = venta - costo
   const cerrado = item.estado === 'vendido' || item.estado === 'descartado'
   const porPagar = item.pagado === false && item.estado !== 'descartado'
   const img = item.imagen ? resolverImagenCatalogo(item.imagen) : ''
-  return <article onClick={onDetalles} className={`group grid min-w-0 cursor-pointer grid-cols-[56px_1fr_auto] items-center gap-3 rounded-2xl border border-line bg-panel p-3 transition hover:border-white/20 hover:bg-white/[.025] md:grid-cols-[56px_minmax(0,2.2fr)_130px_minmax(0,1.4fr)_minmax(0,1.6fr)_auto] md:gap-4 ${cerrado ? 'opacity-60' : ''}`}>
-    <span className="grid size-14 place-items-center overflow-hidden rounded-xl bg-white">{img ? <ProductoImg src={img} className="size-full" /> : <PackageCheck size={18} className="text-black/40" />}</span>
+  return <article onClick={onDetalles} className={`group grid ${seleccionado ? 'border-accent/60! bg-accent/[.04]!' : ''} min-w-0 cursor-pointer grid-cols-[56px_1fr_auto] items-center gap-3 rounded-2xl border border-line bg-panel p-3 transition hover:border-white/20 hover:bg-white/[.025] md:grid-cols-[56px_minmax(0,2.2fr)_130px_minmax(0,1.4fr)_minmax(0,1.6fr)_auto] md:gap-4 ${cerrado ? 'opacity-60' : ''}`}>
+    <span className="relative grid size-14 place-items-center rounded-xl bg-white"><span className="grid size-full place-items-center overflow-hidden rounded-xl">{img ? <ProductoImg src={img} className="size-full" /> : <PackageCheck size={18} className="text-black/40" />}</span>{onSeleccionar && <button type="button" role="checkbox" aria-checked={!!seleccionado} aria-label="Seleccionar compra" onClick={(e) => { e.stopPropagation(); onSeleccionar() }} className={`absolute -left-1.5 -top-1.5 grid size-6 place-items-center rounded-md border-2 text-[12px] font-black shadow transition ${seleccionado ? 'border-accent bg-accent text-app' : 'border-white/40 bg-app/90 text-transparent opacity-80 hover:opacity-100 group-hover:border-white/70'}`}>✓</button>}</span>
     <div className="min-w-0">
       <p className="truncate font-mono text-[10.5px] font-semibold tracking-wider text-accent">{(item.codigo ?? '').trim() || 'SIN CÓDIGO'}</p>
       <p className="truncate text-sm font-semibold">{item.producto}</p>
@@ -204,7 +206,7 @@ export function CompraFila({ item, costo, enEI, enCaminoPublicado, fotos, onDeta
       {enEI && <span title="En Entrega inmediata" className="grid size-7 place-items-center rounded-lg border border-accent/35 bg-accent/10 text-accent"><Zap size={13} /></span>}
       {item.estado === 'en_transito' && item.mostrar_tienda === false && <span title="No sale en la tienda" className="grid size-7 place-items-center rounded-lg border border-line bg-white/[.03] text-muted"><EyeOff size={13} /></span>}
       {item.estado === 'en_transito' && item.mostrar_tienda !== false && enCaminoPublicado && <span title="En la tienda como Llega pronto" className="grid size-7 place-items-center rounded-lg border border-amber-300/35 bg-amber-300/10 text-amber-200"><Truck size={13} /></span>}
-      {fotos > 0 && <span title={`${fotos} fotos de calidad`} className="inline-flex h-7 items-center gap-1 rounded-lg border border-sky-400/35 bg-sky-400/10 px-1.5 text-[10.5px] font-semibold text-sky-300"><Camera size={13} />{fotos}</span>}
+      {lote != null && lote > 1 && <button type="button" title="Compra en conjunto: tocá para elegir todo el lote" onClick={(e) => { e.stopPropagation(); onLote?.() }} className="inline-flex h-7 items-center gap-1 rounded-lg border border-violet-400/35 bg-violet-400/10 px-1.5 text-[10.5px] font-semibold text-violet-200 hover:bg-violet-400/20">Lote · {lote}</button>}{fotos > 0 && <span title={`${fotos} fotos de calidad`} className="inline-flex h-7 items-center gap-1 rounded-lg border border-sky-400/35 bg-sky-400/10 px-1.5 text-[10.5px] font-semibold text-sky-300"><Camera size={13} />{fotos}</span>}
     </div>
     <div className="hidden grid-cols-3 gap-2 text-right md:grid">
       <div><p className="text-[9px] uppercase tracking-wider text-muted">Costo</p><p className="font-mono text-[12px]">{usd(costo)}</p></div>

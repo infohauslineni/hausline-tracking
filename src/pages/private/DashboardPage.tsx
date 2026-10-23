@@ -178,7 +178,7 @@ function AreaChart({ serie }: { serie: { label: string; value: number }[] }) {
     {vacio && <div className="absolute inset-0 grid place-items-center text-[11px] text-muted">Aún no hay ventas en este rango.</div>}
     <svg viewBox="0 0 100 40" preserveAspectRatio="none" className="h-40 w-full" role="img" aria-label="Gráfica de ventas">
       <defs><linearGradient id="ventasFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#3987e5" stopOpacity="0.28" /><stop offset="1" stopColor="#3987e5" stopOpacity="0" /></linearGradient></defs>
-      <line x1="0" y1="39.5" x2="100" y2="39.5" stroke="rgba(255,255,255,.08)" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
+      <line x1="0" y1="39.5" x2="100" y2="39.5" stroke="var(--color-line)" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
       {!vacio && <><path d={area} fill="url(#ventasFill)" /><path d={line} fill="none" stroke="#3987e5" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" /></>}
     </svg>
     <div className="mt-2 flex justify-between text-[10px] text-muted"><span>{serie[0]?.label}</span><span>{serie[Math.floor(n / 2)]?.label}</span><span>{serie[n - 1]?.label}</span></div>
