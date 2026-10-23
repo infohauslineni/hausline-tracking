@@ -110,7 +110,7 @@ export function InventarioPage() {
   // vendiste y cuánto ganaste (lo vendido menos lo que costó, con comisión y envío).
   const metrics = useMemo(() => items.reduce((result, item) => {
     const cost = totalCost(item), sale = Number(item.precio_venta_estimado) * Number(item.cantidad)
-    if (porPagar(item) && item.estado !== 'descartado') { result.debt += porPagarInversion(item, cost); result.debtCount++ }
+    if (porPagar(item) && item.estado !== 'descartado') { result.debt += porPagarInversion(item, cost - linkedExpenses(item)); result.debtCount++ }
     if (activo(item.estado)) { result.units += item.cantidad; result.costActive += cost; result.potential += sale }
     if (item.estado === 'vendido') { result.sold += sale; result.earned += sale - cost; result.soldCount++ }
     return result
@@ -245,9 +245,9 @@ export function InventarioPage() {
       // Las ventanas que se abren desde aquí tapan la ficha; al cerrarlas se vuelve a Detalles.
       const luego = (fn: () => void) => () => fn()
       const saliendo = (fn: () => void) => () => { setDetalleId(null); fn() }
-      return <Modal open onClose={() => setDetalleId(null)} title="Detalles de la compra" description={`${item.codigo ? `${item.codigo} · ` : ''}comprada el ${new Date(item.fecha + 'T12:00:00').toLocaleDateString('es-NI', { day: 'numeric', month: 'short', year: 'numeric' })}`}>
+      return <Modal open ancho="amplio" onClose={() => setDetalleId(null)} title="Detalles de la compra" description={`${item.codigo ? `${item.codigo} · ` : ''}comprada el ${new Date(item.fecha + 'T12:00:00').toLocaleDateString('es-NI', { day: 'numeric', month: 'short', year: 'numeric' })}`}>
         {Number(item.cantidad) > 1 && activo(item.estado) && <div className="mb-3 flex flex-col gap-2 rounded-xl border border-amber-300/30 bg-amber-300/[.06] p-3 text-xs sm:flex-row sm:items-center sm:justify-between"><span className="text-amber-100">Esta compra tiene <b>{item.cantidad} pares</b> en un solo registro: si vendés o apartás uno, se marcan todos. Separala para manejar cada par aparte.</span><button className="subtle-button shrink-0" onClick={() => void separar(item)}><Scissors size={14} /> Separar por talla</button></div>}
-        <CompraCard enModal item={item} costo={totalCost(item)} pendiente={porPagarInversion(item, totalCost(item))} gastosAsociados={linkedExpenses(item)}
+        <CompraCard enModal item={item} costo={totalCost(item)} pendiente={porPagarInversion(item, totalCost(item) - linkedExpenses(item))} gastosAsociados={linkedExpenses(item)}
           enEI={!!cod && (ei ?? []).some((p) => p.codigo.toUpperCase() === cod)} enCaminoPublicado={!!cod && enCaminoTienda.has(cod)}
           fotos={fotosCount[item.id] ?? 0} quitandoEI={quitandoEI === (item.codigo ?? '').trim()} imprimiendo={printingId === item.id}
           onEstado={(estado) => void updateStatus(item, estado)} onVer={luego(() => setPreview(item))} onEditar={luego(() => { setEditing(item); setOpen(true) })}

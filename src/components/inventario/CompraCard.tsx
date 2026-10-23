@@ -64,12 +64,26 @@ function Chip({ tono, children, onQuitar, tituloQuitar }: { tono: string; childr
   </span>
 }
 
-function Herramienta({ icon, label, onClick, activo, peligro, disabled }: { icon: ReactNode; label: string; onClick: () => void; activo?: boolean; peligro?: boolean; disabled?: boolean }) {
-  return <button disabled={disabled} onClick={onClick} title={label} style={{ fontSize: 11 }}
-    className={`flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-[10px] font-medium transition disabled:opacity-40 ${peligro ? 'text-muted hover:bg-red-400/10 hover:text-red-300' : activo ? 'text-accent hover:bg-accent/10' : 'text-muted hover:bg-white/[.05] hover:text-white'}`}>
-    {icon}<span className="leading-none">{label}</span>
+// Ficha "Detalles de la compra" (estilo página de producto de una tienda grande): a la izquierda
+// la información (producto, etapa, dinero, tienda, envío, notas) y a la derecha las acciones.
+function Seccion({ titulo, extra, children, oculta }: { titulo?: string; extra?: ReactNode; children: ReactNode; oculta?: boolean }) {
+  return <section className={`rounded-xl border border-line bg-white/[.02] p-4 ${oculta ? 'hidden lg:block' : ''}`}>
+    {titulo && <div className="mb-3 flex items-center justify-between gap-2"><h3 className="text-[13px] font-semibold">{titulo}</h3>{extra}</div>}
+    {children}
+  </section>
+}
+function Fila({ label, valor, fuerte, tono }: { label: ReactNode; valor: string; fuerte?: boolean; tono?: string }) {
+  return <div className={`flex items-baseline justify-between gap-3 py-1 text-[13px] ${fuerte ? 'font-semibold' : ''}`}><span className={fuerte ? '' : 'text-muted'}>{label}</span><span className={`tabular-nums ${tono ?? ''}`}>{valor}</span></div>
+}
+function Accion({ icon, label, detalle, onClick, peligro, disabled, activo }: { icon: ReactNode; label: string; detalle?: string; onClick: () => void; peligro?: boolean; disabled?: boolean; activo?: boolean }) {
+  return <button type="button" onClick={onClick} disabled={disabled} className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-[13px] transition disabled:opacity-40 ${peligro ? 'text-red-300 hover:bg-red-400/10' : 'hover:bg-white/[.05]'}`}>
+    <span className={`grid size-8 shrink-0 place-items-center rounded-lg ${peligro ? 'bg-red-400/10' : activo ? 'bg-accent/15 text-accent' : 'bg-white/[.05] text-muted'}`}>{icon}</span>
+    <span className="min-w-0 flex-1"><span className="block font-medium">{label}</span>{detalle && <span className="block truncate text-[11px] text-muted">{detalle}</span>}</span>
   </button>
 }
+
+// Recorrido de una compra que viene en camino, hasta que ya está disponible en Nicaragua.
+const PASOS: [string, string][] = [...ETAPAS_COMPRA.map(([v, l]) => [v, l.replace('En tránsito internacional', 'Tránsito').replace('En tránsito a Nicaragua', 'A Nicaragua').replace('Recibido en Miami', 'Miami').replace('Control de calidad', 'Calidad').replace('En preparación', 'Preparación')] as [string, string]), ['en_inventario', 'Disponible']]
 
 export function CompraCard(p: Props) {
   const { item } = p
@@ -78,106 +92,136 @@ export function CompraCard(p: Props) {
   const ganancia = venta - p.costo
   const margen = venta > 0 ? Math.round((ganancia / venta) * 100) : 0
   const cerrado = item.estado === 'vendido' || item.estado === 'descartado'
-  const activo = !cerrado
   const porPagar = item.pagado === false && item.estado !== 'descartado'
   const codigo = (item.codigo ?? '').trim()
   const img = item.imagen ? resolverImagenCatalogo(item.imagen) : ''
+  const costoProducto = Number(item.costo_unitario) * unidades
+  const otros = Number(item.gastos_adicionales) || 0
+  const pendiente = p.pendiente ?? (porPagar ? p.costo : 0)
+  const paso = item.estado === 'en_inventario' ? 'en_inventario' : etapaDeCompra(item)
+  const iPaso = PASOS.findIndex(([v]) => v === paso)
+  const botones = <div className="space-y-2">
+    {!cerrado && item.estado !== 'en_transito' && <button className="primary-button w-full" onClick={p.onVender}><Tag size={15} /> Vender ahora</button>}
+    {!cerrado && item.estado !== 'en_inventario' && <button className={`${item.estado === 'en_transito' ? 'primary-button' : 'subtle-button'} w-full`} onClick={p.onApartar}><Bookmark size={15} /> Apartar a un cliente (50%)</button>}
+    {item.estado === 'en_inventario' && p.onLinkPago && <button className="subtle-button w-full" onClick={p.onLinkPago}><Link2 size={14} /> {(item.notas ?? '').includes('[LINK_PAGO]') ? 'Link de pago · ya enviado' : 'Enviar link de pago'}</button>}
+    {(item.estado === 'en_transito' || item.estado === 'en_inventario') && p.onFicha && <button className="subtle-button w-full" onClick={p.onFicha}><Send size={14} /> Ficha para el cliente</button>}
+    {item.estado === 'vendido' && (item.pedido_id
+      ? <button className="primary-button w-full" onClick={p.onVerPedido}><ExternalLink size={14} /> Ver pedido {item.pedidos?.codigo ?? ''}</button>
+      : <p className="rounded-lg bg-green-400/10 px-3 py-2 text-center text-[13px] font-semibold text-green-300">Vendida</p>)}
+    {item.estado === 'vendido' && <button className="subtle-button w-full" onClick={p.onImprimir} disabled={p.imprimiendo}><Printer size={14} /> {p.imprimiendo ? 'Generando…' : 'Imprimir recibo'}</button>}
+    {item.estado === 'reservado' && item.pedido_id && <button className="subtle-button w-full" onClick={p.onVerPedido}><ExternalLink size={14} /> Ver pedido {item.pedidos?.codigo ?? ''}</button>}
+  </div>
+  const notas = (item.notas ?? '').replace(/\[[A-Z_]+(?::[\w-]+)?\]\s*/g, '').trim()
 
-  return <article className={`flex flex-col ${p.enModal ? '-mx-4 -mt-2' : `rounded-2xl border border-line bg-panel transition hover:border-white/15 ${cerrado ? 'opacity-70' : ''}`}`}>
-    {/* Cabecera */}
-    <div className="flex gap-3.5 p-4 pb-3">
-      <button className={`grid ${p.enModal ? 'size-28' : 'size-[76px]'} shrink-0 place-items-center overflow-hidden rounded-xl bg-white`} onClick={p.onVer} aria-label={`Ver ${item.producto}`}>
-        {img ? <ProductoImg src={img} alt={item.producto} className="size-full" /> : <PackageCheck size={22} className="text-black/40" />}
-      </button>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-2">
-          <span className="truncate font-mono text-[11px] font-semibold tracking-wider text-accent">{codigo || 'SIN CÓDIGO'}</span>
-          {/* Se ve la etiqueta de color; el <select> real va invisible encima (con 16px para que
-              el iPhone no haga zoom al tocarlo). */}
-          <label className={`relative inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-full border py-0.5 pl-2.5 pr-2 text-[10.5px] font-bold uppercase tracking-wider ${ESTADO_TONO[item.estado]}`}>
-            {etiquetaEstado(item)}<ChevronDown size={11} />
-            <select aria-label="Cambiar estado" value={etapaDeCompra(item) ?? item.estado} onChange={(e) => p.onEstado(e.target.value as EstadoCompra)}
-              className="absolute inset-0 cursor-pointer opacity-0" style={{ fontSize: 16 }}>
-              {ETAPAS_COMPRA.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              {Object.entries(ESTADO_LABEL).filter(([v]) => v !== 'en_transito').map(([v, l]) => <option key={v} value={v}>{v === 'en_inventario' ? 'Disponible (ya en Nicaragua)' : l}</option>)}
-            </select>
-          </label>
+  return <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_270px]">
+    <div className="min-w-0 space-y-4">
+      {/* Producto */}
+      <Seccion>
+        <div className="flex gap-4">
+          <button className="grid size-24 shrink-0 place-items-center overflow-hidden rounded-lg border border-line bg-white sm:size-28" onClick={p.onVer} aria-label={`Ver ${item.producto}`}>
+            {img ? <ProductoImg src={img} alt={item.producto} className="size-full" /> : <PackageCheck size={22} className="text-black/40" />}
+          </button>
+          <div className="min-w-0 flex-1">
+            <p className="font-mono text-[11px] font-semibold tracking-wider text-muted">{codigo || 'SIN CÓDIGO'}</p>
+            <h3 className="mt-0.5 text-[17px] font-semibold leading-snug">{item.producto}</h3>
+            <p className="mt-1 text-[13px] text-muted">{[item.marca, item.talla_color && `Talla ${item.talla_color}`, `${unidades} ${unidades === 1 ? 'unidad' : 'unidades'}`].filter(Boolean).join(' · ')}</p>
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
+              <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${ESTADO_TONO[item.estado]}`}>{etiquetaEstado(item)}</span>
+              {porPagar && <Chip tono="border-amber-300/35 bg-amber-300/10 text-amber-200"><Wallet size={11} /> Por pagar</Chip>}
+              {p.enEI && <Chip tono="border-accent/35 bg-accent/10 text-accent" onQuitar={p.quitandoEI ? undefined : p.onQuitarEI} tituloQuitar="Quitar de Entrega inmediata"><Zap size={11} /> {p.quitandoEI ? 'Quitando…' : 'Entrega inmediata'}</Chip>}
+              {p.fotos > 0 && <Chip tono="border-sky-400/35 bg-sky-400/10 text-sky-300"><Camera size={11} /> {p.fotos} {p.fotos === 1 ? 'foto' : 'fotos'}</Chip>}
+            </div>
+          </div>
         </div>
-        <strong className="mt-1 line-clamp-2 block text-[15px] leading-snug">{item.producto}</strong>
-        <p className="mt-0.5 truncate text-[11.5px] text-muted">{[item.marca, item.talla_color && `Talla ${item.talla_color}`, `${unidades} ${unidades === 1 ? 'unidad' : 'unidades'}`].filter(Boolean).join(' · ')}</p>
-      </div>
+      </Seccion>
+
+      {/* En el celular las acciones van aquí arriba, sin tener que bajar. */}
+      <div className="lg:hidden">{botones}</div>
+
+      {/* Etapa: barra de progreso + cambiar estado */}
+      <Seccion titulo="Estado" extra={<label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-[12px] font-medium hover:bg-white/[.04]">
+        Cambiar<ChevronDown size={13} />
+        <select aria-label="Cambiar estado" value={etapaDeCompra(item) ?? item.estado} onChange={(e) => p.onEstado(e.target.value as EstadoCompra)} className="absolute inset-0 cursor-pointer opacity-0" style={{ fontSize: 16 }}>
+          {ETAPAS_COMPRA.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          {Object.entries(ESTADO_LABEL).filter(([v]) => v !== 'en_transito').map(([v, l]) => <option key={v} value={v}>{v === 'en_inventario' ? 'Disponible (ya en Nicaragua)' : l}</option>)}
+        </select>
+      </label>}>
+        {iPaso >= 0 ? <div className="flex items-start">
+          {PASOS.map(([v, l], i) => <div key={v} className="flex min-w-0 flex-1 flex-col items-center gap-1.5 text-center">
+            <div className="flex w-full items-center">
+              <span className={`h-0.5 flex-1 ${i === 0 ? 'opacity-0' : i <= iPaso ? 'bg-accent' : 'bg-line'}`} />
+              <span className={`grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-bold ${i < iPaso ? 'bg-accent text-app' : i === iPaso ? 'bg-accent text-app ring-4 ring-accent/20' : 'border border-line bg-panel text-muted'}`}>{i < iPaso ? '✓' : i + 1}</span>
+              <span className={`h-0.5 flex-1 ${i === PASOS.length - 1 ? 'opacity-0' : i < iPaso ? 'bg-accent' : 'bg-line'}`} />
+            </div>
+            <span className={`text-[10.5px] leading-3 ${i === iPaso ? 'font-semibold' : 'text-muted'}`}>{l}</span>
+          </div>)}
+        </div> : <p className="text-[13px] text-muted">{item.estado === 'reservado' ? 'Apartada para un cliente.' : item.estado === 'vendido' ? `Vendida${item.pedidos?.codigo ? ` · pedido ${item.pedidos.codigo}` : ''}.` : 'Descartada.'}</p>}
+        {item.llega_aprox && item.estado === 'en_transito' && <p className="mt-3 text-[12px] text-muted">Llega aprox. el <b className="text-white">{new Date(item.llega_aprox + 'T12:00:00').toLocaleDateString('es-NI', { day: 'numeric', month: 'long' })}</b></p>}
+      </Seccion>
+
+      {/* Dinero */}
+      <Seccion titulo="Dinero">
+        <Fila label="Costo del producto" valor={usd(costoProducto)} />
+        {otros > 0.004 && <Fila label="Comisión y otros gastos" valor={usd(otros)} />}
+        {p.gastosAsociados > 0.004 && <Fila label="Envío a Nicaragua" valor={usd(p.gastosAsociados)} />}
+        <div className="my-1.5 border-t border-line" />
+        <Fila label="Costo total" valor={usd(p.costo)} fuerte />
+        <Fila label="Precio de venta" valor={usd(venta)} />
+        <Fila label={<>Ganancia <span className="text-[11px] font-normal text-muted">({margen}%)</span></>} valor={usd(ganancia)} fuerte tono={ganancia >= 0 ? 'text-green-300' : 'text-red-300'} />
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[.06]"><div className={`h-full rounded-full ${ganancia >= 0 ? 'bg-green-400' : 'bg-red-400'}`} style={{ width: `${Math.max(3, Math.min(100, Math.abs(margen)))}%` }} /></div>
+        <div className={`mt-4 flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-[13px] ${porPagar ? 'bg-amber-300/10' : 'bg-green-400/10'}`}>
+          <span className={porPagar ? 'text-amber-200' : 'text-green-300'}><Wallet size={14} className="mr-1.5 inline -translate-y-px" />{porPagar ? <>Falta pagarle <b>{usd(pendiente)}</b> al proveedor</> : 'Pagado al proveedor'}</span>
+          {porPagar && <button type="button" className="subtle-button shrink-0" onClick={p.onPagar}>Pagar</button>}
+        </div>
+      </Seccion>
+
+      {/* En la tienda */}
+      {(item.estado === 'en_transito' || item.estado === 'en_inventario' || p.enEI) && <Seccion titulo="En la tienda">
+        {item.estado === 'en_transito' && p.onMostrarTienda && (() => {
+          const visible = item.mostrar_tienda !== false
+          return <button type="button" role="switch" aria-checked={visible} disabled={!codigo} onClick={() => p.onMostrarTienda?.(!visible)} className="flex w-full items-center gap-3 rounded-lg py-1 text-left disabled:opacity-60">
+            <span className="min-w-0 flex-1"><span className="block text-[13px] font-medium">{visible ? 'Se muestra en la tienda' : 'No se muestra en la tienda'}</span>
+              <span className="block text-[11.5px] text-muted">{!codigo ? 'Sin código: no puede salir en la tienda' : !visible ? 'Solo la ves vos en el panel.' : p.enCaminoPublicado ? 'Sale como “Llega pronto · Apártelo ya”' : 'Publicándose en la tienda…'}</span></span>
+            <span className={`relative h-6 w-11 shrink-0 rounded-full transition ${visible ? 'bg-accent' : 'bg-white/15'}`}><span className="absolute top-0.5 size-5 rounded-full shadow transition-all" style={{ left: visible ? 22 : 2, background: '#fff' }} /></span>
+          </button>
+        })()}
+        <div className={`flex items-center justify-between gap-3 ${item.estado === 'en_transito' ? 'mt-3 border-t border-line pt-3' : ''}`}>
+          <span className="min-w-0"><span className="block text-[13px] font-medium">Entrega inmediata</span><span className="block text-[11.5px] text-muted">{p.enEI ? 'Sale en la sección de entrega inmediata' : item.estado === 'en_inventario' ? 'Todavía no está en esa sección' : 'Disponible cuando llegue a Nicaragua'}</span></span>
+          <button type="button" className="subtle-button shrink-0" onClick={p.onEntregaInmediata} disabled={item.estado !== 'en_inventario' && !p.enEI}>{p.enEI ? 'Tallas' : 'Poner'}</button>
+        </div>
+        {item.estado === 'en_transito' && p.enCaminoPublicado && <a className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-semibold text-accent hover:underline" href={`https://hauslineshopni.es/admin.html?ig=${encodeURIComponent(codigo)}&modo=encamino`} target="_blank" rel="noopener noreferrer"><ExternalLink size={13} /> Crear post e historia “Llega pronto”</a>}
+      </Seccion>}
+
+      {item.tracking && <Seccion titulo="Envío">
+        <div className="flex items-center justify-between gap-2 text-[13px]">
+          <span className="min-w-0 truncate"><span className="text-muted">{item.transportista || 'Tracking'}:</span> <span className="font-mono">{item.tracking}</span></span>
+          {item.url_tracking && <a className="text-accent" href={item.url_tracking} target="_blank" rel="noreferrer" aria-label="Abrir enlace de la paquetería"><Link2 size={15} /></a>}
+        </div>
+        {item.estado_tracking && <p className="mt-1 text-[12px] text-muted">Estado: <span className="text-white">{item.estado_tracking === 'Registrado' ? 'Registrándose en 17TRACK…' : item.estado_tracking}</span></p>}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <a className="subtle-button" href={`https://t.17track.net/es#nums=${encodeURIComponent(item.tracking)}`} target="_blank" rel="noopener noreferrer"><ExternalLink size={13} /> Ver estado</a>
+          <Link className="subtle-button" to={`/logistica?q=${encodeURIComponent(item.tracking)}`}><Truck size={13} /> Ver en Logística</Link>
+        </div>
+      </Seccion>}
+
+      {notas && <Seccion titulo="Notas"><p className="whitespace-pre-line text-[13px] leading-5 text-muted">{notas}</p></Seccion>}
     </div>
 
-    {/* Números */}
-    <div className="mx-4 grid grid-cols-3 divide-x divide-line rounded-xl border border-line bg-white/[.02] text-center">
-      <div className="px-2 py-2.5"><p className="text-[9.5px] uppercase tracking-wider text-muted">Costo</p><p className="mt-0.5 font-mono text-[13px] font-semibold">{usd(p.costo)}</p></div>
-      <div className="px-2 py-2.5"><p className="text-[9.5px] uppercase tracking-wider text-muted">Venta</p><p className="mt-0.5 font-mono text-[13px] font-semibold text-accent">{usd(venta)}</p></div>
-      <div className="px-2 py-2.5"><p className="text-[9.5px] uppercase tracking-wider text-muted">Ganancia</p><p className={`mt-0.5 font-mono text-[13px] font-semibold ${ganancia >= 0 ? 'text-green-300' : 'text-red-300'}`}>{usd(ganancia)}{venta > 0 && <span className="ml-1 text-[10px] font-normal text-muted">{margen}%</span>}</p></div>
-    </div>
-    {p.gastosAsociados > 0 && <p className="mx-4 mt-1.5 text-[10.5px] text-muted">Incluye {usd(p.gastosAsociados)} de envío u otros gastos.</p>}
-
-    {/* Etiquetas */}
-    {(p.enEI || p.fotos > 0 || item.estado === 'en_transito' || porPagar) && <div className="mx-4 mt-3 flex flex-wrap gap-1.5">
-      {porPagar && <Chip tono="border-amber-300/35 bg-amber-300/10 text-amber-200"><Wallet size={11} /> Por pagar al proveedor</Chip>}
-      {p.enEI && <Chip tono="border-accent/35 bg-accent/10 text-accent" onQuitar={p.quitandoEI ? undefined : p.onQuitarEI} tituloQuitar="Quitar de Entrega inmediata"><Zap size={11} /> {p.quitandoEI ? 'Quitando…' : 'En Entrega inmediata'}</Chip>}
-      {item.estado === 'en_transito' && p.onMostrarTienda && (() => {
-        const visible = item.mostrar_tienda !== false
-        return <button type="button" role="switch" aria-checked={visible} disabled={!codigo} onClick={() => p.onMostrarTienda?.(!visible)}
-          className={`flex basis-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition disabled:opacity-60 ${visible ? 'border-amber-300/35 bg-amber-300/[.06] hover:bg-amber-300/10' : 'border-line bg-white/[.02] hover:bg-white/[.04]'}`}>
-          <span className={`relative h-5 w-9 shrink-0 rounded-full transition ${visible ? 'bg-amber-300' : 'bg-white/15'}`}><span className={`absolute top-0.5 size-4 rounded-full bg-white shadow transition-all ${visible ? 'left-[18px]' : 'left-0.5'}`} /></span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[12px] font-semibold text-white">{visible ? 'Se muestra en la tienda' : 'No se muestra en la tienda'}</span>
-            <span className="block truncate text-[10.5px] text-muted">{!codigo ? 'Sin código: no puede salir en la tienda' : !visible ? 'Solo la ves vos en el panel. Tocá para publicarla.' : p.enCaminoPublicado ? `Sale como “Llega pronto · Apártelo ya”${item.llega_aprox ? ` · llega aprox. ${item.llega_aprox.split('-').reverse().slice(0, 2).join('/')}` : ''}` : 'Publicándose en la tienda…'}</span>
-          </span>
-          {visible ? <Eye size={15} className="shrink-0 text-amber-200" /> : <EyeOff size={15} className="shrink-0 text-muted" />}
-        </button>
-      })()}
-      {p.fotos > 0 && <Chip tono="border-sky-400/35 bg-sky-400/10 text-sky-300"><Camera size={11} /> {p.fotos} {p.fotos === 1 ? 'foto' : 'fotos'} de calidad</Chip>}
-    </div>}
-
-    {item.tracking && <div className="mx-4 mt-3 rounded-xl border border-line px-3 py-2 text-[11px]">
-      <div className="flex items-center justify-between gap-2">
-        <span className="min-w-0 truncate"><b>{item.transportista || 'Tracking'}:</b> <span className="font-mono">{item.tracking}</span></span>
-        {item.url_tracking && <a className="text-accent" href={item.url_tracking} target="_blank" rel="noreferrer" aria-label="Abrir enlace de la paquetería"><Link2 size={14} /></a>}
-      </div>
-      {item.estado_tracking && <p className="mt-1 text-white/85"><span className="text-muted">Estado:</span> {item.estado_tracking === 'Registrado' ? 'Registrándose en 17TRACK…' : item.estado_tracking}</p>}
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        <a className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 font-semibold text-[#9ed0ff] transition hover:border-[#9ed0ff]/40" href={`https://t.17track.net/es#nums=${encodeURIComponent(item.tracking)}`} target="_blank" rel="noopener noreferrer"><ExternalLink size={12} /> Ver estado</a>
-        <Link className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 font-semibold text-white/85 transition hover:border-white/30" to={`/logistica?q=${encodeURIComponent(item.tracking)}`}><Truck size={12} /> Ver en Logística</Link>
-      </div>
-    </div>}
-    {item.notas && <p className="mx-4 mt-3 line-clamp-2 border-l-2 border-accent/40 pl-2.5 text-[11px] leading-4 text-muted">{item.notas}</p>}
-
-    <div className="mt-auto" />
-
-    {/* Acciones principales */}
-    <div className="px-4 pt-4">
-      {porPagar && <button className="mb-2 flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300/30 bg-amber-300/[.07] py-2.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-300/[.13]" onClick={p.onPagar}><Wallet size={15} /> {p.pendiente != null && p.pendiente < p.costo - 0.005 ? 'Pagar lo que falta' : 'Registrar pago al proveedor'} · {usd(p.pendiente ?? p.costo)}</button>}
-      {activo && <div className={`grid gap-2 ${item.estado === 'en_transito' || item.estado === 'en_inventario' ? 'grid-cols-1' : 'grid-cols-2'}`}>
-        {item.estado !== 'en_transito' && <button className="primary-button justify-center py-2.5" style={{ fontSize: 13 }} onClick={p.onVender}><Tag size={15} /> Vender ahora</button>}
-        {item.estado !== 'en_inventario' && <button className={`${item.estado === 'en_transito' ? 'primary-button' : 'subtle-button'} justify-center py-2.5`} style={{ fontSize: 13 }} onClick={p.onApartar}><Bookmark size={15} /> Apartar (50%)</button>}
-      </div>}
-      {(item.estado === 'en_transito' || item.estado === 'en_inventario') && p.onFicha && <button className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-line py-2.5 text-xs font-semibold text-white/85 transition hover:border-white/20 hover:bg-white/[.04]" onClick={p.onFicha}><Send size={14} /> Ficha para el cliente</button>}
-      {item.estado === 'en_inventario' && p.onLinkPago && <button className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-accent/30 bg-accent/[.06] py-2.5 text-xs font-semibold text-accent transition hover:bg-accent/[.12]" onClick={p.onLinkPago}><Link2 size={14} /> Enviar link de pago{(item.notas ?? '').includes('[LINK_PAGO]') ? ' · ya enviado' : ''}</button>}
-      {item.estado === 'vendido' && <div className="grid grid-cols-2 gap-2">
-        {item.pedido_id
-          ? <button className="flex items-center justify-center gap-1.5 rounded-xl border border-green-400/25 bg-green-400/[.07] py-2.5 text-xs font-semibold text-green-300 hover:bg-green-400/[.12]" onClick={p.onVerPedido}><ExternalLink size={14} /> Pedido {item.pedidos?.codigo ?? ''}</button>
-          : <span className="flex items-center justify-center rounded-xl border border-green-400/25 bg-green-400/[.07] py-2.5 text-xs font-semibold text-green-300">Vendido</span>}
-        <button className="subtle-button justify-center py-2.5 text-xs" onClick={p.onImprimir} disabled={p.imprimiendo}><Printer size={15} /> {p.imprimiendo ? 'Generando…' : 'Recibo'}</button>
-      </div>}
-    </div>
-
-    {/* Herramientas */}
-    <div className="mt-3 grid grid-cols-5 border-t border-line px-2 py-1">
-      <Herramienta icon={<Camera size={17} />} label="Calidad" activo={p.fotos > 0} onClick={p.onFotos} disabled={item.estado === 'descartado'} />
-      <Herramienta icon={<Zap size={17} />} label={p.enEI ? 'Tallas EI' : 'Inmediata'} activo={p.enEI} onClick={p.onEntregaInmediata} disabled={item.estado !== 'en_inventario' && !p.enEI} />
-      <Herramienta icon={<Eye size={17} />} label="Ver" onClick={p.onVer} />
-      <Herramienta icon={<Pencil size={17} />} label="Editar" onClick={p.onEditar} />
-      <Herramienta icon={<Trash2 size={17} />} label="Eliminar" peligro onClick={p.onEliminar} />
-    </div>
-
-    {item.estado === 'en_transito' && p.enCaminoPublicado && <a className="mx-4 mb-3 -mt-1 text-center text-[11px] font-semibold text-amber-200/90 hover:underline" href={`https://hauslineshopni.es/admin.html?ig=${encodeURIComponent(codigo)}&modo=encamino`} target="_blank" rel="noopener noreferrer">📸 Crear post e historia "Llega pronto"</a>}
-  </article>
+    {/* Columna de acciones */}
+    <aside className="space-y-4">
+      <Seccion titulo="Acciones" oculta>
+        {botones}
+      </Seccion>
+      <Seccion titulo="Más">
+        <div className="-mx-1.5 space-y-0.5">
+          <Accion icon={<Camera size={15} />} label="Fotos de calidad" detalle={p.fotos ? `${p.fotos} ${p.fotos === 1 ? 'foto' : 'fotos'}` : 'Sin fotos todavía'} activo={p.fotos > 0} onClick={p.onFotos} disabled={item.estado === 'descartado'} />
+          <Accion icon={<Eye size={15} />} label="Vista para el cliente" onClick={p.onVer} />
+          <Accion icon={<Pencil size={15} />} label="Editar compra" onClick={p.onEditar} />
+          <Accion icon={<Trash2 size={15} />} label="Eliminar" peligro onClick={p.onEliminar} />
+        </div>
+      </Seccion>
+    </aside>
+  </div>
 }
 
 // Barra horizontal de la lista (como un pedido): foto, código y nombre, estado, etiquetas,
