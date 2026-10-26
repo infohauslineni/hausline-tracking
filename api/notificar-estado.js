@@ -449,6 +449,7 @@ async function archivarDriveManual(response, body, authorization) {
       return response.status(200).json({ ok: false, error: driveError?.message || 'No se pudo subir a Drive.', archivos })
     }
   }
+  try { const r = await archivarComprobantesCliente(admin, codigo); archivos.push(...r.archivos) } catch (e) { console.error('archivar-drive: comprobantes del cliente', e?.message) }
   return response.status(200).json({ ok: true, archivos, carpeta: `HAUSLINE Facturas / ${mesCarpeta(pedido.fecha_pedido)} / ${codigo}` })
 }
 
@@ -556,25 +557,113 @@ async function enviarCancelacion(request, response, body, authorization) {
   }
 
   const codigo = String(body.codigo ?? '').trim()
-  const motivo = String(body.motivo ?? '').trim()
-  const monto = Math.max(0, Number(body.monto || 0))
   if (!codigo) return response.status(400).json({ ok: false, error: 'Datos inválidos.' })
+  const r = await correoCancelacionPedido(admin, codigo)
+  return response.status(r.ok ? 200 : 502).json(r)
+}
 
-  const { data: pedido, error: pedidoError } = await admin
-    .from('pedidos').select('codigo, clientes(correo, nombre)').eq('codigo', codigo).maybeSingle()
-  if (pedidoError) return response.status(502).json({ ok: false, error: 'No se pudo leer el pedido.' })
-  const cli = Array.isArray(pedido?.clientes) ? pedido.clientes[0] : pedido?.clientes
-  const correo = (cli?.correo ?? '').trim()
-  const nombre = cli?.nombre ?? null
-  if (!correo) return response.status(200).json({ ok: false, error: 'El cliente no tiene correo.' })
-
+// Correo de CANCELACIÓN (una sola vez por pedido, con registro en email_eventos). Lo usan el
+// panel al cancelar y el aviso automático de Supabase al pasar a "Cancelado", así sale por
+// cualquier camino que se cancele. Lee del pedido el motivo y:
+//   · si HAUSLINE le pidió la cuenta (solicitud 'esperando_datos') → enlace para mandarla;
+//   · si ya se registró la devolución → el monto devuelto.
+// No se manda si la cancelación la pidió el cliente desde Mi cuenta (le llega el correo de
+// "reembolso aprobado" en su lugar).
+const SITIO_TIENDA = 'https://hauslineshopni.es'
+async function correoCancelacionPedido(admin, codigo) {
+  const { data: pedido, error } = await admin.from('pedidos')
+    .select('id, codigo, motivo_cancelacion, estado, clientes(correo, nombre)').eq('codigo', codigo).maybeSingle()
+  if (error || !pedido) return { ok: false, error: 'No se pudo leer el pedido.' }
+  const cli = Array.isArray(pedido.clientes) ? pedido.clientes[0] : pedido.clientes
+  const correo = String(cli?.correo ?? '').trim()
+  if (!correo) return { ok: false, error: 'El cliente no tiene correo: avisale por WhatsApp.' }
+  const { data: solicitudes } = await admin.from('solicitudes_reembolso')
+    .select('estado, origen, token, monto_pagado, created_at').eq('pedido_id', pedido.id).order('created_at', { ascending: false }).limit(10)
+  const lista = solicitudes ?? []
+  if (lista.some((x) => (x.origen ?? 'cliente') === 'cliente' && ['pendiente', 'aprobada'].includes(x.estado))) return { ok: true, skipped: 'el cliente pidió la cancelación: recibe el correo de reembolso' }
+  const pedirDatos = lista.find((x) => x.origen === 'admin' && x.estado === 'esperando_datos')
+  let monto = Number(pedirDatos?.monto_pagado || 0)
+  if (!pedirDatos) {
+    const { data: pagos } = await admin.from('pagos').select('monto, created_at').eq('pedido_id', pedido.id).eq('tipo', 'reembolso').order('created_at', { ascending: false }).limit(1)
+    monto = Number(pagos?.[0]?.monto || 0)
+  }
+  const enlaceDatos = pedirDatos ? `${SITIO_TIENDA}/reembolso/?t=${pedirDatos.token}` : null
+  const reserva = await reservarEmail({ clave: `estado:${codigo}:cancelado`, tipo: 'estado', estado: 'cancelado', codigo, destinatario: correo })
+  if (reserva.duplicado) return { ok: true, sent: correo, duplicado: true }
   try {
-    await enviarCorreoCancelacion({ correo, nombre, codigo, motivo, monto })
+    await enviarCorreoCancelacion({ correo, nombre: cli?.nombre ?? null, codigo, motivo: pedido.motivo_cancelacion || 'otro', monto, enlaceDatos })
   } catch (sendError) {
     console.error('cancelacion: no se pudo enviar', sendError?.message)
-    return response.status(502).json({ ok: false, error: 'No se pudo enviar el correo.' })
+    await cerrarEmail(reserva.id, sendError?.message || 'error de envío')
+    return { ok: false, error: `No se pudo enviar el correo: ${sendError?.message || 'error del servidor de correo'}` }
   }
-  return response.status(200).json({ ok: true, sent: correo })
+  await cerrarEmail(reserva.id)
+  return { ok: true, sent: correo }
+}
+
+// El cliente mandó los datos de su cuenta desde hauslineshopni.es/reembolso (sin sesión: basta el
+// token, que solo él tiene). Aviso al admin una sola vez (candado aviso_admin_at).
+async function avisoDatosReembolso(response, body) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(500).json({ ok: false })
+  const token = String(body.reembolsoDatos ?? '').trim()
+  if (!/^[0-9a-f-]{36}$/i.test(token)) return response.status(400).json({ ok: false })
+  const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  const { data: filas } = await admin.from('solicitudes_reembolso').update({ aviso_admin_at: new Date().toISOString() })
+    .eq('token', token).eq('origen', 'admin').eq('estado', 'pendiente').is('aviso_admin_at', null).select('*')
+  const s = filas?.[0]
+  if (!s) return response.status(200).json({ ok: true, skipped: 'ya avisado' })
+  const destino = (process.env.AVISO_ADMIN || process.env.SMTP_USER || '').trim()
+  try { await enviarCorreoReembolsoAdmin({ to: destino, s }) } catch (e) {
+    console.error('reembolso datos: aviso admin falló', e?.message)
+    await admin.from('solicitudes_reembolso').update({ aviso_admin_at: null }).eq('id', s.id)
+  }
+  return response.status(200).json({ ok: true })
+}
+
+// Comprobantes que el CLIENTE subió desde la web (checkout del encargo) → a la carpeta de Drive del
+// pedido, junto a la factura. Están en el bucket privado "comprobantes" y van ligados a los encargos
+// (solicitudes) que se confirmaron como este pedido.
+async function archivarComprobantesCliente(admin, codigo) {
+  const { data: pedido } = await admin.from('pedidos').select('id, codigo, fecha_pedido').eq('codigo', codigo).maybeSingle()
+  if (!pedido) return { archivos: [], error: 'No se encontró el pedido.' }
+  const { data: sols } = await admin.from('solicitudes').select('comprobante_url').eq('pedido_id', pedido.id).not('comprobante_url', 'is', null)
+  const rutas = [...new Set((sols ?? []).map((x) => String(x.comprobante_url || '').trim()).filter(Boolean))]
+  const archivos = []
+  for (const [i, ruta] of rutas.entries()) {
+    let data, mime
+    if (/^https?:\/\//i.test(ruta)) {
+      const res = await fetch(ruta)
+      if (!res.ok) continue
+      data = Buffer.from(await res.arrayBuffer()); mime = res.headers.get('content-type') || 'image/jpeg'
+    } else {
+      const { data: blob, error } = await admin.storage.from('comprobantes').download(ruta)
+      if (error || !blob) { console.error('comprobante cliente: no se pudo leer', ruta, error?.message); continue }
+      data = Buffer.from(await blob.arrayBuffer()); mime = blob.type || 'application/octet-stream'
+    }
+    const ext = /pdf/i.test(mime) || /\.pdf$/i.test(ruta) ? 'pdf' : /png/i.test(mime) ? 'png' : /webp/i.test(mime) ? 'webp' : 'jpg'
+    const filename = `${codigo} - Comprobante del cliente${rutas.length > 1 ? ` ${i + 1}` : ''}.${ext}`
+    await subirArchivoDrive({ codigo, fecha: pedido.fecha_pedido, filename, data, mime: ext === 'pdf' ? 'application/pdf' : mime })
+    archivos.push(filename)
+  }
+  return { archivos }
+}
+
+// Panel (JWT): archivar los comprobantes del cliente de un pedido (al confirmar un encargo).
+async function archivarComprobanteClientePanel(response, body, authorization) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(500).json({ ok: false, error: 'Falta configuración del servidor.' })
+  const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  const token = String(authorization).replace(/^Bearer\s+/i, '').trim()
+  if (!token || !(await personalActivoLocal(admin, token))) return response.status(401).json({ ok: false })
+  const codigo = String(body.codigo ?? '').trim()
+  if (!codigo) return response.status(400).json({ ok: false, error: 'Falta el código.' })
+  try { const r = await archivarComprobantesCliente(admin, codigo); return response.status(200).json({ ok: !r.error, ...r }) }
+  catch (e) { return response.status(200).json({ ok: false, error: e?.message || 'No se pudo subir a Drive.' }) }
+}
+async function personalActivoLocal(admin, token) {
+  const { data: userData } = await admin.auth.getUser(token).catch(() => ({ data: { user: null } }))
+  if (!userData?.user) return false
+  const { data: perfil } = await admin.from('perfiles').select('rol, activo').eq('id', userData.user.id).maybeSingle()
+  return !!(perfil && perfil.activo && (perfil.rol === 'admin' || perfil.rol === 'operador'))
 }
 
 // Solicitudes de cancelación / reembolso (Mi cuenta de la tienda → panel).
@@ -649,7 +738,7 @@ async function avisoReembolso(response, body, authorization) {
     const correo = String(s.correo_cliente ?? '').trim()
     if (!correo) return response.status(200).json({ ok: false, error: 'El cliente no tiene correo.' })
     try {
-      await enviarCorreoReembolsoAprobado({ correo, nombre: s.nombre_cliente, codigo: s.codigo, monto: s.monto_reembolso, banco: s.banco, numeroCuenta: s.numero_cuenta, titular: s.titular, respuesta: s.respuesta })
+      await enviarCorreoReembolsoAprobado({ correo, nombre: s.nombre_cliente, codigo: s.codigo, monto: s.monto_reembolso, banco: s.banco, numeroCuenta: s.numero_cuenta, titular: s.titular, origen: s.origen, respuesta: s.respuesta })
     } catch (e) {
       console.error('reembolso: correo aprobación falló', e?.message)
       return response.status(502).json({ ok: false, error: 'No se pudo enviar el correo.' })
@@ -788,6 +877,10 @@ export default async function handler(request, response) {
   if (body.entregaInmediataCompra) return entregaInmediataDesdeCompra(response, body, authorization)
   // Correo de cancelación desde el panel (también con JWT del usuario).
   if (body.cancelacion) return enviarCancelacion(request, response, body, authorization)
+  // El cliente mandó la cuenta para su devolución (página pública /reembolso, con token).
+  if (body.reembolsoDatos) return avisoDatosReembolso(response, body)
+  // Comprobantes que subió el cliente → Drive del pedido (al confirmar un encargo).
+  if (body.archivarComprobanteCliente) return archivarComprobanteClientePanel(response, body, authorization)
   // Solicitud de cancelación / reembolso (cliente → aviso al admin; admin → rechazo al cliente).
   if (body.reembolso) return avisoReembolso(response, body, authorization)
 
@@ -898,8 +991,14 @@ async function procesarAvisoPedido(body, response) {
   if (!esNuevo && estado === oldRecord.estado) return response.status(200).json({ ok: true, skipped: 'sin cambio de estado' })
   if (!ESTADO_LABEL[estado]) return response.status(200).json({ ok: true, skipped: 'estado no notificable' })
   // Estados que se manejan a mano: NO se envía correo automático al cliente.
-  const SIN_CORREO = new Set(['cancelado', 'incidencia'])
+  const SIN_CORREO = new Set(['incidencia'])
   if (SIN_CORREO.has(estado)) return response.status(200).json({ ok: true, skipped: 'estado sin correo' })
+  // Cancelado: correo propio con el motivo y la devolución (y el enlace para mandar la cuenta).
+  if (estado === 'cancelado') {
+    if (esNuevo || !process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(200).json({ ok: true, skipped: 'cancelado sin configuración' })
+    const adminCancel = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+    return response.status(200).json(await correoCancelacionPedido(adminCancel, record.codigo))
+  }
   // Evita correos repetidos cuando el cliente ve la MISMA etiqueta pública: las etapas de
   // bodega (recibido_estados_unidos / transito_nicaragua) se muestran como "En tránsito
   // internacional", igual que transito_internacional → así manda UN solo correo de tránsito.

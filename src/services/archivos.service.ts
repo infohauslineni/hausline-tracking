@@ -205,15 +205,34 @@ export async function archivarComprobanteDrive(codigo: string, file: File, fecha
   const { data: sessionData } = await client.auth.getSession()
   const token = sessionData.session?.access_token
   if (!token) throw new Error('Sesión no disponible.')
-  const blob = await comprimirImagen(file, false)
+  // PDF tal cual; imagen comprimida a webp.
+  const esPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+  const blob = esPdf ? file : await comprimirImagen(file, false)
   const dataBase64 = await blobToBase64(blob)
   const res = await fetch('/api/archivar-comprobante', {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-    body: JSON.stringify({ codigo, fecha: fecha || undefined, filename: `${codigo} - Comprobante de pago.webp`, mime: 'image/webp', dataBase64 }),
+    body: JSON.stringify({ codigo, fecha: fecha || undefined, filename: `${codigo} - Comprobante de pago.${esPdf ? 'pdf' : 'webp'}`, mime: esPdf ? 'application/pdf' : 'image/webp', dataBase64 }),
   })
   if (!res.ok) { const j = await res.json().catch(() => ({})) as { error?: string }; throw new Error(j.error || `No se pudo archivar el comprobante en Drive (HTTP ${res.status}).`) }
   return res.json().catch(() => ({}))
+}
+
+// Comprobantes que el CLIENTE subió desde la web (checkout del encargo) → Drive del pedido. Los
+// baja el servidor del bucket privado. Devuelve los archivos subidos (vacío si no había).
+export async function archivarComprobantesCliente(codigo: string): Promise<string[]> {
+  const client = requireSupabase()
+  const { data: sessionData } = await client.auth.getSession()
+  const token = sessionData.session?.access_token
+  if (!token) throw new Error('Sesión no disponible.')
+  const res = await fetch('/api/notificar-estado', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ archivarComprobanteCliente: true, codigo }),
+  })
+  const json = await res.json().catch(() => ({})) as { ok?: boolean; archivos?: string[]; error?: string }
+  if (!res.ok || !json.ok) throw new Error(json.error || `No se pudo archivar en Drive (HTTP ${res.status}).`)
+  return json.archivos ?? []
 }
 
 // Botón "Archivar en Drive" del pedido: vuelve a subir sus facturas (Orden confirmada y, si ya

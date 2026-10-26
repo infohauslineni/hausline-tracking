@@ -815,12 +815,15 @@ const POLITICA_DEVOLUCION = 'El reembolso se procesa en un plazo de 1 a 3 días 
 // Correo de CANCELACIÓN al cliente. Lo dispara el panel al confirmar la cancelación (no el
 // webhook, para que lleve el motivo real y el monto de la devolución). Explica el motivo y,
 // si hubo pago que se devuelve (monto > 0), agrega la devolución y la política de 1 a 3 días.
-export async function enviarCorreoCancelacion({ correo, nombre, codigo, motivo, monto }) {
+// `enlaceDatos`: HAUSLINE necesita la cuenta del cliente para devolverle el dinero → el correo
+// se la pide y el botón lleva al formulario (hauslineshopni.es/reembolso/?t=…).
+export async function enviarCorreoCancelacion({ correo, nombre, codigo, motivo, monto, enlaceDatos }) {
   const razon = MOTIVO_CANCELACION_RAZON[motivo] || MOTIVO_CANCELACION_RAZON.otro
   const hayReembolso = (Number(monto) || 0) > 0
   const urlSeguimiento = urlPedidoCuenta(codigo)
   let nota = `Lamentamos informarle que su pedido <strong>${esc(codigo)}</strong> fue cancelado porque ${razon}.`
-  if (hayReembolso) nota += ` Ya iniciamos la <strong>devolución de ${montoUSD(monto)}</strong> que habías pagado. ${POLITICA_DEVOLUCION}`
+  if (enlaceDatos) nota += ` Vamos a devolverle <strong>${montoUSD(monto)}</strong>. Para hacerlo necesitamos los datos de su cuenta bancaria: toque el botón <strong>Enviar datos para la devolución</strong> y complete el banco, el número de cuenta y el nombre del titular. Apenas los recibamos hacemos la transferencia; se procesa en 1 a 3 días hábiles.`
+  else if (hayReembolso) nota += ` Ya iniciamos la <strong>devolución de ${montoUSD(monto)}</strong> que había pagado. ${POLITICA_DEVOLUCION}`
   nota += ' Cualquier duda quedamos a la orden y gracias por su comprensión.'
 
   const transporter = transporteSmtp()
@@ -834,6 +837,7 @@ export async function enviarCorreoCancelacion({ correo, nombre, codigo, motivo, 
     html: plantillaCorreo({
       nombre, codigo, estado: 'cancelado', estadoLabel: ESTADO_LABEL.cancelado, nota,
       urlSeguimiento, esNuevo: false, factura: null, fotos: [],
+      ...(enlaceDatos ? { ctaTexto: 'Enviar datos para la devolución', ctaUrl: enlaceDatos } : {}),
     }),
   })
 }
@@ -1020,6 +1024,7 @@ async function marcarNoLeidoImap(messageId) {
 
 // Al ADMIN: un cliente pidió cancelar su pedido. Hay que revisarla en el panel (Reembolsos).
 export async function enviarCorreoReembolsoAdmin({ to, s }) {
+  const deAdmin = s.origen === 'admin'
   const appUrl = (process.env.APP_URL ?? process.env.VITE_PUBLIC_APP_URL ?? 'https://hausline-tracking.vercel.app').replace(/\/$/, '')
   const fila = (k, v) => v ? `<tr><td style="padding:6px 0;font-size:13px;color:#6b7280;width:150px;vertical-align:top">${k}</td><td style="padding:6px 0;font-size:14px;color:#0b0f19;font-weight:600">${v}</td></tr>` : ''
   const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -1028,15 +1033,15 @@ export async function enviarCorreoReembolsoAdmin({ to, s }) {
     <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#fff;border-radius:14px;overflow:hidden">
       <tr><td style="background:#050505;padding:22px 24px;color:#fff;font-size:18px;font-weight:700;letter-spacing:3px;text-align:center">HAUSLINE</td></tr>
       <tr><td style="padding:26px 24px">
-        <p style="margin:0 0 6px;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#b45309;font-weight:700">Solicitud de cancelación · revisar</p>
-        <h1 style="margin:0 0 14px;font-size:20px;color:#0b0f19">${esc(s.nombre_cliente || 'Un cliente')} pidió cancelar el pedido ${esc(s.codigo)}</h1>
-        <p style="margin:0 0 16px;font-size:14px;color:#374151;line-height:1.5">No se canceló nada todavía: el reembolso solo se hace si confirma que el motivo es real.</p>
+        <p style="margin:0 0 6px;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#b45309;font-weight:700">${deAdmin ? 'Datos para la devolución · transferir' : 'Solicitud de cancelación · revisar'}</p>
+        <h1 style="margin:0 0 14px;font-size:20px;color:#0b0f19">${deAdmin ? `${esc(s.nombre_cliente || 'El cliente')} envió su cuenta para la devolución del pedido ${esc(s.codigo)}` : `${esc(s.nombre_cliente || 'Un cliente')} pidió cancelar el pedido ${esc(s.codigo)}`}</h1>
+        <p style="margin:0 0 16px;font-size:14px;color:#374151;line-height:1.5">${deAdmin ? 'El pedido ya está cancelado. Hacé la transferencia y marcala como reembolsada en Reembolsos (así sale de la caja).' : 'No se canceló nada todavía: el reembolso solo se hace si confirma que el motivo es real.'}</p>
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
           ${fila('Etapa del pedido', esc(s.estado_pedido))}
           ${fila('Motivo', esc(s.motivo_label))}
           ${fila('Explicación', esc(s.detalle))}
           ${fila('Pagado', montoUSD(s.monto_pagado))}
-          ${fila('Cuenta', `${esc(s.banco)} · ${esc(s.numero_cuenta)}`)}
+          ${fila('Cuenta', `${esc(s.banco)}${s.moneda ? ` (${esc(s.moneda)})` : ''} · ${esc(s.numero_cuenta)}`)}
           ${fila('Titular', esc(s.titular))}
           ${fila('WhatsApp', esc(s.whatsapp_cliente))}
         </table>
@@ -1048,7 +1053,7 @@ export async function enviarCorreoReembolsoAdmin({ to, s }) {
   await transporteSmtp().sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to,
-    subject: `⚠️ Solicitud de cancelación · ${s.codigo} · ${s.nombre_cliente || 'cliente'} — revisar`,
+    subject: deAdmin ? `💸 Devolución · ${s.codigo} · ${s.nombre_cliente || 'cliente'} envió su cuenta` : `⚠️ Solicitud de cancelación · ${s.codigo} · ${s.nombre_cliente || 'cliente'} — revisar`,
     html,
   })
 }
@@ -1088,16 +1093,17 @@ export async function enviarCorreoReembolsoRecibido({ correo, nombre, codigo, es
 }
 
 // Al CLIENTE: su solicitud se APROBÓ → pedido cancelado y reembolso a la cuenta que indicó.
-export async function enviarCorreoReembolsoAprobado({ correo, nombre, codigo, monto, banco, numeroCuenta, titular, respuesta }) {
+export async function enviarCorreoReembolsoAprobado({ correo, nombre, codigo, monto, banco, numeroCuenta, titular, respuesta, origen }) {
   const url = `https://hauslineshopni.es/cuenta/pedido/?id=${encodeURIComponent(codigo)}`
-  let nota = `Revisamos su solicitud y la <strong>aprobamos</strong>: su pedido <strong>${esc(codigo)}</strong> quedó cancelado.`
+  // origen 'admin': HAUSLINE canceló el pedido y ya le hizo la devolución con los datos que mandó.
+  let nota = origen === 'admin' ? `Recibimos los datos de su cuenta: ya hicimos la devolución del pedido <strong>${esc(codigo)}</strong>.` : `Revisamos su solicitud y la <strong>aprobamos</strong>: su pedido <strong>${esc(codigo)}</strong> quedó cancelado.`
   if (Number(monto) > 0) nota += ` Le reembolsamos <strong>${montoUSD(monto)}</strong> a su cuenta ${esc(banco)} · ****${esc(String(numeroCuenta || '').slice(-4))} a nombre de ${esc(titular)}. El reembolso se procesa en un plazo de 1 a 3 días hábiles.`
   if (respuesta) nota += ` ${esc(respuesta)}`
   nota += ' Gracias por su comprensión.'
   await transporteSmtp().sendMail({
     from: process.env.SMTP_FROM ?? `HAUSLINE <${process.env.SMTP_USER}>`,
     to: correo,
-    subject: `Pedido ${codigo}: su solicitud de reembolso fue aprobada`,
+    subject: origen === 'admin' ? `Pedido ${codigo}: le hicimos la devolución` : `Pedido ${codigo}: su solicitud de reembolso fue aprobada`,
     html: plantillaCorreo({
       nombre, codigo, estado: 'cancelado', estadoLabel: 'Reembolso aprobado', nota,
       urlSeguimiento: url, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Ver mi pedido', ctaUrl: url, pedirResena: false,

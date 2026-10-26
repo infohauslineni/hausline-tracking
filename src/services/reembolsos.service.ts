@@ -6,7 +6,7 @@ import type { DestinoPago } from '../components/finanzas/CuentaSelect'
 // Solicitudes de cancelación / reembolso que el cliente deja desde Mi cuenta (tienda).
 // NADA se cancela solo: el admin revisa si el motivo es real y aprueba (cancela el pedido +
 // registra el reembolso) o rechaza (el cliente elige seguir con el pedido o perder lo pagado).
-export type EstadoReembolso = 'pendiente' | 'aprobada' | 'rechazada' | 'retirada' | 'cancelada_sin_reembolso'
+export type EstadoReembolso = 'esperando_datos' | 'pendiente' | 'aprobada' | 'rechazada' | 'retirada' | 'cancelada_sin_reembolso'
 export type SolicitudReembolso = {
   id: string
   pedido_id: string
@@ -30,11 +30,28 @@ export type SolicitudReembolso = {
   resuelto_at: string | null
   decision_cliente_at: string | null
   plazo_decision_at?: string | null
+  // 'admin' = HAUSLINE canceló y le pidió la cuenta al cliente (enlace con token).
+  origen?: 'cliente' | 'admin'
+  token?: string
+  datos_at?: string | null
   created_at: string
   pedidos?: { id: string; estado: string; cliente_id: string; abono: number; total: number } | null
 }
 
 function client() { if (!supabase) throw new Error('Supabase no está configurado.'); return supabase }
+
+// PROTOCOLO DE CANCELACIÓN CON DEVOLUCIÓN: HAUSLINE cancela un pedido pagado → se le pide al
+// cliente su cuenta con un enlace (hauslineshopni.es/reembolso/?t=…). Llega aquí como
+// 'esperando_datos'; cuando la manda pasa a 'pendiente' y se transfiere desde Reembolsos.
+export const linkDatosReembolso = (token: string) => `https://hauslineshopni.es/reembolso/?t=${token}`
+export async function pedirDatosReembolso(pedidoId: string, monto: number, motivo: string) {
+  const { data, error } = await client().rpc('pedir_datos_reembolso', { p_pedido: pedidoId, p_monto: Math.round(Math.max(0, monto) * 100) / 100, p_motivo: motivo })
+  if (error) throw new Error(/function|does not exist/i.test(error.message) ? 'Falta aplicar el SQL 202610260001 (pedir datos de reembolso).' : error.message)
+  return String(data)
+}
+export function mensajeWhatsAppPedirCuenta(d: { nombre?: string | null; codigo: string; monto: number; razon: string; token: string }) {
+  return `Hola${d.nombre ? `, ${d.nombre}` : ''}. Lamentamos informarle que su pedido ${d.codigo} fue cancelado porque ${d.razon}.\n\nVamos a devolverle *US$ ${d.monto.toFixed(2)}*. Para hacer la transferencia necesitamos los datos de su cuenta bancaria (banco, número de cuenta y nombre del titular). Puede enviarlos aquí:\n${linkDatosReembolso(d.token)}\n\nApenas los recibamos hacemos la transferencia (1 a 3 días hábiles). Gracias por su comprensión.`
+}
 
 export const ETAPA_REEMBOLSO_LABEL: Record<SolicitudReembolso['etapa'], string> = {
   antes_envio: 'Antes del envío (en preparación)',

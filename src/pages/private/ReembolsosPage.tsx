@@ -8,7 +8,7 @@ import { Modal } from '../../components/ui/Modal'
 import { estadoLabel } from '../../constants/orders'
 import { isSupabaseConfigured, supabase } from '../../lib/supabase'
 import { obtenerTipoCambio } from '../../services/comercial.service'
-import { ETAPA_REEMBOLSO_LABEL, aprobarReembolso, cancelarSinReembolso, listarReembolsos, porAtender, rechazarReembolso, type SolicitudReembolso } from '../../services/reembolsos.service'
+import { ETAPA_REEMBOLSO_LABEL, aprobarReembolso, cancelarSinReembolso, linkDatosReembolso, listarReembolsos, porAtender, rechazarReembolso, type SolicitudReembolso } from '../../services/reembolsos.service'
 import type { EstadoPedido } from '../../types/domain'
 import { whatsappUrl } from '../../utils/whatsapp'
 
@@ -17,6 +17,7 @@ const fecha = (iso: string) => new Intl.DateTimeFormat('es-NI', { day: 'numeric'
 const usd = (n: number | null | undefined) => `US$ ${Number(n || 0).toFixed(2)}`
 
 const ESTADO_UI: Record<SolicitudReembolso['estado'], { label: string; clase: string }> = {
+  esperando_datos: { label: 'Esperando la cuenta del cliente', clase: 'bg-sky-400/12 text-sky-300' },
   pendiente: { label: 'Por revisar', clase: 'bg-amber-400/12 text-amber-300' },
   aprobada: { label: 'Aprobada · reembolsada', clase: 'bg-emerald-400/12 text-emerald-300' },
   rechazada: { label: 'Rechazada · esperando al cliente', clase: 'bg-red-400/12 text-red-300' },
@@ -50,7 +51,7 @@ export function ReembolsosPage() {
   }, [cargar])
 
   const atender = useMemo(() => items.filter(porAtender), [items])
-  const visibles = filtro === 'atender' ? atender : items
+  const visibles = filtro === 'atender' ? items.filter((s) => porAtender(s) || s.estado === 'esperando_datos') : items
 
   const cancelarSin = async (s: SolicitudReembolso) => {
     if (!confirm(`¿Cancelar el pedido ${s.codigo} sin reembolso? El cliente ya lo eligió.`)) return
@@ -65,7 +66,7 @@ export function ReembolsosPage() {
       {!isSupabaseConfigured && <div className="preview-banner"><strong>Vista previa local:</strong> las solicitudes requieren conexión a Supabase.</div>}
       <p className="eyebrow">Finanzas</p>
       <h1 className="page-title">Solicitudes de reembolso</h1>
-      <p className="page-subtitle">Cuando un cliente cancela desde Mi cuenta, llega aquí como solicitud. Revisá si el motivo es real (fotos de control de calidad, tracking, fechas) antes de reembolsar. Si lo rechazás, el cliente elige entre seguir con su pedido o cancelarlo sin reembolso.</p>
+      <p className="page-subtitle">Aquí llegan dos cosas: las cancelaciones que pide el cliente desde Mi cuenta (revisá si el motivo es real antes de reembolsar) y las devoluciones de los pedidos que cancelaste vos. En esas, primero el cliente manda su cuenta con el enlace del correo y después transferís desde aquí.</p>
 
       <div className="mt-6 flex flex-wrap gap-2">
         {([['atender', `Por atender${atender.length ? ` (${atender.length})` : ''}`], ['todas', 'Todas']] as [Filtro, string][]).map(([v, t]) => (
@@ -84,6 +85,9 @@ export function ReembolsosPage() {
             {visibles.map((s) => {
               const ui = ESTADO_UI[s.estado]
               const pedidoEstado = s.pedidos?.estado
+              const deAdmin = s.origen === 'admin'
+              const enlace = s.token ? linkDatosReembolso(s.token) : ''
+              const recordatorio = `Hola${s.nombre_cliente ? `, ${s.nombre_cliente}` : ''}. Para devolverle los US$ ${Number(s.monto_pagado || 0).toFixed(2)} del pedido ${s.codigo} necesitamos los datos de su cuenta bancaria (banco, número de cuenta y titular). Puede enviarlos aquí:\n${enlace}\n\nGracias.`
               return (
                 <article key={s.id} className="rounded-2xl border border-line bg-panel p-4">
                   <div className="flex flex-wrap items-center gap-2">
@@ -97,7 +101,7 @@ export function ReembolsosPage() {
                       <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Motivo</p>
                       <p className="mt-0.5 text-sm font-semibold">{s.motivo_label}</p>
                       <p className="mt-2 whitespace-pre-wrap text-sm text-white/85">{s.detalle}</p>
-                      <p className="mt-3 text-[11px] text-muted">Etapa al pedirla: <b className="text-white/80">{ETAPA_REEMBOLSO_LABEL[s.etapa] ?? s.etapa}</b> ({estadoLabel(s.estado_pedido as EstadoPedido)}){pedidoEstado && pedidoEstado !== s.estado_pedido ? <> · ahora: <b className="text-white/80">{estadoLabel(pedidoEstado as EstadoPedido)}</b></> : null}</p>
+                      {!deAdmin && <p className="mt-3 text-[11px] text-muted">Etapa al pedirla: <b className="text-white/80">{ETAPA_REEMBOLSO_LABEL[s.etapa] ?? s.etapa}</b> ({estadoLabel(s.estado_pedido as EstadoPedido)}){pedidoEstado && pedidoEstado !== s.estado_pedido ? <> · ahora: <b className="text-white/80">{estadoLabel(pedidoEstado as EstadoPedido)}</b></> : null}</p>}
                       {s.respuesta && <p className="mt-2 text-[12px] text-muted">Respuesta al cliente: “{s.respuesta}”</p>}
                       {s.estado === 'rechazada' && s.plazo_decision_at && <p className="mt-2 text-[12px] text-amber-200/90">El cliente tiene hasta el {fecha(s.plazo_decision_at)} para elegir. Si no elige, queda como que siguió con su pedido.</p>}
                       {s.estado === 'retirada' && s.plazo_decision_at && s.decision_cliente_at && s.decision_cliente_at >= s.plazo_decision_at && <p className="mt-2 text-[12px] text-muted">Venció el plazo de 48 h sin respuesta: el pedido siguió su curso.</p>}
@@ -105,12 +109,25 @@ export function ReembolsosPage() {
                     <div className="rounded-xl border border-line bg-white/[0.02] p-3 text-sm">
                       <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Datos para el reembolso</p>
                       <p className="mt-1">Pagado: <b>{usd(s.monto_pagado)}</b>{s.monto_reembolso != null && s.estado === 'aprobada' ? <> · reembolsado: <b className="text-emerald-300">{usd(s.monto_reembolso)}</b></> : null}</p>
-                      <p className="mt-1">{s.banco} · <span className="font-mono">{s.numero_cuenta}</span> <button className="ml-1 inline-flex align-middle text-muted hover:text-white" onClick={() => copiar(s.numero_cuenta)} aria-label="Copiar número de cuenta"><Copy size={13} /></button></p>
+                      {s.estado === 'esperando_datos' ? <>
+                        <p className="mt-2 text-[12px] text-sky-200">Todavía no mandó su cuenta. Le llegó por correo el enlace para enviarla.</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <button className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-white/85 hover:border-white/30" onClick={() => copiar(enlace)}><Copy size={13} /> Copiar enlace</button>
+                          {s.whatsapp_cliente && <a className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-accent hover:border-accent/40" href={whatsappUrl(s.whatsapp_cliente, recordatorio)} target="_blank" rel="noreferrer"><MessageCircle size={13} /> Recordarle por WhatsApp</a>}
+                        </div>
+                      </> : <>
+                      <p className="mt-1">{s.banco}{s.moneda ? ` (${s.moneda})` : ''} · <span className="font-mono">{s.numero_cuenta}</span> <button className="ml-1 inline-flex align-middle text-muted hover:text-white" onClick={() => copiar(s.numero_cuenta)} aria-label="Copiar número de cuenta"><Copy size={13} /></button></p>
                       <p className="mt-1">Titular: <b>{s.titular}</b></p>
-                      {s.whatsapp_cliente && <a className="mt-2 inline-flex items-center gap-1.5 text-xs text-accent hover:underline" href={whatsappUrl(s.whatsapp_cliente, `Hola${s.nombre_cliente ? `, ${s.nombre_cliente}` : ''}. Recibimos su solicitud de cancelación del pedido ${s.codigo} y la estamos revisando.`)} target="_blank" rel="noreferrer"><MessageCircle size={14} /> Escribir al cliente</a>}
+                      </>}
+                      {s.whatsapp_cliente && s.estado !== 'esperando_datos' && !deAdmin && <a className="mt-2 inline-flex items-center gap-1.5 text-xs text-accent hover:underline" href={whatsappUrl(s.whatsapp_cliente, `Hola${s.nombre_cliente ? `, ${s.nombre_cliente}` : ''}. Recibimos su solicitud de cancelación del pedido ${s.codigo} y la estamos revisando.`)} target="_blank" rel="noreferrer"><MessageCircle size={14} /> Escribir al cliente</a>}
                     </div>
                   </div>
-                  {s.estado === 'pendiente' && (
+                  {s.estado === 'pendiente' && deAdmin && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button className="primary-button min-h-9 px-3 text-xs" disabled={busy === s.id} onClick={() => setAprobando(s)}><Check size={15} /> Ya transferí · marcar reembolsado</button>
+                    </div>
+                  )}
+                  {s.estado === 'pendiente' && !deAdmin && (
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button className="primary-button min-h-9 px-3 text-xs" disabled={busy === s.id} onClick={() => setAprobando(s)}><Check size={15} /> Es verídico · aprobar y reembolsar</button>
                       <button className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white/[0.02] px-3 py-2 text-xs font-semibold text-muted transition hover:border-red-400/40 hover:text-red-300" disabled={busy === s.id} onClick={() => setRechazando(s)}><X size={15} /> No es verídico · rechazar</button>
@@ -148,7 +165,7 @@ function AprobarModal({ s, onClose, onDone }: { s: SolicitudReembolso; onClose: 
     try { const correo = await aprobarReembolso(s, { monto, destino, respuesta }); toast.success(`Aprobada: pedido ${s.codigo} cancelado${monto > 0 ? ` y reembolso de US$ ${monto.toFixed(2)} registrado` : ''}.${correo ? ' Le avisamos al cliente por correo.' : ' (El correo no salió; avisale por WhatsApp.)'}`); onDone() }
     catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo aprobar.') } finally { setSaving(false) }
   }
-  return <Modal open onClose={onClose} title={`Aprobar reembolso · ${s.codigo}`} description="Se cancela el pedido, el reembolso sale de la caja y de la cuenta que elijas, y al cliente le llega el correo de reembolso aprobado.">
+  return <Modal open onClose={onClose} title={s.origen === 'admin' ? `Registrar devolución · ${s.codigo}` : `Aprobar reembolso · ${s.codigo}`} description={s.origen === 'admin' ? 'El pedido ya está cancelado. Hacé la transferencia a la cuenta del cliente y registrala aquí: sale de la caja y de la cuenta que elijas, y al cliente le llega el correo de reembolso hecho.' : 'Se cancela el pedido, el reembolso sale de la caja y de la cuenta que elijas, y al cliente le llega el correo de reembolso aprobado.'}>
     <div className="space-y-4">
       <div className="rounded-xl border border-line bg-white/[0.02] p-3 text-sm">Transferir a <b>{s.banco}</b> · <span className="font-mono">{s.numero_cuenta}</span> · <b>{s.titular}</b></div>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -157,7 +174,7 @@ function AprobarModal({ s, onClose, onDone }: { s: SolicitudReembolso; onClose: 
       </div>
       <label className="form-field"><span>Mensaje para el cliente (opcional)</span><textarea rows={2} value={respuesta} onChange={(e) => setRespuesta(e.target.value)} placeholder="Ej. Confirmamos por las fotos que la talla no coincide." /></label>
       {s.whatsapp_cliente && <a className="inline-flex items-center gap-2 text-xs text-accent hover:underline" href={whatsappUrl(s.whatsapp_cliente, msg)} target="_blank" rel="noreferrer"><MessageCircle size={14} /> Avisar al cliente por WhatsApp</a>}
-      <div className="flex justify-end gap-2"><button className="subtle-button" onClick={onClose}>Volver</button><button className="primary-button px-5" disabled={saving} onClick={() => void confirmar()}>{saving ? 'Guardando…' : 'Aprobar y cancelar pedido'}</button></div>
+      <div className="flex justify-end gap-2"><button className="subtle-button" onClick={onClose}>Volver</button><button className="primary-button px-5" disabled={saving} onClick={() => void confirmar()}>{saving ? 'Guardando…' : s.origen === 'admin' ? 'Registrar devolución' : 'Aprobar y cancelar pedido'}</button></div>
     </div>
   </Modal>
 }

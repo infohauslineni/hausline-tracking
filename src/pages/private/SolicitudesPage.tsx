@@ -6,7 +6,7 @@ import { CompraDirectaModal } from '../../components/pedidos/CompraDirectaModal'
 import { CuentaSelect, type DestinoPago } from '../../components/finanzas/CuentaSelect'
 import { DEMO_SOLICITUDES } from '../../data/demoSolicitudes'
 import { isSupabaseConfigured } from '../../lib/supabase'
-import { archivarComprobanteDrive } from '../../services/archivos.service'
+import { archivarComprobanteDrive, archivarComprobantesCliente } from '../../services/archivos.service'
 import { comprasConLinkPago, comprasEnCamino, convertirComprasEnCamino, convertirComprasInmediatas, emparejarEnCamino, confirmarSolicitud, confirmarSolicitudesGrupo, descartarSolicitud, descartarSolicitudes, eliminarSolicitud, listarSolicitudes, suscribirSolicitudes, urlComprobanteSolicitud, type Solicitud } from '../../services/solicitudes.service'
 import { useAuth } from '../../contexts/AuthContext'
 import { whatsappUrl } from '../../utils/whatsapp'
@@ -107,7 +107,12 @@ export function SolicitudesPage() {
           : await confirmarSolicitudesGrupo(grupo.map((g) => g.id), abono, destino.cuentaId, destino.montoCuenta, descuento)
         if (comprobante) {
           try { await archivarComprobanteDrive(codigo, comprobante) }
-          catch { toast.error('El pedido se creó, pero no se pudo archivar el comprobante en Drive.') }
+          catch (e) { toast.error(`El pedido se creó, pero no se pudo archivar tu comprobante en Drive: ${e instanceof Error ? e.message : 'error'}`, { duration: 10000 }) }
+        }
+        // El que subió el cliente desde la web también va a la carpeta del pedido.
+        if (grupo.some((g) => g.comprobante_url)) {
+          try { await archivarComprobantesCliente(codigo) }
+          catch (e) { toast.error(`El pedido se creó, pero no se pudo archivar el comprobante del cliente en Drive: ${e instanceof Error ? e.message : 'error'}. Usá "Archivar en Drive" en el pedido.`, { duration: 12000 }) }
         }
         // Apartado de un producto EN CAMINO: la compra libre pasa sola a este pedido.
         try {
