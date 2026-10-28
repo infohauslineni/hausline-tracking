@@ -14,17 +14,17 @@ import { asegurarFuentesTienda } from '../utils/estiloTienda'
 export type HistoriaOpts = { mostrarNombre: boolean; inmediata?: boolean }
 
 // Estilo tienda: tinta negra sobre crema (antes verde neón).
-const TINTA = '#171310'
-const CREMA = '#F7F3EC'
-const BLACK = '#171310'
-const MUTED = '#8a8a8a'
-const FAINT = '#a9a9a9'
-const LINE_COL = '#e9e9e9'
+export const TINTA = '#171310'
+export const CREMA = '#F7F3EC'
+export const BLACK = '#171310'
+export const MUTED = '#8a8a8a'
+export const FAINT = '#a9a9a9'
+export const LINE_COL = '#e9e9e9'
 
 // Carga una imagen para dibujarla en el canvas SIN ensuciarlo (CORS). Si el host no manda
 // cabeceras CORS, el load falla y devolvemos null → se dibuja un placeholder (la exportación
 // nunca se rompe, porque solo dibujamos imágenes que cargaron limpias con crossOrigin).
-function cargarImagen(url: string): Promise<HTMLImageElement | null> {
+export function cargarImagen(url: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     if (!url) return resolve(null)
     const img = new Image()
@@ -36,7 +36,7 @@ function cargarImagen(url: string): Promise<HTMLImageElement | null> {
 }
 
 // Dibuja una imagen "cover" (recortada al centro) dentro de un rectángulo redondeado.
-function imagenCover(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number, r: number) {
+export function imagenCover(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number, r: number) {
   const escala = Math.max(w / img.naturalWidth, h / img.naturalHeight)
   const dw = img.naturalWidth * escala
   const dh = img.naturalHeight * escala
@@ -48,7 +48,7 @@ function imagenCover(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: nu
 
 // Placeholder cuando no hay foto disponible (o el host no permite CORS). En el diseño
 // claro: recuadro gris con la inicial en gris suave.
-function placeholderProducto(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number, texto: string) {
+export function placeholderProducto(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number, texto: string) {
   ctx.save()
   ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.clip()
   ctx.fillStyle = '#f2f2f2'; ctx.fillRect(x, y, w, h)
@@ -60,7 +60,7 @@ function placeholderProducto(ctx: CanvasRenderingContext2D, x: number, y: number
 }
 
 // Parte un texto en líneas que quepan en `maxW`; devuelve hasta `maxLineas` (la última con …).
-function partirTexto(ctx: CanvasRenderingContext2D, texto: string, maxW: number, maxLineas: number): string[] {
+export function partirTexto(ctx: CanvasRenderingContext2D, texto: string, maxW: number, maxLineas: number): string[] {
   const palabras = String(texto || '').trim().split(/\s+/)
   const lineas: string[] = []
   let actual = ''
@@ -82,7 +82,7 @@ function partirTexto(ctx: CanvasRenderingContext2D, texto: string, maxW: number,
 }
 
 // Wordmark "•HAUSLINE" (punto neón + texto negro) centrado sobre fondo claro.
-function marca(ctx: CanvasRenderingContext2D, cx: number, y: number) {
+export function marca(ctx: CanvasRenderingContext2D, cx: number, y: number) {
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
   ctx.font = '800 46px Jost, Arial'; ctx.letterSpacing = '8px'
   const texto = 'HAUSLINE'
@@ -96,7 +96,7 @@ function marca(ctx: CanvasRenderingContext2D, cx: number, y: number) {
 }
 
 // Dibuja un check (✓) con líneas, dentro de la caja centrada en (cx,cy).
-function check(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number, color: string, ancho: number) {
+export function check(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number, color: string, ancho: number) {
   ctx.save()
   ctx.strokeStyle = color; ctx.lineWidth = ancho; ctx.lineCap = 'round'; ctx.lineJoin = 'round'
   ctx.beginPath()
@@ -109,7 +109,7 @@ function check(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: numb
 
 // Marca de agua "HAUSLINE" repetida, muy suave, en diagonal (para que la referencia
 // quede en todos lados sin filtrar el código real ni ensuciar el diseño).
-function marcaDeAgua(ctx: CanvasRenderingContext2D, W: number, H: number) {
+export function marcaDeAgua(ctx: CanvasRenderingContext2D, W: number, H: number) {
   ctx.save()
   ctx.translate(W / 2, H / 2); ctx.rotate((-28 * Math.PI) / 180)
   ctx.fillStyle = '#F4F1EB'; ctx.font = '600 24px Jost, Arial'; ctx.textAlign = 'left'; ctx.letterSpacing = '6px'

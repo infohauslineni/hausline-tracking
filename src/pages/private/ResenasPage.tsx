@@ -1,10 +1,13 @@
-import { Check, EyeOff, Plus, Star, Trash2, X } from 'lucide-react'
+import { Check, EyeOff, Plus, Share2, Star, Trash2, X } from 'lucide-react'
 import { ClientesTabs } from '../../components/layout/LibresTabs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { aprobarResena, crearResena, destacarResena, eliminarResena, listarResenas, type Resena } from '../../services/resenas.service'
+import { listarProductos } from '../../services/comercial.service'
+import { HistoriaResenaModal } from '../../components/resenas/HistoriaResenaModal'
+import type { Producto } from '../../types/domain'
 
 type Filtro = 'pendientes' | 'aprobadas' | 'todas'
 
@@ -26,6 +29,11 @@ export function ResenasPage() {
   const [busy, setBusy] = useState<string | null>(null)
   const [filtro, setFiltro] = useEstadoVista<Filtro>('resenas.filtro', 'pendientes')
   const [agregando, setAgregando] = useState(false)
+  // Compartir en historia (Instagram): la reseña elegida + la foto del producto del catálogo.
+  const [compartiendo, setCompartiendo] = useState<Resena | null>(null)
+  const [productos, setProductos] = useState<Producto[]>([])
+  useEffect(() => { if (isSupabaseConfigured) void listarProductos().then(setProductos).catch(() => undefined) }, [])
+  const productoCompartido = useMemo(() => { const c = (compartiendo?.producto_codigo ?? '').trim().toUpperCase(); const p = c ? productos.find((x) => (x.codigo ?? '').trim().toUpperCase() === c) : null; return p ? { nombre: p.nombre, marca: p.marca, imagen: p.imagen } : null }, [compartiendo, productos])
 
   const cargar = useCallback(async (silencioso = false) => {
     if (!isSupabaseConfigured) { setLoading(false); return }
@@ -106,12 +114,14 @@ export function ResenasPage() {
                   <button className="primary-button min-h-9 px-3 text-xs whitespace-nowrap" disabled={busy === r.id} onClick={() => void accion(r.id, () => aprobarResena(r.id, true), 'Reseña aprobada. Ya se ve en la tienda.')}><Check size={15} /> Aprobar</button>
                 )}
                 <button className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white/[0.02] px-3 py-2 text-xs font-semibold text-muted transition hover:border-white/20 hover:text-white" disabled={busy === r.id} onClick={() => void accion(r.id, () => destacarResena(r.id, !r.destacada), r.destacada ? 'Quitada de destacadas.' : 'Marcada como destacada.')}><Star size={15} className={r.destacada ? 'fill-accent text-accent' : ''} /> {r.destacada ? 'Quitar destacada' : 'Destacar'}</button>
+                <button className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white/[0.02] px-3 py-2 text-xs font-semibold text-muted transition hover:border-white/20 hover:text-white" onClick={() => setCompartiendo(r)}><Share2 size={15} /> Compartir en historia</button>
                 <button className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-line bg-white/[0.02] px-3 py-2 text-xs font-semibold text-muted transition hover:border-red-400/40 hover:text-red-300" disabled={busy === r.id} onClick={() => { if (confirm('¿Eliminar esta reseña? No se puede deshacer.')) void accion(r.id, () => eliminarResena(r.id), 'Reseña eliminada.') }}><Trash2 size={15} /> Eliminar</button>
               </div>
             </div>
           ))}
         </div>
       )}
+      {compartiendo && <HistoriaResenaModal resena={compartiendo} producto={productoCompartido} onClose={() => setCompartiendo(null)} />}
     </div>
   )
 }
