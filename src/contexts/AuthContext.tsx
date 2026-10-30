@@ -163,25 +163,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Resuelve el rol del usuario desde `perfiles` cada vez que cambia la sesión. La política
   // `perfiles_leer` permite a cada quien leer su propio perfil. Ante cualquier error se asume
   // 'operador' (lo más restrictivo): preferimos ocultar finanzas de más que filtrarlas.
+  // Al abrir el navegador el token guardado suele estar VENCIDO: la primera consulta a perfiles
+  // falla (JWT expired) y antes se quedaba como 'operador' hasta cerrar sesión. Ahora, si falla,
+  // renueva la sesión y reintenta; si aun así no se puede, usa el último rol conocido de ese
+  // usuario (guardado en este navegador) y se vuelve a consultar cuando el token se renueva.
+  const claveRol = (uid: string) => `hausline_rol_${uid}`
   useEffect(() => {
     const uid = session?.user?.id
     if (!supabase || !uid) { setRol(null); setPersonal(null); return }
     const client = supabase
     let vivo = true
+    const conocido = (() => { try { const r = localStorage.getItem(claveRol(uid)); return r === 'admin' || r === 'operador' ? r : null } catch { return null } })()
     void (async () => {
-      try {
-        const { data, error } = await client.from('perfiles').select('rol, activo').eq('id', uid).maybeSingle()
-        if (!vivo) return
-        setRol((data?.rol as RolUsuario) ?? 'operador')
-        // Ante un error de red NO lo tratamos como cliente (no sacamos al personal del panel);
-        // el RLS protege los datos igual.
-        setPersonal(error ? true : Boolean(data?.activo))
-      } catch {
-        if (vivo) { setRol('operador'); setPersonal(true) }
+      for (let intento = 0; intento < 3 && vivo; intento++) {
+        try {
+          const { data, error } = await client.from('perfiles').select('rol, activo').eq('id', uid).maybeSingle()
+          if (!vivo) return
+          if (!error) {
+            const r = ((data?.rol as RolUsuario) ?? 'operador')
+            setRol(r)
+            setPersonal(Boolean(data?.activo))
+            try { localStorage.setItem(claveRol(uid), r) } catch { /* sin almacenamiento */ }
+            return
+          }
+        } catch { /* red: se reintenta */ }
+        // Token vencido o bache de red: renueva y vuelve a intentar.
+        await client.auth.refreshSession().catch(() => undefined)
+        await new Promise((r) => setTimeout(r, 1200 * (intento + 1)))
       }
+      if (!vivo) return
+      // Ante un error de red NO lo tratamos como cliente (no sacamos al personal del panel);
+      // el RLS protege los datos igual.
+      setRol(conocido ?? 'operador')
+      setPersonal(true)
     })()
     return () => { vivo = false }
-  }, [session?.user?.id])
+    // access_token: al renovarse el token se vuelve a confirmar el rol.
+  }, [session?.user?.id, session?.access_token])
 
   const value = useMemo<AuthContextValue>(() => ({
     user: session?.user ?? null,

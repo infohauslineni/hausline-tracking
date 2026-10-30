@@ -78,7 +78,18 @@ export function InventarioPage() {
   const [armandoHistoria, setArmandoHistoria] = useState(false)
   const historiaHoy = async () => {
     setArmandoHistoria(true)
-    try { const n = await enviarHistoriaEntregaInmediata(); toast.success(`Listo: ${n === 1 ? 'la historia' : `${n} historias`} de Entrega inmediata te llegaron al correo y quedaron en Drive.`) }
+    try {
+      const imgs = await enviarHistoriaEntregaInmediata()
+      // Se descargan al teléfono o la PC (y quedan en Drive).
+      for (const im of imgs) {
+        const bin = Uint8Array.from(atob(im.base64), (c) => c.charCodeAt(0))
+        const url = URL.createObjectURL(new Blob([bin], { type: 'image/jpeg' }))
+        const a = document.createElement('a'); a.href = url; a.download = im.filename; document.body.appendChild(a); a.click(); a.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 4000)
+        await new Promise((r) => setTimeout(r, 400))
+      }
+      toast.success(`Listo: ${imgs.length === 1 ? 'se descargó la historia' : `se descargaron ${imgs.length} historias`} de Entrega inmediata (también quedaron en Drive).`)
+    }
     catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo armar la historia.') }
     finally { setArmandoHistoria(false) }
   }
@@ -196,7 +207,7 @@ export function InventarioPage() {
     } } })
   }
 
-  return <div className={seleccion.size ? 'pb-24' : ''}><LibresTabs /><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Stock propio · sin pedido de cliente</p><h1 className="page-title">Compras libres</h1><p className="page-subtitle">Lo que comprás por tu cuenta para vender. Registrá una compra en conjunto y el costo, la comisión y el envío se reparten solos.</p></div><div className="flex flex-wrap gap-2"><button type="button" className="subtle-button px-4" disabled={armandoHistoria} onClick={() => void historiaHoy()} title="Imagen 9:16 con lo que hay en Entrega inmediata, al correo y a Drive (también llega sola cada día a las 6 a. m.)"><Smartphone size={16} /> {armandoHistoria ? 'Armando…' : 'Historia de hoy'}</button><button className="subtle-button px-4" onClick={() => { setEditing(null); setOpen(true) }}><Plus size={16} /> Un producto</button><button className="primary-button px-5" onClick={() => setLoteOpen(true)}><Layers size={17} /> Compra en conjunto</button></div></div>
+  return <div className={seleccion.size ? 'pb-24' : ''}><LibresTabs /><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Stock propio · sin pedido de cliente</p><h1 className="page-title">Compras libres</h1><p className="page-subtitle">Lo que comprás por tu cuenta para vender. Registrá una compra en conjunto y el costo, la comisión y el envío se reparten solos.</p></div><div className="flex flex-wrap gap-2"><button type="button" className="subtle-button px-4" disabled={armandoHistoria} onClick={() => void historiaHoy()} title="Imagen 9:16 con lo que hay en Entrega inmediata: se descarga y queda en Drive (también se guarda sola en Drive cada día a las 6 a. m.)"><Smartphone size={16} /> {armandoHistoria ? 'Armando…' : 'Historia de hoy'}</button><button className="subtle-button px-4" onClick={() => { setEditing(null); setOpen(true) }}><Plus size={16} /> Un producto</button><button className="primary-button px-5" onClick={() => setLoteOpen(true)}><Layers size={17} /> Compra en conjunto</button></div></div>
     {(() => {
       // Vendidas o apartadas que la tienda sigue mostrando como Entrega inmediata (y no queda otra
       // compra disponible de ese código): se quitan con un toque.

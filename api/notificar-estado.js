@@ -358,8 +358,8 @@ async function historiaEIManual(response, authorization) {
   if (!perfil || !perfil.activo || perfil.rol !== 'admin') return response.status(403).json({ ok: false, error: 'Solo el administrador.' })
   try {
     const imagenes = await historiaEntregaInmediata({ forzar: true })
-    if (!imagenes) return response.status(200).json({ ok: false, error: 'No hay productos en Entrega inmediata.' })
-    return response.status(200).json({ ok: true, imagenes })
+    if (!imagenes || !imagenes.length) return response.status(200).json({ ok: false, error: 'No hay productos en Entrega inmediata.' })
+    return response.status(200).json({ ok: true, imagenes: imagenes.map((im) => ({ filename: im.filename, base64: Buffer.from(im.data).toString('base64') })) })
   } catch (e) {
     console.error('historia EI manual: falló', e?.message)
     return response.status(200).json({ ok: false, error: e?.message || 'No se pudo armar la historia.' })

@@ -11,7 +11,7 @@
 // A los CLIENTES solo se les escribe de 9 a. m. a 8 p. m. (hora de Nicaragua).
 import { createClient } from '@supabase/supabase-js'
 import { ESTADO_LABEL } from './_correo.js'
-import { enviarCorreoBajaPrecio, enviarCorreoCarritoAbandonado, enviarCorreoHistoriaEI, enviarCorreoAvisoGastosFijos, enviarCorreoNovedades, enviarCorreoRedes, enviarCorreoRecompra, enviarCorreoRecordatorioResena, enviarCorreoRecordatorioSaldo, enviarCorreoReporteDiario } from './_correo-auto.js'
+import { enviarCorreoBajaPrecio, enviarCorreoCarritoAbandonado, enviarCorreoAvisoGastosFijos, enviarCorreoNovedades, enviarCorreoRedes, enviarCorreoRecompra, enviarCorreoRecordatorioResena, enviarCorreoRecordatorioSaldo, enviarCorreoReporteDiario } from './_correo-auto.js'
 import { cerrarEmail, reservarEmail } from './_email-eventos.js'
 import { hacerRespaldo } from './_respaldo.js'
 import { gastosFijosDeManana } from './_fondo.js'
@@ -43,6 +43,9 @@ const ahoraNic = () => new Date(Date.now() + NIC)
 const horaNic = () => ahoraNic().getUTCHours()
 const fechaNic = (d = ahoraNic()) => d.toISOString().slice(0, 10)
 const horarioCliente = () => { const h = horaNic(); return h >= 9 && h < 20 }
+// Correos del dueño: no reciben los boletines de clientes (Recién llegados, síganos en redes).
+const CORREOS_DUENO = new Set(['infokickhaus.ni@gmail.com', 'alerta@hauslineshopni.es', process.env.AVISO_ADMIN, process.env.SMTP_USER].filter(Boolean).map((c) => String(c).trim().toLowerCase()))
+const esDelDueno = (correo) => CORREOS_DUENO.has(String(correo ?? '').trim().toLowerCase())
 const uno = (x) => (Array.isArray(x) ? x[0] : x) ?? null
 
 // Envía UNA vez por clave. Devuelve true si salió.
@@ -283,7 +286,7 @@ async function novedades(db) {
   let enviados = 0, quedan = false
   for (const s of subs ?? []) {
     const correo = String(s.correo ?? '').trim().toLowerCase()
-    if (!correo) continue
+    if (!correo || esDelDueno(correo)) continue
     if (enviados >= NOV_POR_VUELTA) { quedan = true; break }
     const reserva = await reservarEmail({ clave: `novedades:${ed.id}:${correo}`, tipo: 'novedades', destinatario: correo })
     if (reserva.duplicado) continue
@@ -323,7 +326,7 @@ async function campanaRedes(db) {
   let enviados = 0, quedan = false
   for (const s of subs ?? []) {
     const correo = String(s.correo ?? '').trim().toLowerCase()
-    if (!correo) continue
+    if (!correo || esDelDueno(correo)) continue
     if (enviados >= NOV_POR_VUELTA) { quedan = true; break }
     const reserva = await reservarEmail({ clave: `campana:${c.id}:${correo}`, tipo: 'campana_redes', destinatario: correo })
     if (reserva.duplicado) continue
@@ -378,8 +381,8 @@ export async function historiaEntregaInmediata({ forzar = false } = {}) {
       try { await subirArchivoDrive({ carpeta: 'HISTORIAS ENTREGA INMEDIATA', codigo: hoy.slice(0, 7), filename: im.filename, data: im.data, mime: 'image/jpeg' }) }
       catch (e) { console.error('historia EI: Drive', e?.message) }
     }
-    await enviarCorreoHistoriaEI({ to, fecha: hoy, productos, imagenes })
-    return imagenes.length
+    // Sin correo (pedido del dueño 2026-10-29): la historia queda solo en Drive.
+    return forzar ? imagenes : imagenes.length
   }
   if (forzar) return enviar()
   let n = 0
@@ -454,7 +457,7 @@ export async function automatizaciones() {
   const res = {}
   const paso = async (nombre, fn) => { try { res[nombre] = await fn(db) } catch (e) { res[nombre] = 'error'; console.error(`auto ${nombre}:`, e?.message) } }
   await paso('rebotes', rebotesGmail)
-  await paso('reporte', reporteDiario)
+  // Reporte diario de las 7 a. m.: APAGADO a pedido del dueño (2026-10-29).
   await paso('saldo', recordatorioSaldo)
   await paso('carritos', carritosAbandonados)
   await paso('post_entrega', postEntrega)
