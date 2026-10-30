@@ -89,13 +89,22 @@ function ordenarTallas(lista) {
 
 export async function productosEntregaInmediata() {
   const [catalogo, promos] = await Promise.all([obtenerCatalogoMergeado(), leerPromociones()])
+  // Las tallas que vienen EN CAMINO todavía no están en Nicaragua: se descuentan una por una (igual
+  // que tallasEIsinEnCamino de la tienda). Si no queda ninguna, el producto sale como "Llega pronto",
+  // no en la historia de Entrega inmediata.
+  const sinEnCamino = (p) => {
+    const quedan = (p.tallas_entrega_inmediata ?? []).map(String).filter(Boolean)
+    if (p.en_camino === true) for (const t of (p.tallas_en_camino ?? []).map(String)) { const i = quedan.indexOf(t); if (i >= 0) quedan.splice(i, 1) }
+    return quedan
+  }
   return catalogo
     .filter((p) => p.entrega_inmediata === true && !/^LIB\d/i.test(String(p.codigo || '')))
+    .filter((p) => !(p.en_camino === true && (p.tallas_entrega_inmediata ?? []).length && !sinEnCamino(p).length))
     .filter((p) => (p.tallas_entrega_inmediata ?? []).length > 0 || Number(p.cantidad_disponible) > 0 || !(p.tallas ?? []).length)
     .map((p) => {
       const base = Number(p.precio_entrega_inmediata) > 0 ? Number(p.precio_entrega_inmediata) : Number(p.precio_venta || 0)
       const desc = descuentoDe(p, promos)
-      return { codigo: p.codigo, nombre: p.nombre, marca: p.marca || '', imagen: p.imagen, tallas: ordenarTallas([...new Set(p.tallas_entrega_inmediata ?? [])]), base, desc, precio: desc > 0 ? Math.round(base * (1 - desc / 100)) : base }
+      return { codigo: p.codigo, nombre: p.nombre, marca: p.marca || '', imagen: p.imagen, tallas: ordenarTallas([...new Set(sinEnCamino(p))]), base, desc, precio: desc > 0 ? Math.round(base * (1 - desc / 100)) : base }
     })
     .filter((p) => p.base > 0)
 }
