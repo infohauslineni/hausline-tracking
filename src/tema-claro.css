@@ -116,3 +116,9 @@ html[data-modo="claro"] .legal-doc strong { color:#1a1a1a; }
 html[data-modo="claro"] { --tono-ok:#047857; --tono-tarde:#c4320a; --tono-pronto:#a15c07; --tono-info:#005bd3; --tono-neutro:#8a8a8a; }
 html[data-modo="claro"] .data-table td .status-badge,html[data-modo="claro"] .status-badge { display:inline-flex; width:auto; max-width:100%; margin-top:0; overflow:visible; }
 html[data-modo="claro"] .text-\[\#62eaa0\]\! { color:#047857!important; } html[data-modo="claro"] .text-amber-300\! { color:#a15c07!important; }
+
+/* iPhone: un campo con letra de menos de 16px hace zoom al tocarlo y la página queda acercada.
+   Va al final (y con !important) para ganarle al tema claro y a los estilos en línea. */
+@media (max-width:640px){
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea { font-size:16px !important; }
+}
