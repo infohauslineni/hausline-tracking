@@ -274,7 +274,7 @@ export function PrivateLayout() {
         {esAdmin && <div className="border-t border-line p-3"><Link to="/pedidos/nuevo" onClick={() => setOpen(false)} className="primary-button w-full"><Plus size={16} /> Nuevo pedido</Link></div>}
       </aside>
       <div className="pt-14 lg:pl-[240px]">
-        <main className="mx-auto max-w-[1400px] p-4 pb-24 sm:p-6 lg:px-8 lg:pb-10"><RestaurarScroll /><Outlet /></main>
+        <main className="mx-auto max-w-[1400px] p-4 pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))] sm:p-6 sm:pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))] lg:px-8 lg:pb-10"><RestaurarScroll /><Outlet /></main>
       </div>
       {/* Hoja de accesos rápidos del botón central "+" (solo móvil, solo admin: todas las
           acciones rápidas mueven dinero). */}
@@ -288,7 +288,7 @@ export function PrivateLayout() {
         </div>
       </>}
       {esAdmin ? (
-        <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-5 items-center rounded-2xl border border-line bg-panel/95 p-1.5 shadow-2xl backdrop-blur-xl lg:hidden" aria-label="Navegación móvil">
+        <nav className="fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] z-30 grid grid-cols-5 items-center rounded-2xl border border-line bg-panel/95 p-1.5 shadow-2xl backdrop-blur-xl lg:hidden" aria-label="Navegación móvil">
           <MobileTab to={mobileLinks[0].to} label={mobileLinks[0].label} Icon={mobileLinks[0].icon} badge={badges[mobileLinks[0].to]} />
           <MobileTab to={mobileLinks[1].to} label={mobileLinks[1].label} Icon={mobileLinks[1].icon} badge={badges[mobileLinks[1].to]} />
           <button type="button" className="mobile-fab" onClick={() => setFabOpen(true)} aria-label="Crear rápido"><Plus size={24} /></button>
@@ -296,7 +296,7 @@ export function PrivateLayout() {
           <button type="button" className="mobile-tab text-muted" onClick={() => setOpen(true)} aria-label="Más opciones"><MoreHorizontal size={18} /><span className="max-w-full truncate">Más</span></button>
         </nav>
       ) : (
-        <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-4 items-center rounded-2xl border border-line bg-panel/95 p-1.5 shadow-2xl backdrop-blur-xl lg:hidden" aria-label="Navegación móvil">
+        <nav className="fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] z-30 grid grid-cols-4 items-center rounded-2xl border border-line bg-panel/95 p-1.5 shadow-2xl backdrop-blur-xl lg:hidden" aria-label="Navegación móvil">
           {mobileLinksOperador.map((link) => <MobileTab key={link.to} to={link.to} label={link.label} Icon={link.icon} badge={badges[link.to]} />)}
           <button type="button" className="mobile-tab text-muted" onClick={() => setOpen(true)} aria-label="Más opciones"><MoreHorizontal size={18} /><span className="max-w-full truncate">Más</span></button>
         </nav>

@@ -34,7 +34,14 @@ function extPorMime(mime) {
 // El mismo mecanismo sirve para las fotos de "control de calidad" y para las del paquete
 // empacado ("empaque"): cambia solo el tipo que se filtra y el nombre del archivo. Por eso
 // recibe `tipo` (por defecto 'control_calidad', para no tocar las llamadas existentes).
-export async function obtenerFotosCalidad(codigo, tipo = 'control_calidad') {
+// Nombre de las fotos de CONTROL DE CALIDAD (correo y Drive): "QC" + código del producto, p. ej.
+// "QC CL0002.webp", "QC CL0002 2.webp". Fotos sin producto asignado en un pedido de un solo
+// producto usan el código de ese producto; si el pedido tiene varios, el código del pedido.
+export const nombreQc = (base, i, ext) => `QC ${String(base || '').trim() || 'PEDIDO'}${i ? ` ${i + 1}` : ''}.${ext}`
+const esLineaProductoQc = (it) => Number(it?.precio_unitario || 0) > 0 && !/^(env[íi]o|delivery|cup[óo]n)/i.test(String(it?.producto || '').trim())
+// incluirItems: también trae las fotos de calidad YA asignadas a un producto (para archivar todo
+// en Drive desde "Archivar en Drive"); el correo general las deja fuera (van por producto).
+export async function obtenerFotosCalidad(codigo, tipo = 'control_calidad', { incluirItems = false } = {}) {
   const base = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!base || !key || !codigo) return { fotos: [], fecha: null }
@@ -43,7 +50,7 @@ export async function obtenerFotosCalidad(codigo, tipo = 'control_calidad') {
 
   const url = `${root}/rest/v1/pedidos`
     + `?codigo=eq.${encodeURIComponent(codigo)}`
-    + `&select=fecha_pedido,archivos_pedido(storage_path,nombre,mime_type,orden,tipo,visible_cliente,pedido_item_id)`
+    + `&select=fecha_pedido,archivos_pedido(storage_path,nombre,mime_type,orden,tipo,visible_cliente,pedido_item_id),pedido_items(id,codigo_producto,producto,precio_unitario)`
     + `&limit=1`
 
   let pedido = null
@@ -60,12 +67,19 @@ export async function obtenerFotosCalidad(codigo, tipo = 'control_calidad') {
   const archivos = (Array.isArray(pedido.archivos_pedido) ? pedido.archivos_pedido : [])
     // Las fotos de control de calidad YA asignadas a un producto se envían en el correo POR
     // PRODUCTO (notificar-item), no acá, para no mandarlas todas amontonadas en un solo correo.
-    .filter((a) => a.tipo === tipo && a.visible_cliente && !(tipo === 'control_calidad' && a.pedido_item_id))
+    .filter((a) => a.tipo === tipo && a.visible_cliente && !(tipo === 'control_calidad' && a.pedido_item_id && !incluirItems))
     .sort((a, b) => (a.orden || 0) - (b.orden || 0))
+  const items = Array.isArray(pedido.pedido_items) ? pedido.pedido_items : []
+  const productos = items.filter(esLineaProductoQc)
+  const codigoGeneral = productos.length === 1 ? (productos[0].codigo_producto || codigo) : codigo
+  const contador = new Map()
 
   const fotos = []
   for (let i = 0; i < archivos.length; i++) {
     const a = archivos[i]
+    const item = a.pedido_item_id ? items.find((it) => it.id === a.pedido_item_id) : null
+    const baseQc = item ? (item.codigo_producto || item.producto || codigoGeneral) : codigoGeneral
+    const nQc = contador.get(baseQc) ?? 0; contador.set(baseQc, nQc + 1)
     try {
       // storage_path ya incluye el prefijo "pedidos/…" (la clave dentro del bucket
       // "pedidos"), de ahí el "pedidos/pedidos/…" en la ruta de descarga.
@@ -76,7 +90,7 @@ export async function obtenerFotosCalidad(codigo, tipo = 'control_calidad') {
       const ext = extPorMime(a.mime_type)
       fotos.push({
         cid: `${tipo === 'empaque' ? 'empaque' : tipo === 'recibido_hausline' ? 'producto' : 'calidad'}-${i + 1}@hausline`,
-        filename: `${codigo} - ${etiqueta} ${i + 1}.${ext}`,
+        filename: tipo === 'control_calidad' ? nombreQc(baseQc, nQc, ext) : `${codigo} - ${etiqueta} ${i + 1}.${ext}`,
         content,
         contentType: a.mime_type || 'image/webp',
       })
@@ -450,6 +464,10 @@ async function archivarDriveManual(response, body, authorization) {
     }
   }
   try { const r = await archivarComprobantesCliente(admin, codigo); archivos.push(...r.archivos) } catch (e) { console.error('archivar-drive: comprobantes del cliente', e?.message) }
+  try {
+    const { fotos, fecha: fechaFotos } = await obtenerFotosCalidad(codigo, 'control_calidad', { incluirItems: true })
+    for (const f of fotos) { await subirArchivoDrive({ codigo, fecha: fechaFotos || pedido.fecha_pedido, filename: f.filename, data: f.content, mime: f.contentType }); archivos.push(f.filename) }
+  } catch (e) { console.error('archivar-drive: fotos de calidad', e?.message) }
   return response.status(200).json({ ok: true, archivos, carpeta: `HAUSLINE Facturas / ${mesCarpeta(pedido.fecha_pedido)} / ${codigo}` })
 }
 

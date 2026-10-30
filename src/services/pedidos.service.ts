@@ -853,3 +853,37 @@ export async function venderInmediatoComoPedido(item: Inversion, venta: { client
     items: [{ producto: item.producto, marca: item.marca, talla: item.talla_color, cantidad: unidades, precio_unitario: Math.round((venta.precioTotal / unidades) * 100) / 100, precio_compra: costoUnit, codigo_producto: item.codigo, producto_id: item.producto_id, imagen: item.imagen ?? null, categoria: null, color: null, notas: null, proveedor_id: null }],
   }, { abono: destino }, { desdeInversion: item.id })
 }
+
+// PAGO AL PROVEEDOR DE VARIOS PRODUCTOS JUNTOS (un solo envío por PayPal): cada producto lleva
+// su precio y la comisión se reparte según ese precio (repartoCompra.repartir). A cada producto
+// le queda su costo real (pedido_item_costos.precio_compra, por unidad) y a cada pedido su gasto
+// "Proveedor" (pagarProveedorPedido: idempotente, no descuenta dos veces). El gasto del pedido es
+// la suma de TODOS sus productos (los de este pago + los que ya tenían costo).
+export type LineaPagoLote = { itemId: string; pedidoId: string; cantidad: number; costoTotal: number }
+export async function pagarProveedorLote(lineas: LineaPagoLote[], pedidos: Pedido[], opciones: { cuentaId: string | null; montoCuentaTotal: number; totalUsd: number; metodo: string; pasarAPreparacion: boolean }) {
+  const client = requireSupabase()
+  const r2 = (n: number) => Math.round(n * 100) / 100
+  // 1) Costo por unidad de cada producto.
+  const filas = lineas.map((l) => ({ item_id: l.itemId, precio_compra: r2(l.costoTotal / Math.max(1, l.cantidad)) }))
+  if (filas.length) {
+    const { error } = await client.from('pedido_item_costos').upsert(filas, { onConflict: 'item_id' })
+    if (error) throw error
+  }
+  // 2) Gasto "Proveedor" por pedido.
+  const porPedido = new Map<string, number>()
+  for (const l of lineas) porPedido.set(l.pedidoId, r2((porPedido.get(l.pedidoId) ?? 0) + l.costoTotal))
+  const resultado: string[] = []
+  for (const [pedidoId, parte] of porPedido) {
+    const pedido = pedidos.find((p) => p.id === pedidoId)
+    const enLote = new Set(lineas.filter((l) => l.pedidoId === pedidoId).map((l) => l.itemId))
+    const otros = (pedido?.pedido_items ?? []).filter((it) => it.id && !enLote.has(it.id) && !esLineaEnvio(it))
+      .reduce((s, it) => s + Number(it.cantidad || 1) * Number(it.precio_compra || 0), 0)
+    const total = r2(parte + otros)
+    const montoCuenta = opciones.cuentaId && opciones.totalUsd > 0 ? r2(opciones.montoCuentaTotal * (total / opciones.totalUsd)) : 0
+    await pagarProveedorPedido(pedidoId, { monto: total, moneda: 'USD', montoOriginal: total, metodo: opciones.metodo }, { cuentaId: opciones.cuentaId, montoCuenta })
+    if (opciones.pasarAPreparacion && pedido && pedido.estado === 'pedido_confirmado') await actualizarEstadoPedido(pedidoId, 'en_preparacion')
+    resultado.push(pedido?.codigo ?? pedidoId)
+  }
+  invalidateComercial()
+  return resultado
+}

@@ -350,7 +350,7 @@ function ComprobanteLightbox({ url, esPdf, onClose }: { url: string; esPdf: bool
   return <div className="fixed inset-0 z-[70] grid place-items-center overflow-y-auto bg-black/90 p-3 backdrop-blur-md sm:p-6" role="dialog" aria-modal="true" aria-label="Comprobante de pago">
     <button className="absolute inset-0" aria-label="Cerrar comprobante" onClick={onClose} />
     <button type="button" className="fixed right-4 z-[90] grid size-12 place-items-center rounded-full border border-white/25 bg-black text-white shadow-2xl" style={{ top: 'calc(env(safe-area-inset-top) + 12px)' }} onClick={onClose} aria-label="Cerrar comprobante"><X size={23} /></button>
-    <section className="relative max-h-[92vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-white/15 bg-[#080a08] shadow-2xl">
+    <section className="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-white/15 bg-[#080a08] shadow-2xl" style={{ maxHeight: 'min(92vh, 92dvh)' }}>
       {esPdf
         ? <iframe src={url} title="Comprobante de pago" className="h-[80vh] w-full bg-white" />
         : <img src={url} alt="Comprobante de pago" className="max-h-[88vh] w-full object-contain" />}

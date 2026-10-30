@@ -365,3 +365,10 @@ export async function buscarPedidoPorCodigo(codigo: string): Promise<{ id: strin
   if (error) throw error
   return data as { id: string; codigo: string } | null
 }
+
+// Asigna (o quita) el producto de una foto de control de calidad, para pedidos de varios productos.
+export async function asignarArchivoItem(fileId: string, pedidoItemId: string | null) {
+  const client = requireSupabase()
+  const { error } = await client.from('archivos_pedido').update({ pedido_item_id: pedidoItemId }).eq('id', fileId)
+  if (error) throw error
+}

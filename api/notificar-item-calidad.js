@@ -1,4 +1,5 @@
 import { enviarCorreoItemEstado } from './_correo.js'
+import { subirArchivoDrive } from './_drive.js'
 
 // Envía al cliente las fotos de CONTROL DE CALIDAD de UN producto. Lo dispara el trigger de
 // Supabase cuando el admin toca el botón "Enviar fotos de control de calidad" del producto
@@ -10,18 +11,18 @@ async function obtenerContexto(pedidoId) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!base || !key || !pedidoId) return null
   const root = base.replace(/\/$/, '')
-  const url = `${root}/rest/v1/pedidos?id=eq.${encodeURIComponent(pedidoId)}&select=codigo,clientes(nombre,correo)&limit=1`
+  const url = `${root}/rest/v1/pedidos?id=eq.${encodeURIComponent(pedidoId)}&select=codigo,fecha_pedido,clientes(nombre,correo)&limit=1`
   try {
     const res = await fetch(url, { headers: { apikey: key, authorization: `Bearer ${key}`, accept: 'application/json' } })
     if (!res.ok) return null
     const data = await res.json()
     const p = Array.isArray(data) ? data[0] : null
     if (!p) return null
-    return { codigo: p.codigo, correo: (p.clientes?.correo || '').trim(), nombre: p.clientes?.nombre || null }
+    return { codigo: p.codigo, fecha: p.fecha_pedido || null, correo: (p.clientes?.correo || '').trim(), nombre: p.clientes?.nombre || null }
   } catch { return null }
 }
 
-async function fotosCalidadItem(codigo, pedidoItemId) {
+async function fotosCalidadItem(codigo, pedidoItemId, codigoProducto) {
   const base = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!base || !key || !pedidoItemId) return []
@@ -40,7 +41,9 @@ async function fotosCalidadItem(codigo, pedidoItemId) {
       const res = await fetch(objUrl, { headers: { apikey: key, authorization: `Bearer ${key}` } })
       if (!res.ok) continue
       const content = Buffer.from(await res.arrayBuffer())
-      fotos.push({ cid: `calidad-${i + 1}@hausline`, filename: `${codigo} - Control de calidad ${i + 1}.${extPorMime(a.mime_type)}`, content, contentType: a.mime_type || 'image/webp' })
+      // Nombre "QC <código del producto>" (igual en el correo y en Drive).
+      const baseQc = String(codigoProducto || codigo).trim()
+      fotos.push({ cid: `calidad-${i + 1}@hausline`, filename: `QC ${baseQc}${i ? ` ${i + 1}` : ''}.${extPorMime(a.mime_type)}`, content, contentType: a.mime_type || 'image/webp' })
     } catch { /* omitir */ }
   }
   return fotos
@@ -60,7 +63,7 @@ export default async function handler(request, response) {
   const ctx = await obtenerContexto(record.pedido_id)
   if (!ctx || !ctx.correo) return response.status(200).json({ ok: true, skipped: 'sin contexto o correo' })
 
-  const fotos = await fotosCalidadItem(ctx.codigo, record.id)
+  const fotos = await fotosCalidadItem(ctx.codigo, record.id, record.codigo_producto)
   if (!fotos.length) return response.status(200).json({ ok: true, skipped: 'producto sin fotos de calidad' })
 
   try {
@@ -69,5 +72,11 @@ export default async function handler(request, response) {
     console.error('notificar-item-calidad: no se pudo enviar', sendError?.message)
     return response.status(502).json({ ok: false, error: 'No se pudo enviar el correo' })
   }
-  return response.status(200).json({ ok: true, sent: ctx.correo, producto: record.producto, fotos: fotos.length })
+  // Archiva las fotos de ESE producto en la carpeta del pedido en Drive ("QC CL0002.webp").
+  let archivadas = 0
+  for (const f of fotos) {
+    try { await subirArchivoDrive({ codigo: ctx.codigo, fecha: ctx.fecha, filename: f.filename, data: f.content, mime: f.contentType }); archivadas++ }
+    catch (driveError) { console.error('notificar-item-calidad: Drive', driveError?.message) }
+  }
+  return response.status(200).json({ ok: true, sent: ctx.correo, producto: record.producto, fotos: fotos.length, archivadas })
 }

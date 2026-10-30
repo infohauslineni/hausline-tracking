@@ -10,6 +10,7 @@ import { isSupabaseConfigured } from '../../lib/supabase'
 import { eliminarPedido, esLineaEnvio, listarPedidos, recargarPedidos, suscribirPedidos } from '../../services/pedidos.service'
 import { CancelarPedidoModal } from '../../components/pedidos/CancelarPedidoModal'
 import { ListaCompraModal } from '../../components/pedidos/ListaCompraModal'
+import { PagoProveedorLoteModal } from '../../components/pedidos/PagoProveedorLoteModal'
 import { yaEnListaProveedor } from '../../utils/listaProveedor'
 import { useAuth } from '../../contexts/AuthContext'
 import type { EstadoPedido, Pedido } from '../../types/domain'
@@ -25,6 +26,8 @@ export function PedidosPage() {
   const [cancelando, setCancelando] = useState<Pedido | null>(null)
   // Lista de compra: pedidos confirmados que todavía no se le han pedido al proveedor.
   const [listaOpen, setListaOpen] = useState(false)
+  // Pagar al proveedor varios productos juntos (comisión de PayPal repartida por precio).
+  const [pagoOpen, setPagoOpen] = useState(false)
   const porPedir = pedidos.filter((p) => p.estado === 'pedido_confirmado' && !yaEnListaProveedor(p)).length
   useEffect(() => { if (isSupabaseConfigured) void listarPedidos(setPedidos).then(setPedidos).catch(() => toast.error('No se pudieron cargar los pedidos.')).finally(() => setLoading(false)) }, [])
   // Realtime: si se confirma un encargo (o cambia cualquier pedido) mientras esta pantalla
@@ -89,7 +92,7 @@ export function PedidosPage() {
 
   return <div>
     {!isSupabaseConfigured && <div className="preview-banner"><strong>Vista previa local:</strong> mostrando los pedidos de demostración de Hausline.</div>}
-    <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Operaciones</p><h1 className="page-title">Pedidos</h1><p className="page-subtitle">Gestiona todos tus pedidos en un solo lugar.</p></div><div className="flex flex-wrap gap-2"><button type="button" className="subtle-button px-4" onClick={() => setListaOpen(true)}><ClipboardList size={16} /> Lista de compra{porPedir ? ` (${porPedir})` : ''}</button><button type="button" className="subtle-button px-4" onClick={() => exportarCSV(filtered)}><Download size={16} /> Exportar</button>{esAdmin && <Link to="/pedidos/nuevo" className="primary-button px-5"><Plus size={18} /> Nuevo pedido</Link>}</div></div>
+    <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Operaciones</p><h1 className="page-title">Pedidos</h1><p className="page-subtitle">Gestiona todos tus pedidos en un solo lugar.</p></div><div className="flex flex-wrap gap-2"><button type="button" className="subtle-button px-4" onClick={() => setListaOpen(true)}><ClipboardList size={16} /> Lista de compra{porPedir ? ` (${porPedir})` : ''}</button>{esAdmin && <button type="button" className="subtle-button px-4" onClick={() => setPagoOpen(true)}><CircleDollarSign size={16} /> Pagar al proveedor</button>}<button type="button" className="subtle-button px-4" onClick={() => exportarCSV(filtered)}><Download size={16} /> Exportar</button>{esAdmin && <Link to="/pedidos/nuevo" className="primary-button px-5"><Plus size={18} /> Nuevo pedido</Link>}</div></div>
     <section className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-4">{enPendientes ? <>
         <MiniMetric label="Pendientes" value={delMes.filter((p) => !['entregado','cancelado'].includes(p.estado)).length} icon={Boxes} tone="blue" />
         <MiniMetric label="Con saldo" value={delMes.filter((p) => !['entregado','cancelado'].includes(p.estado) && p.saldo > 0).length} icon={CircleDollarSign} tone="danger" />
@@ -108,6 +111,7 @@ export function PedidosPage() {
       <span className="mx-1 w-px shrink-0 bg-line" />
       <Pestana activa={soloSaldo} onClick={() => setSoloSaldo(!soloSaldo)} texto="Con saldo" icono />
     </div>
+    {esAdmin && <PagoProveedorLoteModal open={pagoOpen} pedidos={pedidos} onClose={() => setPagoOpen(false)} onPagado={refrescar} />}
     <ListaCompraModal open={listaOpen} pedidos={pedidos} onClose={() => setListaOpen(false)} onMarcados={(ids, notas) => setPedidos((all) => all.map((p) => ids.includes(p.id) ? { ...p, notas_internas: notas.get(p.id) ?? `[EN_LISTA_PROVEEDOR] ${p.notas_internas ?? ''}`.trim() } : p))} />
     {loading ? <div className="mt-5 h-80 animate-pulse rounded-2xl border border-line bg-panel" /> : <>
       {filtered.length === 0 ? <div className="mt-6 grid min-h-64 place-items-center rounded-2xl border border-dashed border-line text-center"><div><Boxes className="mx-auto text-muted" /><h2 className="mt-3 font-semibold">{enPendientes ? 'No tienes pedidos pendientes' : `Sin pedidos en ${capitalizar(mesLabel(mes))}`}</h2><p className="mt-1 text-sm text-muted">{enPendientes ? 'Todo entregado 🎉 Elige un mes para ver el historial.' : 'Prueba otro mes, término o filtro.'}</p></div></div> : <>

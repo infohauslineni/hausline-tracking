@@ -148,24 +148,31 @@ export async function facturaPdfBuffer({ codigo, nombre, fecha, factura }) {
     if (img) {
       try { doc.image(img, M, rowTop, { fit: [42, 42], align: 'center', valign: 'center' }); dibujada = true } catch { /* imagen inválida: recuadro */ }
     }
-    if (hayFotos && !dibujada) doc.roundedRect(M, rowTop, 42, 42, 6).fillColor('#F4F1EB').fill()
+    // Líneas que no son productos (cupón, envío, ajuste): sin recuadro de foto.
+    const esProducto = Boolean(item.codigo) || dibujada
+    if (hayFotos && !dibujada && esProducto) doc.roundedRect(M, rowTop, 42, 42, 6).fillColor('#F4F1EB').fill()
     // Nombre resumido en UNA sola línea (nombreCorto + "…" si aún no cupiera). Código y
-    // detalle también en una línea cada uno, así nada se encima.
+    // detalle también en una línea cada uno, así nada se encima. El bloque de texto y los
+    // montos van centrados en la altura de la fila (la foto mide 42).
     const nombreTexto = nombreCorto(item.producto) || 'Producto'
     const nombreAncho = colCant - textX - 24
+    const altoTexto = 13 + (item.codigo ? 12 : 0) + (item.detalle ? 12 : 0)
+    const altoFila = hayFotos && esProducto ? Math.max(42, altoTexto) : Math.max(altoTexto, 16)
+    const yTexto = rowTop + (altoFila - altoTexto) / 2
     doc.fillColor(TEXTO).font('Helvetica-Bold').fontSize(11)
-    doc.text(nombreTexto, textX, rowTop, { width: nombreAncho, height: 14, ellipsis: true, lineBreak: false })
-    let sub = rowTop + 15
+    doc.text(nombreTexto, textX, yTexto, { width: nombreAncho, height: 14, ellipsis: true, lineBreak: false })
+    let sub = yTexto + 15
     if (item.codigo) { doc.fillColor(GRIS).font('Helvetica').fontSize(8.5).text(`Código: ${item.codigo}`, textX, sub, { width: nombreAncho, height: 11, ellipsis: true, lineBreak: false }); sub += 12 }
     if (item.detalle) { doc.fillColor('#9C958A').font('Helvetica').fontSize(8.5).text(item.detalle, textX, sub, { width: nombreAncho, height: 11, ellipsis: true, lineBreak: false }); sub += 12 }
 
+    const yMonto = rowTop + (altoFila - 11) / 2
     doc.fillColor(TEXTO).font('Helvetica').fontSize(11)
-    doc.text(String(Number(item.cantidad) || 1), colCant - 20, rowTop + 2, { width: 40, align: 'center' })
-    doc.text(usd(item.precioUnitario), colPrecio - 60, rowTop + 2, { width: 60, align: 'right' })
-    doc.font('Helvetica-Bold').text(usd(item.subtotal), colSub - 80, rowTop + 2, { width: 80, align: 'right' })
+    doc.text(String(Number(item.cantidad) || 1), colCant - 20, yMonto, { width: 40, align: 'center' })
+    doc.text(usd(item.precioUnitario), colPrecio - 60, yMonto, { width: 60, align: 'right' })
+    doc.font('Helvetica-Bold').text(usd(item.subtotal), colSub - 80, yMonto, { width: 80, align: 'right' })
 
-    y = Math.max(sub, rowTop + 46)
-    doc.moveTo(M, y - 6).lineTo(W - M, y - 6).strokeColor(LINEA).lineWidth(0.5).stroke()
+    y = rowTop + altoFila + 16
+    doc.moveTo(M, y - 8).lineTo(W - M, y - 8).strokeColor(LINEA).lineWidth(0.5).stroke()
   })
 
   // Totales (si no caben tras la última fila, van en una página nueva).

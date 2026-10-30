@@ -1,10 +1,11 @@
-import { Eye, EyeOff, ImagePlus, LoaderCircle, Star, Trash2, UploadCloud } from 'lucide-react'
+import { Camera, CheckCircle2, Eye, EyeOff, ImagePlus, LoaderCircle, Star, Trash2, UploadCloud } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
-import { comprimirImagen, eliminarArchivo, listarArchivos, marcaParaTipo, marcarPrincipal, subirArchivo } from '../../services/archivos.service'
+import { asignarArchivoItem, comprimirImagen, eliminarArchivo, listarArchivos, marcaParaTipo, marcarPrincipal, subirArchivo } from '../../services/archivos.service'
 import { avanzarADisponiblePorRecibido, avanzarAEmpaquetadoPorFoto, esLineaEnvio, marcarQcEnviado, reenviarFotosEtapa } from '../../services/pedidos.service'
 import { ESTADOS_PEDIDO, etapaBase } from '../../constants/orders'
+import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import type { ArchivoPedido, EstadoPedido, Pedido, PedidoItem, TipoArchivo } from '../../types/domain'
 
 // Categorías visibles para subir fotos. "Empaque para envío" pasa el pedido a
@@ -35,6 +36,9 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], qcG
   const [confirmando, setConfirmando] = useState(false)
   const [dragging, setDragging] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  // Producto al que va la próxima foto que se suba con el botón de su apartado (pedidos de
+  // varios productos). Ref para que el input de archivo lo lea sin esperar un re-render.
+  const destinoQc = useRef<string | null>(null)
   const localUrls = useRef(new Set<string>())
 
   useEffect(() => {
@@ -62,7 +66,7 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], qcG
     try {
       for (const file of imagenes) {
         if (isSupabaseConfigured) {
-          const nuevo = await subirArchivo(pedidoId, categoria, file, visibleCliente, codigo, categoria === 'control_calidad' ? (itemQC || null) : null)
+          const nuevo = await subirArchivo(pedidoId, categoria, file, visibleCliente, codigo, categoria === 'control_calidad' ? (destinoQc.current ?? (itemQC || null)) : null)
           setArchivos((current) => [...current, nuevo])
         } else {
           const blob = await comprimirImagen(file, marcaParaTipo(categoria, codigo))
@@ -74,6 +78,7 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], qcG
             mime_type: 'image/webp', tamano_bytes: blob.size,
             orden: archivos.filter((item) => item.tipo === categoria).length + 1,
             es_principal: false, visible_cliente: visibleCliente,
+            pedido_item_id: categoria === 'control_calidad' ? (destinoQc.current ?? (itemQC || null)) : null,
             created_at: new Date().toISOString(),
           }
           setArchivos((current) => [...current, nuevo])
@@ -88,6 +93,7 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], qcG
       toast.error(error instanceof Error ? error.message : 'No se pudo cargar la imagen.')
     } finally {
       setUploading(false)
+      destinoQc.current = null
       if (inputRef.current) inputRef.current.value = ''
     }
   }
@@ -200,6 +206,46 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], qcG
   const indiceEstado = (estado?: EstadoPedido) => estado ? ESTADOS_PEDIDO.findIndex((item) => item.value === etapaBase(estado)) : -1
   const yaEnviado = Boolean(objetivoEtapa && estadoPedido && indiceEstado(estadoPedido) >= indiceEstado(objetivoEtapa))
 
+  // PEDIDOS DE VARIOS PRODUCTOS: un apartado por producto, cada uno con su botón para subir su
+  // foto de calidad. Cuando TODOS tienen foto (y pasan los 2 días) el pedido pasa solo a En
+  // tránsito. En Drive cada foto se guarda como "QC <código del producto>".
+  const productos = items.filter((item) => item.id && !esLineaEnvio(item) && Number(item.precio_unitario || 0) > 0)
+  const multiQc = categoria === 'control_calidad' && productos.length > 1
+  const qcDe = (itemId: string) => archivos.filter((a) => a.tipo === 'control_calidad' && a.pedido_item_id === itemId)
+  const qcGenerales = archivos.filter((a) => a.tipo === 'control_calidad' && !a.pedido_item_id)
+  const conFoto = productos.filter((p) => qcDe(p.id!).some((a) => a.visible_cliente)).length
+  const cubiertos = Math.min(productos.length, conFoto + qcGenerales.filter((a) => a.visible_cliente).length)
+  const subirPara = (itemId: string) => { destinoQc.current = itemId; inputRef.current?.click() }
+  const enviarQcDe = async (itemId: string) => {
+    setEnviandoQc(true)
+    try {
+      if (isSupabaseConfigured) await marcarQcEnviado(itemId)
+      setQcEnviados((prev) => new Set(prev).add(itemId))
+      toast.success('Fotos de control de calidad enviadas al cliente por correo.')
+    } catch { toast.error('No se pudieron enviar las fotos. Intentá de nuevo.') }
+    finally { setEnviandoQc(false) }
+  }
+  const asignar = async (archivo: ArchivoPedido, itemId: string) => {
+    try {
+      if (isSupabaseConfigured) await asignarArchivoItem(archivo.id, itemId || null)
+      setArchivos((act) => act.map((a) => a.id === archivo.id ? { ...a, pedido_item_id: itemId || null } : a))
+      toast.success(itemId ? 'Foto asignada al producto.' : 'Foto pasada a todo el pedido.')
+    } catch { toast.error('No se pudo asignar la foto.') }
+  }
+  const tarjetaFoto = (archivo: ArchivoPedido, conSelector: boolean) => <article key={archivo.id} className="overflow-hidden rounded-xl border border-line bg-black/20">
+    <div className="relative aspect-square overflow-hidden bg-white/[0.025]">
+      <img src={archivo.signed_url} alt={archivo.nombre} className="h-full w-full object-cover" />
+      <div className="absolute left-1.5 top-1.5"><span className="status-badge border-white/10 bg-app/85 text-white">{archivo.visible_cliente ? <Eye size={10} /> : <EyeOff size={10} />} {archivo.visible_cliente ? 'Cliente' : 'Interna'}</span></div>
+    </div>
+    <div className="space-y-2 p-2">
+      {conSelector && <select aria-label="¿De cuál producto es esta foto?" value={archivo.pedido_item_id ?? ''} onChange={(e) => void asignar(archivo, e.target.value)} className="w-full rounded-lg border border-line bg-white/[0.02] px-2 py-1.5 text-xs">
+        <option value="">¿De cuál producto es?</option>
+        {productos.map((p) => <option key={p.id} value={p.id!}>{p.producto}{p.codigo_producto ? ` · ${p.codigo_producto}` : ''}</option>)}
+      </select>}
+      <div className="flex items-center gap-2"><span className="min-w-0 flex-1 truncate text-[10px] text-muted">{(archivo.tamano_bytes / 1024).toFixed(0)} KB</span><button type="button" className="table-action hover:!text-red-300" onClick={() => void borrar(archivo)} title="Eliminar" aria-label="Eliminar imagen"><Trash2 size={15} /></button></div>
+    </div>
+  </article>
+
   return <section id="imagenes-pedido" className="form-section">
     <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
       <div><h2 className="flex items-center gap-2 font-semibold"><ImagePlus size={18} className="text-accent" /> Imágenes y archivos</h2><p className="mt-1 text-xs text-muted">Organiza la evidencia visual del pedido por categoría.</p></div>
@@ -219,24 +265,51 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], qcG
       </label>
     </div>
 
-    {categoria === 'control_calidad' && items.length > 1 && <label className="mt-3 flex flex-col gap-1 text-xs">
+    {multiQc && <div className="mt-4 space-y-3">
+      <div className={`rounded-xl border px-3.5 py-2.5 text-xs leading-5 ${cubiertos >= productos.length ? 'border-accent/30 bg-accent/[0.06] text-accent' : 'border-amber-300/30 bg-amber-300/[0.06] text-amber-200'}`}>
+        {cubiertos >= productos.length ? <>✓ Todos los productos tienen foto de calidad. El pedido pasa solo a <b>En tránsito</b> 2 días después.</> : <>Faltan fotos: {cubiertos} de {productos.length} productos. El pedido pasa a En tránsito cuando todos tengan su foto y pasen los 2 días.</>}
+      </div>
+      {productos.map((p) => {
+        const fotos = qcDe(p.id!)
+        const enviado = qcEnviados.has(p.id!) || Boolean(p.qc_enviado_at)
+        return <div key={p.id} className="rounded-xl border border-line p-3.5">
+          <div className="flex items-center gap-3">
+            {p.imagen ? <img src={resolverImagenCatalogo(p.imagen)} alt="" className="size-12 shrink-0 rounded-lg border border-line object-cover" /> : <span className="size-12 shrink-0 rounded-lg border border-line bg-white/[0.03]" />}
+            <div className="min-w-0 flex-1"><strong className="block truncate text-sm">{p.producto}</strong><span className="block truncate text-xs text-muted">{p.codigo_producto ? `QC ${p.codigo_producto}` : 'Sin código'}{p.talla ? ` · Talla ${p.talla}` : ''}</span></div>
+            {fotos.length > 0 ? <span className="status-badge shrink-0 border-accent/30 text-accent"><CheckCircle2 size={11} /> {fotos.length} {fotos.length === 1 ? 'foto' : 'fotos'}</span> : <span className="status-badge shrink-0 border-amber-300/30 text-amber-200">Falta foto</span>}
+          </div>
+          {fotos.length > 0 && <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">{fotos.map((a) => tarjetaFoto(a, false))}</div>}
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <button type="button" disabled={uploading} onClick={() => subirPara(p.id!)} className="subtle-button flex-1 justify-center py-2.5">{uploading && destinoQc.current === p.id ? <LoaderCircle size={15} className="animate-spin" /> : <Camera size={15} />} Subir foto de calidad</button>
+            {fotos.length > 0 && <button type="button" disabled={enviandoQc || uploading} onClick={() => void enviarQcDe(p.id!)} className={enviado ? 'subtle-button flex-1 justify-center py-2.5 text-muted' : 'primary-button flex-1'}>{enviado ? '✓ Enviadas al cliente · reenviar' : '📸 Enviar al cliente'}</button>}
+          </div>
+        </div>
+      })}
+      {qcGenerales.length > 0 && <div className="rounded-xl border border-dashed border-line p-3.5">
+        <strong className="text-sm">Fotos sin producto asignado</strong>
+        <p className="mt-0.5 text-xs text-muted">Elegí de cuál producto es cada una, así en Drive se guarda con su código.</p>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">{qcGenerales.map((a) => tarjetaFoto(a, true))}</div>
+      </div>}
+      <p className="text-center text-[10px] font-semibold text-accent">Marca de agua HAUSLINE.NI automática</p>
+    </div>}
+    {!multiQc && categoria === 'control_calidad' && productos.length > 1 && <label className="mt-3 flex flex-col gap-1 text-xs">
       <span className="font-semibold text-muted">¿De cuál producto es esta foto? <span className="font-normal">(para el seguimiento por producto)</span></span>
       <select value={itemQC} onChange={(event) => setItemQC(event.target.value)} className="rounded-lg border border-line bg-white/[0.02] px-2.5 py-2 text-sm">
         <option value="">Todo el pedido (sin producto específico)</option>
         {items.filter((item) => item.id && !esLineaEnvio(item)).map((item) => <option key={item.id} value={item.id!}>{item.producto}{item.codigo_producto ? ` · ${item.codigo_producto}` : ''}</option>)}
       </select>
     </label>}
-    <button type="button" disabled={uploading} onClick={() => inputRef.current?.click()} onDragEnter={(event) => { event.preventDefault(); setDragging(true) }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); void cargar(event.dataTransfer.files) }} className={`mt-4 flex min-h-36 w-full flex-col items-center justify-center rounded-xl border border-dashed px-5 py-6 text-center transition ${dragging ? 'border-accent bg-accent/[0.07]' : 'border-white/15 bg-white/[0.015] hover:border-white/30'}`}>
+    {!multiQc && <><button type="button" disabled={uploading} onClick={() => inputRef.current?.click()} onDragEnter={(event) => { event.preventDefault(); setDragging(true) }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); void cargar(event.dataTransfer.files) }} className={`mt-4 flex min-h-36 w-full flex-col items-center justify-center rounded-xl border border-dashed px-5 py-6 text-center transition ${dragging ? 'border-accent bg-accent/[0.07]' : 'border-white/15 bg-white/[0.015] hover:border-white/30'}`}>
       {uploading ? <LoaderCircle className="animate-spin text-accent" size={26} /> : <UploadCloud className="text-accent" size={27} />}
       <strong className="mt-3 text-sm">{uploading ? 'Procesando imágenes…' : 'Selecciona o arrastra imágenes'}</strong>
       <span className="mt-1 text-xs text-muted">JPG, PNG o WEBP · máximo 10 MB · se optimizan automáticamente</span>
     </button>
     {(categoria === 'control_calidad' || categoria === 'producto') && <div className="mt-2 text-center text-[10px] font-semibold text-accent">Marca de agua HAUSLINE.NI automática</div>}
     {categoria === 'recibido_local' && <div className="mt-2 text-center text-[10px] font-semibold text-accent">Se agrega sello “✓ RECIBIDO” con código y fecha automáticamente</div>}
-    {categoria === 'empaque' && <div className="mt-2 text-center text-[10px] font-semibold text-accent">Subí todas las fotos y confirmá para avisar al cliente en un solo correo</div>}
+    {categoria === 'empaque' && <div className="mt-2 text-center text-[10px] font-semibold text-accent">Subí todas las fotos y confirmá para avisar al cliente en un solo correo</div>}</>}
     <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={(event) => event.target.files && void cargar(event.target.files)} />
 
-    {loading ? <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3"><div className="aspect-square animate-pulse rounded-xl bg-white/[0.04]" /><div className="aspect-square animate-pulse rounded-xl bg-white/[0.04]" /></div>
+    {multiQc ? null : loading ? <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3"><div className="aspect-square animate-pulse rounded-xl bg-white/[0.04]" /><div className="aspect-square animate-pulse rounded-xl bg-white/[0.04]" /></div>
       : actuales.length > 0 ? <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
         {actuales.map((archivo) => <article key={archivo.id} className="group overflow-hidden rounded-xl border border-line bg-black/20">
           <div className="relative aspect-square overflow-hidden bg-white/[0.025]">
@@ -255,11 +328,11 @@ export function PedidoArchivos({ pedidoId, codigo, estadoPedido, items = [], qcG
           {confirmando ? 'Avisando al cliente…' : categoria === 'recibido_hausline' ? '✅ Confirmar y enviar las fotos al cliente' : '📦 Confirmar empaquetado y avisar al cliente'}
         </button>)}
 
-    {categoria === 'control_calidad' && itemQC && fotosDelProductoQc > 0 && <button type="button" onClick={() => void enviarFotosQc()} disabled={enviandoQc || uploading} className={qcYaEnviado ? 'mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-line bg-white/[0.04] px-5 py-2.5 text-sm font-semibold text-muted' : 'primary-button mt-4 w-full'}>
+    {!multiQc && categoria === 'control_calidad' && itemQC && fotosDelProductoQc > 0 && <button type="button" onClick={() => void enviarFotosQc()} disabled={enviandoQc || uploading} className={qcYaEnviado ? 'mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-line bg-white/[0.04] px-5 py-2.5 text-sm font-semibold text-muted' : 'primary-button mt-4 w-full'}>
       {enviandoQc ? 'Enviando…' : qcYaEnviado ? `✓ Enviadas a ${productoQc?.producto ?? 'este producto'} · reenviar` : `📸 Enviar fotos de control de calidad al cliente (${productoQc?.producto ?? 'este producto'})`}
     </button>}
 
-    {categoria === 'control_calidad' && !itemQC && fotosControlGenerales > 0 && <button type="button" onClick={() => void enviarOReenviar('control_calidad', qcGeneralEnviado)} disabled={reenviando || uploading} className={qcGeneralEnviado ? 'subtle-button mt-4 w-full justify-center py-3' : 'primary-button mt-4 w-full'}>
+    {!multiQc && categoria === 'control_calidad' && !itemQC && fotosControlGenerales > 0 && <button type="button" onClick={() => void enviarOReenviar('control_calidad', qcGeneralEnviado)} disabled={reenviando || uploading} className={qcGeneralEnviado ? 'subtle-button mt-4 w-full justify-center py-3' : 'primary-button mt-4 w-full'}>
       {reenviando ? (qcGeneralEnviado ? 'Reenviando…' : 'Enviando…') : qcGeneralEnviado ? '✓ Fotos ya enviadas al cliente · Reenviar' : '📸 Enviar fotos de control de calidad al cliente'}
     </button>}
   </section>

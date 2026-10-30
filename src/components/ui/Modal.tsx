@@ -6,7 +6,9 @@ export function Modal({ title, description, open, onClose, children, ancho }: { 
   if (!open) return null
   return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-5" role="dialog" aria-modal="true" aria-label={title}>
     <button className="absolute inset-0" aria-label="Cerrar" onClick={onClose} />
-    <section className={`relative max-h-[92vh] w-full ${ancho === 'amplio' ? 'max-w-5xl' : 'max-w-2xl'} overflow-y-auto rounded-t-2xl border border-line bg-[#141414] p-5 shadow-2xl sm:rounded-2xl sm:p-6`}>
+    {/* iPhone: 92dvh = alto VISIBLE (sin la barra de Safari ni el teclado) y espacio abajo para la
+        barra de inicio, así los botones de Guardar del final siempre se ven y se pueden tocar. */}
+    <section className={`relative w-full ${ancho === 'amplio' ? 'max-w-5xl' : 'max-w-2xl'} overflow-y-auto overscroll-contain rounded-t-2xl border border-line bg-[#141414] p-5 shadow-2xl sm:rounded-2xl sm:p-6`} style={{ maxHeight: 'min(92vh, 92dvh)', paddingBottom: 'max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 1rem))' }}>
       <header className="flex items-start justify-between gap-4"><div><h2 className="text-lg font-semibold">{title}</h2>{description && <p className="mt-1 text-xs text-muted">{description}</p>}</div><button className="icon-button shrink-0" onClick={onClose} aria-label="Cerrar modal"><X size={18} /></button></header>
       <div className="mt-6">{children}</div>
     </section>
