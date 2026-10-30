@@ -80,6 +80,13 @@ function descuentoDe(p, promos, ahora = new Date()) {
   return promo ? Number(promo.descuento) || 0 : 0
 }
 
+// Tallas en orden (igual que la tienda): números de menor a mayor, luego letras, luego el resto.
+const LETRAS = ['XXXS', 'XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'XXXXL', '2XL', '3XL', '4XL']
+function ordenarTallas(lista) {
+  const clave = (t) => { const s = String(t).trim().toUpperCase(); const n = parseFloat(s.replace(',', '.')); if (/^\d/.test(s) && !Number.isNaN(n)) return [0, n]; const i = LETRAS.indexOf(s); return i >= 0 ? [1, i] : [2, 0] }
+  return lista.map((t, i) => ({ t, i, k: clave(t) })).sort((a, b) => a.k[0] - b.k[0] || a.k[1] - b.k[1] || a.i - b.i).map((x) => x.t)
+}
+
 export async function productosEntregaInmediata() {
   const [catalogo, promos] = await Promise.all([obtenerCatalogoMergeado(), leerPromociones()])
   return catalogo
@@ -88,7 +95,7 @@ export async function productosEntregaInmediata() {
     .map((p) => {
       const base = Number(p.precio_entrega_inmediata) > 0 ? Number(p.precio_entrega_inmediata) : Number(p.precio_venta || 0)
       const desc = descuentoDe(p, promos)
-      return { codigo: p.codigo, nombre: p.nombre, marca: p.marca || '', imagen: p.imagen, tallas: [...new Set(p.tallas_entrega_inmediata ?? [])], base, desc, precio: desc > 0 ? Math.round(base * (1 - desc / 100)) : base }
+      return { codigo: p.codigo, nombre: p.nombre, marca: p.marca || '', imagen: p.imagen, tallas: ordenarTallas([...new Set(p.tallas_entrega_inmediata ?? [])]), base, desc, precio: desc > 0 ? Math.round(base * (1 - desc / 100)) : base }
     })
     .filter((p) => p.base > 0)
 }
