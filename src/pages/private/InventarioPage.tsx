@@ -1,4 +1,4 @@
-import { Boxes, CircleDollarSign, Zap, ImagePlus, Layers, PackageCheck, Plus, Printer, Scissors, Search, ShoppingBag, TrendingUp, Truck, Wallet, X } from 'lucide-react'
+import { Boxes, CircleDollarSign, Smartphone, Zap, ImagePlus, Layers, PackageCheck, Plus, Printer, Scissors, Search, ShoppingBag, TrendingUp, Truck, Wallet, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { useNavigate } from 'react-router-dom'
@@ -10,7 +10,7 @@ import { actualizarInversion, cambiarEstadoInversion, eliminarInversion, listarI
 import type { Inversion, Producto } from '../../types/domain'
 import { enviarReciboStockCorreo, imprimirReciboStock } from '../../utils/reciboStock'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
-import { contarFotosInversiones, ponerEntregaInmediataCompra, quitarEntregaInmediata } from '../../services/archivos.service'
+import { contarFotosInversiones, enviarHistoriaEntregaInmediata, ponerEntregaInmediataCompra, quitarEntregaInmediata } from '../../services/archivos.service'
 import { clienteParaVenta } from '../../services/clientes.service'
 import { sugerenciaCorreo } from '../../services/saludClientes.service'
 import { venderInmediatoComoPedido } from '../../services/pedidos.service'
@@ -74,6 +74,14 @@ export function InventarioPage() {
   const [inicial, setInicial] = useState<Partial<typeof empty> | null>(null)
   // Productos que la tienda muestra hoy como Entrega inmediata (catálogo web).
   const [ei, setEi] = useState<ProductoEI[] | null>(null)
+  // 'Historia de hoy': arma la imagen 9:16 de Entrega inmediata y la manda al correo y a Drive.
+  const [armandoHistoria, setArmandoHistoria] = useState(false)
+  const historiaHoy = async () => {
+    setArmandoHistoria(true)
+    try { const n = await enviarHistoriaEntregaInmediata(); toast.success(`Listo: ${n === 1 ? 'la historia' : `${n} historias`} de Entrega inmediata te llegaron al correo y quedaron en Drive.`) }
+    catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo armar la historia.') }
+    finally { setArmandoHistoria(false) }
+  }
   const [enCaminoTienda, setEnCaminoTienda] = useState<Set<string>>(new Set())
   // Colores de cada producto de la tienda (para elegir cuáles hay en Entrega inmediata).
   const [coloresTienda, setColoresTienda] = useState<Record<string, string[]>>({})
@@ -188,7 +196,7 @@ export function InventarioPage() {
     } } })
   }
 
-  return <div className={seleccion.size ? 'pb-24' : ''}><LibresTabs /><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Stock propio · sin pedido de cliente</p><h1 className="page-title">Compras libres</h1><p className="page-subtitle">Lo que comprás por tu cuenta para vender. Registrá una compra en conjunto y el costo, la comisión y el envío se reparten solos.</p></div><div className="flex flex-wrap gap-2"><button className="subtle-button px-4" onClick={() => { setEditing(null); setOpen(true) }}><Plus size={16} /> Un producto</button><button className="primary-button px-5" onClick={() => setLoteOpen(true)}><Layers size={17} /> Compra en conjunto</button></div></div>
+  return <div className={seleccion.size ? 'pb-24' : ''}><LibresTabs /><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Stock propio · sin pedido de cliente</p><h1 className="page-title">Compras libres</h1><p className="page-subtitle">Lo que comprás por tu cuenta para vender. Registrá una compra en conjunto y el costo, la comisión y el envío se reparten solos.</p></div><div className="flex flex-wrap gap-2"><button type="button" className="subtle-button px-4" disabled={armandoHistoria} onClick={() => void historiaHoy()} title="Imagen 9:16 con lo que hay en Entrega inmediata, al correo y a Drive (también llega sola cada día a las 6 a. m.)"><Smartphone size={16} /> {armandoHistoria ? 'Armando…' : 'Historia de hoy'}</button><button className="subtle-button px-4" onClick={() => { setEditing(null); setOpen(true) }}><Plus size={16} /> Un producto</button><button className="primary-button px-5" onClick={() => setLoteOpen(true)}><Layers size={17} /> Compra en conjunto</button></div></div>
     {(() => {
       // Vendidas o apartadas que la tienda sigue mostrando como Entrega inmediata (y no queda otra
       // compra disponible de ese código): se quitan con un toque.

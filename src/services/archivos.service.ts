@@ -366,6 +366,19 @@ export async function buscarPedidoPorCodigo(codigo: string): Promise<{ id: strin
   return data as { id: string; codigo: string } | null
 }
 
+// "Historia de hoy" (Compras libres): arma la historia 9:16 de Entrega inmediata y la manda al
+// correo del dueño y a Drive. Devuelve cuántas imágenes salieron, o lanza el motivo.
+export async function enviarHistoriaEntregaInmediata(): Promise<number> {
+  const client = requireSupabase()
+  const { data: sessionData } = await client.auth.getSession()
+  const token = sessionData.session?.access_token
+  if (!token) throw new Error('Sesión no disponible.')
+  const res = await fetch('/api/notificar-estado', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token }, body: JSON.stringify({ historiaEI: true }) })
+  const j = await res.json().catch(() => ({})) as { ok?: boolean; error?: string; imagenes?: number }
+  if (!res.ok || !j.ok) throw new Error(j.error || 'No se pudo armar la historia (HTTP ' + res.status + ').')
+  return Number(j.imagenes || 0)
+}
+
 // Asigna (o quita) el producto de una foto de control de calidad, para pedidos de varios productos.
 export async function asignarArchivoItem(fileId: string, pedidoItemId: string | null) {
   const client = requireSupabase()

@@ -3,7 +3,7 @@ import { ESTADO_LABEL, enviarCorreoPedido, enviarCorreoCancelacion, enviarCorreo
 import { facturaPdfBuffer } from './_factura-pdf.js'
 import { subirFacturaDrive, subirArchivoDrive, mesCarpeta } from './_drive.js'
 import { cerrarEmail, reservarEmail } from './_email-eventos.js'
-import { automatizaciones } from './_automatico.js'
+import { automatizaciones, historiaEntregaInmediata } from './_automatico.js'
 import { hacerRespaldo } from './_respaldo.js'
 import { enviarCorreoCuponCliente, enviarCorreoRedes } from './_correo-auto.js'
 import { leerLista, quitarDeLista, revisionCompleta } from './_rebotes.js'
@@ -342,6 +342,27 @@ async function correosNoFuncionanPanel(response, body, authorization) {
   } catch (e) {
     console.error('correos que no funcionan: falló', e?.message)
     return response.status(200).json({ ok: false, error: e?.message || 'No se pudo.' })
+  }
+}
+
+// 'Historia de hoy' (Compras libres): arma ya la historia de Entrega inmediata y la manda al
+// correo del dueño y a Drive. Solo admin.
+async function historiaEIManual(response, authorization) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(500).json({ ok: false, error: 'Falta configuración del servidor.' })
+  const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  const token = String(authorization).replace(/^Bearer\s+/i, '').trim()
+  if (!token) return response.status(401).json({ ok: false })
+  const { data: userData } = await admin.auth.getUser(token).catch(() => ({ data: { user: null } }))
+  if (!userData?.user) return response.status(401).json({ ok: false })
+  const { data: perfil } = await admin.from('perfiles').select('rol, activo').eq('id', userData.user.id).maybeSingle()
+  if (!perfil || !perfil.activo || perfil.rol !== 'admin') return response.status(403).json({ ok: false, error: 'Solo el administrador.' })
+  try {
+    const imagenes = await historiaEntregaInmediata({ forzar: true })
+    if (!imagenes) return response.status(200).json({ ok: false, error: 'No hay productos en Entrega inmediata.' })
+    return response.status(200).json({ ok: true, imagenes })
+  } catch (e) {
+    console.error('historia EI manual: falló', e?.message)
+    return response.status(200).json({ ok: false, error: e?.message || 'No se pudo armar la historia.' })
   }
 }
 
@@ -887,6 +908,7 @@ export default async function handler(request, response) {
   if (body.cuponCliente) return cuponCliente(response, body, authorization)
   // "Hacer respaldo ahora" desde Configuración (JWT del admin): Excel completo a Drive.
   if (body.respaldoAhora) return respaldoManual(response, authorization)
+  if (body.historiaEI) return historiaEIManual(response, authorization)
   // Campaña "síganos en redes" (JWT del admin): prueba al propio correo, lanzar o ver cómo va.
   if (body.campanaRedes) return campanaRedesPanel(response, body, authorization)
   // Correos que no funcionan (JWT del admin): ver la lista, revisar rebotes/dominios o quitar uno.

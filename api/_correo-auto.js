@@ -240,3 +240,19 @@ export async function enviarCorreoCuponCliente({ correo, nombre, cupon, tipo, va
     html: plantillaCorreo({ nombre, codigo: null, estado: null, estadoLabel: `Un regalo para usted: ${monto} OFF`, nota: texto, urlSeguimiento: url, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Usar mi descuento', ctaUrl: url, pedirResena: false }),
   })
 }
+
+// Historia diaria de Entrega inmediata (al dueño): las imágenes 9:16 adjuntas para guardarlas y
+// subirlas a Instagram / estados. Van también como fotos dentro del correo.
+export async function enviarCorreoHistoriaEI({ to, fecha, productos, imagenes }) {
+  const dia = new Intl.DateTimeFormat('es-NI', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${fecha}T12:00:00Z`))
+  const conDescuento = productos.filter((p) => p.desc > 0).length
+  const fotos = imagenes.map((im, i) => ({ cid: `historia-${i + 1}@hausline`, filename: im.filename, content: im.data, contentType: 'image/jpeg' }))
+  const nota = `Historia lista para hoy, <strong>${esc(dia)}</strong>: ${productos.length} ${productos.length === 1 ? 'producto' : 'productos'} en Entrega inmediata${conDescuento ? ` (${conDescuento} con descuento)` : ''}. `
+    + `${imagenes.length === 1 ? 'Guardá la imagen' : `Son ${imagenes.length} imágenes; guardalas`} y subila${imagenes.length === 1 ? '' : 's'} a Instagram y estados. También quedó en Drive (PEDIDOS HAUSLINE / HISTORIAS ENTREGA INMEDIATA).`
+  await transporteSmtp().sendMail({
+    from: remitente(), to,
+    subject: `📲 Historia de hoy: ${productos.length} en Entrega inmediata`,
+    html: plantillaCorreo({ nombre: null, codigo: null, estado: null, estadoLabel: 'Disponible hoy', nota, urlSeguimiento: 'https://hauslineshopni.es/#entrega-inmediata', esNuevo: false, factura: null, fotos, ctaTexto: 'Ver en la tienda', ctaUrl: 'https://hauslineshopni.es/#entrega-inmediata', pedirResena: false, kicker: 'Entrega inmediata', pie: 'Aviso interno del panel' }),
+    attachments: fotos.map((f) => ({ filename: f.filename, content: f.content, contentType: f.contentType, cid: f.cid })),
+  })
+}

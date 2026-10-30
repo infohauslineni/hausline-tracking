@@ -11,12 +11,14 @@
 // A los CLIENTES solo se les escribe de 9 a. m. a 8 p. m. (hora de Nicaragua).
 import { createClient } from '@supabase/supabase-js'
 import { ESTADO_LABEL } from './_correo.js'
-import { enviarCorreoBajaPrecio, enviarCorreoCarritoAbandonado, enviarCorreoAvisoGastosFijos, enviarCorreoNovedades, enviarCorreoRedes, enviarCorreoRecompra, enviarCorreoRecordatorioResena, enviarCorreoRecordatorioSaldo, enviarCorreoReporteDiario } from './_correo-auto.js'
+import { enviarCorreoBajaPrecio, enviarCorreoCarritoAbandonado, enviarCorreoHistoriaEI, enviarCorreoAvisoGastosFijos, enviarCorreoNovedades, enviarCorreoRedes, enviarCorreoRecompra, enviarCorreoRecordatorioResena, enviarCorreoRecordatorioSaldo, enviarCorreoReporteDiario } from './_correo-auto.js'
 import { cerrarEmail, reservarEmail } from './_email-eventos.js'
 import { hacerRespaldo } from './_respaldo.js'
 import { gastosFijosDeManana } from './_fondo.js'
 import { leerLista, revisarRebotes } from './_rebotes.js'
 import { obtenerCatalogoMergeado } from './_catalogo.js'
+import { historiasEntregaInmediata } from './_historia-ei.js'
+import { subirArchivoDrive } from './_drive.js'
 
 const HORA = 3_600_000
 const DIA = 24 * HORA
@@ -362,6 +364,29 @@ async function productosIncompletos() {
   } catch { return [] }
 }
 
+// ---------- Historia diaria de Entrega inmediata (6 a. m.) ----------
+// Arma las imágenes 9:16 con lo que hay hoy, las sube a Drive y se las manda al dueño por correo.
+export async function historiaEntregaInmediata({ forzar = false } = {}) {
+  if (!forzar && horaNic() !== 6) return false
+  const to = (process.env.AVISO_ADMIN || process.env.SMTP_USER || '').trim()
+  if (!to) return false
+  const hoy = fechaNic()
+  const enviar = async () => {
+    const { productos, imagenes } = await historiasEntregaInmediata(hoy)
+    if (!imagenes.length) return 0
+    for (const im of imagenes) {
+      try { await subirArchivoDrive({ carpeta: 'HISTORIAS ENTREGA INMEDIATA', codigo: hoy.slice(0, 7), filename: im.filename, data: im.data, mime: 'image/jpeg' }) }
+      catch (e) { console.error('historia EI: Drive', e?.message) }
+    }
+    await enviarCorreoHistoriaEI({ to, fecha: hoy, productos, imagenes })
+    return imagenes.length
+  }
+  if (forzar) return enviar()
+  let n = 0
+  await unaVez(`historia-ei:${hoy}`, 'historia_ei', { destinatario: to }, async () => { n = await enviar() })
+  return n
+}
+
 // ---------- 3. Reporte diario ----------
 async function reporteDiario(db) {
   if (horaNic() !== 7) return false
@@ -438,5 +463,6 @@ export async function automatizaciones() {
   await paso('novedades', novedades)
   await paso('campana_redes', campanaRedes)
   await paso('aviso_gastos_fijos', avisoGastosFijos)
+  await paso('historia_ei', () => historiaEntregaInmediata())
   return res
 }
