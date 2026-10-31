@@ -34,3 +34,20 @@ export function fijarEstadoVista<T>(clave: string, valor: T) {
   memoria.set(clave, valor)
   try { sessionStorage.setItem(PREFIJO + clave, JSON.stringify(valor)) } catch { /* solo memoria */ }
 }
+
+// Borra lo recordado de una vista (p. ej. la búsqueda al salir de ese apartado).
+export function olvidarVista(clave: string) {
+  memoria.delete(clave)
+  try { sessionStorage.removeItem(PREFIJO + clave) } catch { /* sin sessionStorage */ }
+}
+
+// Búsquedas de cada lista: se borran apenas se sale de la lista (a otro apartado o al entrar a un
+// pedido / producto). Al volver, la lista arranca sin búsqueda.
+const BUSQUEDAS: Record<string, string[]> = {
+  '/pedidos': ['pedidos.busqueda'], '/clientes': ['clientes.busqueda'], '/logistica': ['logistica.busqueda'],
+  '/stock': ['stock.busqueda'], '/ventas': ['ventas.busqueda'], '/tienda': ['tienda.q'],
+}
+export function limpiarBusquedasFueraDe(pathname: string) {
+  const ruta = pathname.replace(/\/+$/, '') || '/'
+  for (const [lista, claves] of Object.entries(BUSQUEDAS)) if (ruta !== lista) claves.forEach(olvidarVista)
+}

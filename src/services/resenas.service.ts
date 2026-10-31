@@ -65,3 +65,17 @@ export async function crearResena(input: NuevaResenaInput): Promise<void> {
   })
   if (error) throw new Error(error.message)
 }
+
+// "Pedir reseñas ahora": manda el correo de reseña a los entregados hace 1–14 días sin reseña
+// (los que ya lo recibieron no se repiten). Devuelve a quiénes se les mandó y por qué no a otros.
+export type ResultadoPedirResenas = { enviados: { codigo: string; nombre: string }[]; yaTenian: { codigo: string; nombre: string }[]; sinCorreo: { codigo: string; nombre: string }[]; yaPedidas: { codigo: string; nombre: string }[] }
+export async function pedirResenasAhora(): Promise<ResultadoPedirResenas> {
+  if (!supabase) throw new Error('Sin conexión.')
+  const { data: ses } = await supabase.auth.getSession()
+  const token = ses.session?.access_token
+  if (!token) throw new Error('Sesión no disponible.')
+  const res = await fetch('/api/notificar-estado', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token }, body: JSON.stringify({ pedirResenas: true }) })
+  const j = await res.json().catch(() => ({})) as Partial<ResultadoPedirResenas> & { ok?: boolean; error?: string }
+  if (!res.ok || !j.ok) throw new Error(j.error || 'No se pudieron pedir las reseñas (HTTP ' + res.status + ').')
+  return { enviados: j.enviados ?? [], yaTenian: j.yaTenian ?? [], sinCorreo: j.sinCorreo ?? [], yaPedidas: j.yaPedidas ?? [] }
+}

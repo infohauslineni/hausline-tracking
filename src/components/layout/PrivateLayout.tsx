@@ -10,6 +10,7 @@ import { playEncargoChime, primeEncargoAudio } from '../../utils/notify'
 import { calcularAlertas, contarUrgentes, type Alerta } from '../../utils/alertas'
 import { HauslineLogo } from '../ui/HauslineLogo'
 import { guardarModoPanel, modoPanelGuardado, type ModoPanel } from '../../utils/temaPanel'
+import { limpiarBusquedasFueraDe } from '../../hooks/useEstadoVista'
 import { BuscadorGlobal } from './BuscadorGlobal'
 
 type Badges = Record<string, number>
@@ -128,6 +129,8 @@ export function PrivateLayout() {
     .map((group) => ({ ...group, items: esAdmin ? group.items : group.items.filter((item) => RUTAS_OPERADOR.has(item.to)) }))
     .filter((group) => group.items.length > 0)
   useEffect(() => { warmDashboard() }, [])
+  // Al pasar a otro apartado del menú se borra la búsqueda del que se dejó.
+  useEffect(() => { limpiarBusquedasFueraDe(location.pathname) }, [location.pathname])
   // Cuentas "Visible a clientes" para los mensajes de WhatsApp (si no, quedan las de respaldo).
   useEffect(() => { if (isSupabaseConfigured) void import('../../services/cuentas.service').then((m) => m.cargarCuentasPagoClientes()).catch(() => undefined) }, [])
   // Prepara el sonido de encargo SOLO en el panel admin (no en el sitio público de seguimiento).

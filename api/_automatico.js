@@ -146,6 +146,37 @@ async function postEntrega(db) {
   return { recompra, resena }
 }
 
+// "Pedir reseñas ahora" (botón en Reseñas del panel): manda YA el correo de reseña a los pedidos
+// entregados hace 1 a 14 días que no tienen reseña ni recibieron el correo (mismo candado resena:CODIGO
+// que la automatización, así nunca se repite). No espera al horario de clientes.
+export async function pedirResenasAhora() {
+  const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  const { data: hist, error } = await db.from('historial_pedidos')
+    .select('created_at, pedidos!inner(id, codigo, estado, clientes(nombre, correo))')
+    .eq('estado_nuevo', 'entregado')
+    .gte('created_at', new Date(Date.now() - 14 * DIA).toISOString())
+    .lte('created_at', new Date(Date.now() - 1 * DIA).toISOString())
+    .limit(500)
+  if (error) throw new Error(error.message)
+  const enviados = [], yaTenian = [], sinCorreo = [], yaPedidas = []
+  const vistos = new Set()
+  for (const h of hist ?? []) {
+    const p = uno(h.pedidos)
+    if (!p || p.estado !== 'entregado' || vistos.has(p.codigo)) continue
+    vistos.add(p.codigo)
+    const cli = uno(p.clientes)
+    const correo = String(cli?.correo ?? '').trim()
+    const quien = { codigo: p.codigo, nombre: cli?.nombre ?? '' }
+    if (!correo) { sinCorreo.push(quien); continue }
+    const { count } = await db.from('resenas').select('id', { count: 'exact', head: true }).eq('pedido_codigo', p.codigo)
+    if (count) { yaTenian.push(quien); continue }
+    const ok = await unaVez(`resena:${p.codigo}`, 'recordatorio_resena', { codigo: p.codigo, destinatario: correo }, () =>
+      enviarCorreoRecordatorioResena({ correo, nombre: cli?.nombre ?? null, codigo: p.codigo }))
+    if (ok) enviados.push(quien); else yaPedidas.push(quien)
+  }
+  return { enviados, yaTenian, sinCorreo, yaPedidas }
+}
+
 // ---------- 6. Carrito abandonado ----------
 async function carritosAbandonados(db) {
   if (!horarioCliente()) return 0

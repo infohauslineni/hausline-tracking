@@ -1,10 +1,10 @@
-import { Check, EyeOff, Plus, Share2, Star, Trash2, X } from 'lucide-react'
+import { Check, EyeOff, Mail, Plus, Share2, Star, Trash2, X } from 'lucide-react'
 import { ClientesTabs } from '../../components/layout/LibresTabs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
-import { aprobarResena, crearResena, destacarResena, eliminarResena, listarResenas, type Resena } from '../../services/resenas.service'
+import { aprobarResena, crearResena, destacarResena, eliminarResena, listarResenas, pedirResenasAhora, type Resena, type ResultadoPedirResenas } from '../../services/resenas.service'
 import { listarProductos } from '../../services/comercial.service'
 import { HistoriaResenaModal } from '../../components/resenas/HistoriaResenaModal'
 import type { Producto } from '../../types/domain'
@@ -69,9 +69,12 @@ export function ResenasPage() {
           <h1 className="page-title">Reseñas de clientes</h1>
           <p className="page-subtitle">Aprobá las reseñas para que salgan en la tienda. Solo las aprobadas se muestran; las destacadas salen primero en el inicio.</p>
         </div>
-        <button className="primary-button shrink-0" onClick={() => setAgregando((v) => !v)}>
-          {agregando ? <><X size={16} /> Cerrar</> : <><Plus size={16} /> Agregar reseña</>}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <PedirResenas />
+          <button className="primary-button shrink-0" onClick={() => setAgregando((v) => !v)}>
+            {agregando ? <><X size={16} /> Cerrar</> : <><Plus size={16} /> Agregar reseña</>}
+          </button>
+        </div>
       </div>
 
       {agregando && <FormAgregar onListo={() => { setAgregando(false); void cargar(true) }} />}
@@ -165,4 +168,31 @@ function FormAgregar({ onListo }: { onListo: () => void }) {
       </div>
     </div>
   )
+}
+
+// "Pedir reseñas ahora": correo a los clientes entregados hace 1–14 días que no dejaron reseña.
+// (La automatización lo hace sola cada 15 min de 9 a. m. a 8 p. m.; este botón lo manda ya.)
+function PedirResenas() {
+  const [enviando, setEnviando] = useState(false)
+  const [r, setR] = useState<ResultadoPedirResenas | null>(null)
+  const pedir = async () => {
+    setEnviando(true)
+    try {
+      const res = await pedirResenasAhora(); setR(res)
+      toast.success(res.enviados.length ? `Listo: se pidió reseña a ${res.enviados.length} ${res.enviados.length === 1 ? 'cliente' : 'clientes'}.` : 'No había clientes nuevos a quienes pedirles reseña.')
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudieron pedir las reseñas.') }
+    finally { setEnviando(false) }
+  }
+  const linea = (l: { codigo: string; nombre: string }[]) => l.map((x) => `${x.nombre || 'Cliente'} (${x.codigo})`).join(', ')
+  return <div className="relative">
+    <button type="button" className="subtle-button min-h-10 px-4" disabled={enviando || !isSupabaseConfigured} onClick={() => void pedir()}><Mail size={16} /> {enviando ? 'Enviando…' : 'Pedir reseñas ahora'}</button>
+    {r && <div className="absolute right-0 z-20 mt-2 w-[min(92vw,360px)] rounded-xl border border-line bg-panel p-4 text-sm shadow-xl">
+      <div className="flex items-start justify-between gap-2"><b>Reseñas pedidas</b><button type="button" aria-label="Cerrar" className="-m-1 grid size-8 place-items-center rounded-lg text-muted" onClick={() => setR(null)}><X size={15} /></button></div>
+      <p className="mt-2"><b>{r.enviados.length}</b> {r.enviados.length === 1 ? 'correo enviado' : 'correos enviados'}{r.enviados.length ? `: ${linea(r.enviados)}` : '.'}</p>
+      {r.yaPedidas.length > 0 && <p className="mt-1 text-xs text-muted">Ya se les había pedido antes: {linea(r.yaPedidas)}</p>}
+      {r.yaTenian.length > 0 && <p className="mt-1 text-xs text-muted">Ya dejaron reseña: {linea(r.yaTenian)}</p>}
+      {r.sinCorreo.length > 0 && <p className="mt-1 text-xs text-amber-200">Sin correo registrado: {linea(r.sinCorreo)}</p>}
+      <p className="mt-2 text-xs text-muted">Entregados hace 1 a 14 días.</p>
+    </div>}
+  </div>
 }
