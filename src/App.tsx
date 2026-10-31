@@ -18,6 +18,7 @@ const LogisticaPage = lazy(() => import('./pages/private/LogisticaPage').then((m
 const ConfiguracionPage = lazy(() => import('./pages/private/ConfiguracionPage').then((module) => ({ default: module.ConfiguracionPage })))
 const VentasPage = lazy(() => import('./pages/private/VentasPage').then((module) => ({ default: module.VentasPage })))
 const TiendaProductosPage = lazy(() => import('./pages/private/TiendaProductosPage').then((module) => ({ default: module.TiendaProductosPage })))
+const BannersPage = lazy(() => import('./pages/private/BannersPage').then((module) => ({ default: module.BannersPage })))
 const ProductoTiendaPage = lazy(() => import('./pages/private/ProductoTiendaPage').then((module) => ({ default: module.ProductoTiendaPage })))
 const PagosPage = lazy(() => import('./pages/private/PagosPage').then((module) => ({ default: module.PagosPage })))
 const GastosPage = lazy(() => import('./pages/private/GastosPage').then((module) => ({ default: module.GastosPage })))
@@ -64,6 +65,7 @@ export function App() {
           {/* Costos de productos se unió a Productos (el costo se edita en la ficha). */}
           <Route path="/productos" element={<Navigate to="/tienda" replace />} />
           <Route path="/tienda" element={<TiendaProductosPage />} />
+          <Route path="/banners" element={<BannersPage />} />
           <Route path="/tienda/:codigo" element={<ProductoTiendaPage />} />
           <Route path="/stock" element={<InventarioPage />} />
           <Route path="/venta-libre" element={<VentaLibrePage />} />

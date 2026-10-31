@@ -1,4 +1,4 @@
-import { ArrowUpRight, BarChart3, Bell, Bike, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, Moon, MoreHorizontal, PackagePlus, PackageSearch, Plus, Store, ReceiptText, RotateCcw, Settings, ShoppingBag, Sun, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
+import { ArrowUpRight, BarChart3, Bell, Bike, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, Moon, MoreHorizontal, PackagePlus, PackageSearch, Plus, Store, Megaphone, ReceiptText, RotateCcw, Settings, ShoppingBag, Sun, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { RestaurarScroll } from './Navegacion'
@@ -66,6 +66,8 @@ const clientesProductos: NavItem[] = [
   { to: '/clientes', label: 'Clientes y reseñas', icon: Users, tambien: ['/resenas'] },
   // Productos de la tienda (reemplaza al admin.html viejo). El costo se edita en la ficha.
   { to: '/tienda', label: 'Productos', icon: Store, tambien: ['/productos'] },
+  // El aviso que sale al abrir la tienda (antes en admin.html).
+  { to: '/banners', label: 'Banners de la tienda', icon: Megaphone },
   // Un solo apartado con dos pestañas (Compras libres / Venta libre): siguen siendo páginas aparte.
   { to: '/stock', label: 'Compras y ventas libres', icon: HandCoins, tambien: ['/venta-libre'] },
 ]

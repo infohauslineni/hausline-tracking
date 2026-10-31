@@ -4,11 +4,12 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '../../contexts/AuthContext'
 import {
-  actualizarCache, borrarProductoTienda, CATEGORIAS, conectadoCatalogo, costoDe, disponibilidad, guardarCosto, ETIQUETAS, estadoDe, guardarProductoTienda, linkInstagram, linkProducto,
+  actualizarCache, borrarProductoTienda, CATEGORIAS, conectadoCatalogo, costoDe, disponibilidad, guardarCosto, ETIQUETAS, estadoDe, guardarProductoTienda, linkProducto,
   listarProductosTienda, ordenarTallas, productosEnCache, SUBCATEGORIAS, sugerirCodigo, TALLAS_CALZADO, TALLAS_ROPA, TIPOS_ROPA,
   type DatosTienda, type EstadoTienda, type FotoTienda, type ProductoTienda,
 } from '../../services/productosTienda.service'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
+import { abrirPostInstagram } from '../../utils/instagramPost'
 import { EstadoChip } from './TiendaProductosPage'
 import { ConectarTienda } from './VentaLibrePage'
 
@@ -174,7 +175,7 @@ export function ProductoTiendaPage() {
       {!esNuevo && previo && <EstadoChip estado={estadoDe(previo)} />}
       {!esNuevo && previo && <div className="sin-barra flex w-full gap-2 overflow-x-auto sm:w-auto">
         <a className="subtle-button min-h-10 shrink-0 px-3" href={linkProducto(previo.codigo)} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Ver en la tienda</a>
-        <a className="subtle-button min-h-10 shrink-0 px-3" href={linkInstagram(previo.codigo, disp.tipo === 'ei' ? 'inmediata' : disp.tipo === 'encamino' ? 'encamino' : undefined)} target="_blank" rel="noreferrer"><Camera size={15} /> Post de Instagram</a>
+        <button type="button" className="subtle-button min-h-10 shrink-0 px-3" onClick={() => void abrirPostInstagram(previo.datos, disp.tipo === 'ei' ? 'inmediata' : disp.tipo === 'encamino' ? 'encamino' : 'nuevo')}><Camera size={15} /> Post de Instagram</button>
         <button type="button" className="subtle-button min-h-10 shrink-0 px-3" onClick={() => { void navigator.clipboard?.writeText(linkProducto(previo.codigo)).then(() => toast.success('Link copiado.')).catch(() => toast.info(linkProducto(previo.codigo))) }}><Copy size={15} /> Copiar link</button>
       </div>}
     </div>

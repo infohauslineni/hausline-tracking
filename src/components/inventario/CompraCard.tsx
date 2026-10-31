@@ -5,6 +5,7 @@ import type { Inversion } from '../../types/domain'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { ETAPAS_COMPRA, etapaDeCompra, nombreEtapa, type EtapaCompra } from '../../utils/compraEtapa'
 import { ProductoImg } from '../ui/ProductoImg'
+import { abrirPostInstagramPorCodigo } from '../../utils/instagramPost'
 
 // Tarjeta de una compra libre (Compras libres). Ordenada en bloques: cabecera (foto, código,
 // estado, nombre) → números (costo / venta / ganancia) → etiquetas de estado → acciones
@@ -189,7 +190,7 @@ export function CompraCard(p: Props) {
           <span className="min-w-0"><span className="block text-[13px] font-medium">Entrega inmediata</span><span className="block text-[11.5px] text-muted">{p.enEI ? 'Sale en la sección de entrega inmediata' : item.estado === 'en_inventario' ? 'Todavía no está en esa sección' : 'Disponible cuando llegue a Nicaragua'}</span></span>
           <button type="button" className="subtle-button shrink-0" onClick={p.onEntregaInmediata} disabled={item.estado !== 'en_inventario' && !p.enEI}>{p.enEI ? 'Tallas' : 'Poner'}</button>
         </div>
-        {item.estado === 'en_transito' && p.enCaminoPublicado && <a className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-semibold text-accent hover:underline" href={`https://hauslineshopni.es/admin.html?ig=${encodeURIComponent(codigo)}&modo=encamino`} target="_blank" rel="noopener noreferrer"><ExternalLink size={13} /> Crear post e historia “Llega pronto”</a>}
+        {item.estado === 'en_transito' && p.enCaminoPublicado && <button type="button" className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-semibold text-accent hover:underline" onClick={() => void abrirPostInstagramPorCodigo(codigo, 'encamino')}><Camera size={13} /> Crear post e historia “Llega pronto”</button>}
       </Seccion>}
 
       {item.tracking && <Seccion titulo="Envío">
