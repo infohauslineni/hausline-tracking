@@ -101,8 +101,14 @@ export function ProductoTiendaPage() {
   const extras = ordenarTallas(Object.keys(tallas).filter((t) => !grilla.includes(t)))
   const marcas = useMemo(() => [...new Set(todos.map((p) => String(p.datos.marca || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [todos])
 
+  // Tocar una talla la pone o la quita. "En Nicaragua" se marca aparte (en la tabla de abajo) para
+  // que nunca quede en Entrega inmediata por un toque de más.
   const tocarTalla = (t: string) => {
-    setTallas((x) => { const n = { ...x }; if (!n[t]) n[t] = 'encargo'; else if (n[t] === 'encargo') n[t] = 'ei'; else delete n[t]; return n })
+    setTallas((x) => { const n = { ...x }; if (n[t]) delete n[t]; else n[t] = 'encargo'; return n })
+    setSucio(true)
+  }
+  const alternarNicaragua = (t: string) => {
+    setTallas((x) => ({ ...x, [t]: x[t] === 'ei' ? 'encargo' : 'ei' }))
     setUnidades((u) => ({ ...u, [t]: u[t] || 1 }))
     setSucio(true)
   }
@@ -227,14 +233,14 @@ export function ProductoTiendaPage() {
           </div>
         </Seccion>
 
-        <Seccion titulo="Tallas y disponibilidad" ayuda="Un toque = se encarga · dos toques = está en Nicaragua (Entrega inmediata) · tres = quitar.">
+        <Seccion titulo="Tallas y disponibilidad" ayuda="Tocá las tallas que se pueden encargar. Si una ya está en Nicaragua, marcala abajo con “En Nicaragua”.">
           {grilla.length > 0 && <div className="flex flex-wrap gap-2">{grilla.map((t) => <BotonTalla key={t} t={t} estado={tallas[t]} onClick={() => tocarTalla(t)} />)}</div>}
           {extras.length > 0 && <div className="mt-2 flex flex-wrap gap-2">{extras.map((t) => <BotonTalla key={t} t={t} estado={tallas[t]} onClick={() => tocarTalla(t)} />)}</div>}
           <div className="mt-3 flex gap-2"><input className="campo max-w-44" value={tallaExtra} onChange={(e) => setTallaExtra(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); agregarTallaExtra() } }} placeholder={grilla.length ? 'Otra talla (ej. 36.5)' : 'Talla (ej. Única)'} /><button type="button" className="subtle-button min-h-10 px-3" onClick={agregarTallaExtra}>Agregar</button></div>
           {Object.keys(tallas).length > 0 ? <div className="mt-4 overflow-hidden rounded-lg border border-line">
             {ordenarTallas(Object.keys(tallas)).map((t) => <div key={t} className="flex min-h-12 items-center gap-3 border-b border-line px-3 py-1.5 last:border-0">
               <b className="w-12">{t}</b>
-              {tallas[t] === 'ei' ? <span className="rounded-md bg-[#1a1a1a] px-2 py-0.5 text-xs font-medium text-[#fff]">⚡ En Nicaragua</span> : <span className="text-xs text-muted">Por encargo</span>}
+              <button type="button" onClick={() => alternarNicaragua(t)} aria-pressed={tallas[t] === 'ei'} className={`min-h-9 rounded-lg px-3 text-xs font-semibold ${tallas[t] === 'ei' ? 'bg-[#1a1a1a] text-[#fff]' : 'border border-line text-muted'}`}>{tallas[t] === 'ei' ? '⚡ En Nicaragua · quitar' : 'Por encargo · marcar en Nicaragua'}</button>
               {tallas[t] === 'ei' && <label className="ml-auto flex items-center gap-2 text-xs text-muted">Unidades <input className="campo w-16 text-center" inputMode="numeric" value={unidades[t] || 1} onChange={(e) => { setUnidades((u) => ({ ...u, [t]: Math.max(1, Math.round(num(e.target.value)) || 1) })); setSucio(true) }} /></label>}
             </div>)}
           </div> : <label className="mt-4 flex min-h-10 items-center gap-2 text-sm"><input type="checkbox" className="size-5" checked={Boolean(d.entregaInmediata)} onChange={(e) => cambiar('entregaInmediata', e.target.checked)} /> Está en Nicaragua (Entrega inmediata, producto sin tallas)</label>}
