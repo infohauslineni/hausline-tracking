@@ -105,6 +105,7 @@ export function ResenasPage() {
                     {r.destacada && <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent">Destacada</span>}
                   </div>
                   {r.comentario && <p className="mt-2 text-sm text-muted">{r.comentario}</p>}
+                  {r.foto_url && <a href={r.foto_url} target="_blank" rel="noreferrer" className="mt-3 block w-28 overflow-hidden rounded-lg border border-line" title="Ver la foto del cliente"><img src={r.foto_url} alt="Foto del cliente" loading="lazy" className="aspect-[4/5] w-full object-cover" /></a>}
                   <p className="mt-2 text-[11px] uppercase tracking-wide text-muted">
                     {[r.producto_codigo ? `Producto ${r.producto_codigo}` : null, r.pedido_codigo ? `Pedido ${r.pedido_codigo}` : null, fechaCorta(r.created_at)].filter(Boolean).join(' · ')}
                   </p>

@@ -7,6 +7,7 @@ import { automatizaciones, historiaEntregaInmediata, pedirResenasAhora } from '.
 import { hacerRespaldo } from './_respaldo.js'
 import { enviarCorreoCuponCliente, enviarCorreoRedes } from './_correo-auto.js'
 import { leerLista, quitarDeLista, revisionCompleta } from './_rebotes.js'
+import { resenaPublica } from './_resena-publica.js'
 
 // La tarea de cada 15 min hace varias cosas (avisos, recordatorios, reporte): le damos margen.
 export const config = { maxDuration: 60 }
@@ -911,6 +912,8 @@ export default async function handler(request, response) {
 
   // Fotos del seguimiento público (sin sesión: basta el código del pedido).
   if (body.fotosPublicas) return fotosPedidoPublico(response, body)
+  // Reseña desde la tienda (con foto opcional). Sin sesión: basta el código del pedido.
+  if (body.resenaPublica) return resenaPublica(response, body)
 
   // Reenvío manual desde el panel (JWT del usuario, no el secreto del webhook).
   if (body.resend) return reenviarFotosEtapa(request, response, body, authorization)
