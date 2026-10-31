@@ -97,7 +97,7 @@ async function postEntrega(db) {
     .select('created_at, pedidos!inner(id, codigo, estado, cliente_id, clientes(nombre, correo))')
     .eq('estado_nuevo', 'entregado')
     .gte('created_at', new Date(Date.now() - 40 * DIA).toISOString())
-    .lte('created_at', new Date(Date.now() - 5 * DIA).toISOString())
+    .lte('created_at', new Date(Date.now() - 1 * DIA).toISOString())
     .limit(500)
   if (error) throw new Error(error.message)
   let recompra = 0, resena = 0
@@ -111,8 +111,9 @@ async function postEntrega(db) {
     if (!correo) continue
     const dias = (Date.now() - new Date(h.created_at).getTime()) / DIA
 
-    // 8. Reseña: días 5 a 12, si no hay ninguna reseña de ese pedido.
-    if (dias >= 5 && dias <= 12) {
+    // 8. Reseña: desde 1 día después de entregado (hasta el día 14), si no hay reseña de ese pedido.
+    //    (Antes era del día 5 al 12; los entregados hace 1–14 días sin reseña la reciben en la próxima vuelta.)
+    if (dias >= 1 && dias <= 14) {
       const { count } = await db.from('resenas').select('id', { count: 'exact', head: true }).eq('pedido_codigo', p.codigo)
       if (!count && await unaVez(`resena:${p.codigo}`, 'recordatorio_resena', { codigo: p.codigo, destinatario: correo }, () =>
         enviarCorreoRecordatorioResena({ correo, nombre: cli?.nombre ?? null, codigo: p.codigo }))) resena++

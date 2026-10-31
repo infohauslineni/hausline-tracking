@@ -138,8 +138,8 @@ export function ProductoTiendaPage() {
       setTodos((l) => [prod, ...l.filter((x) => x.codigo.toUpperCase() !== (previo?.codigo ?? datos.codigo).toUpperCase())])
       toast.success(estado === 'activo' ? 'Guardado. Ya se ve en la tienda.' : estado === 'borrador' ? 'Guardado como borrador (no se ve en la tienda).' : 'Guardado. Está oculto en la tienda.')
       setSucio(false)
-      if (esNuevo || previo?.codigo.toUpperCase() !== datos.codigo) navigate(`/tienda/${encodeURIComponent(datos.codigo)}`, { replace: true })
-      else cargarEn(prod)
+      // Al guardar vuelve a la lista de productos.
+      navigate('/tienda')
     } catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo guardar.') }
     finally { setGuardando(false) }
   }
