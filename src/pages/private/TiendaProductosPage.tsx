@@ -4,13 +4,13 @@ import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '../../contexts/AuthContext'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
-import { cambiarEstadoProductos, conectadoCatalogo, disponibilidad, enOferta, estadoDe, listarProductosTienda, productosEnCache, type EstadoTienda, type ProductoTienda } from '../../services/productosTienda.service'
+import { cambiarEstadoProductos, conectadoCatalogo, costosTracking, disponibilidad, enOferta, estadoDe, listarProductosTienda, productosEnCache, type EstadoTienda, type ProductoTienda } from '../../services/productosTienda.service'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { ConectarTienda } from './VentaLibrePage'
 
 // PRODUCTOS DE LA TIENDA: lista estilo Shopify (pestañas, búsqueda, filtros, acciones en grupo).
 // En el teléfono cada producto es una tarjeta. Tocar un producto abre su ficha (/tienda/:codigo).
-type Tab = 'todos' | 'activo' | 'ei' | 'encamino' | 'revisar' | 'oferta' | 'sinfoto'
+type Tab = 'todos' | 'activo' | 'ei' | 'encamino' | 'revisar' | 'oferta' | 'sinfoto' | 'sincosto'
 type Orden = 'nuevos' | 'precio-asc' | 'precio-desc' | 'nombre'
 const POR_PAGINA = 60
 const usd = (n: number) => `$${Number.isInteger(n) ? n : n.toFixed(2)}`
@@ -44,8 +44,12 @@ export function TiendaProductosPage() {
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [pagina, setPagina] = useState(1)
   const [trabajando, setTrabajando] = useState(false)
+  // Costos del panel (productos.precio_compra) por código: se muestran con el margen.
+  const [costos, setCostos] = useState<Map<string, number>>(new Map())
+  const costoDe = (p: ProductoTienda) => costos.get(p.codigo.toUpperCase()) ?? 0
+  const ventaDe = (p: ProductoTienda) => (p.datos.cotizar ? 0 : enOferta(p.datos) ? Number(p.datos.precioOferta) : Number(p.datos.precio) || 0)
 
-  const cargar = () => { setCargando(true); void listarProductosTienda().then(setItems).catch((e) => { toast.error(e instanceof Error ? e.message : 'No se pudieron cargar los productos.'); if (/sesión/i.test(String(e?.message))) setConectado(false) }).finally(() => setCargando(false)) }
+  const cargar = () => { setCargando(true); void costosTracking().then(setCostos).catch(() => undefined); void listarProductosTienda().then(setItems).catch((e) => { toast.error(e instanceof Error ? e.message : 'No se pudieron cargar los productos.'); if (/sesión/i.test(String(e?.message))) setConectado(false) }).finally(() => setCargando(false)) }
   useEffect(() => { void conectadoCatalogo().then((ok) => { setConectado(ok); if (ok) cargar(); else setCargando(false) }) }, [])
   useEffect(() => { setPagina(1) }, [tab, q, marca, categoria, orden])
 
@@ -57,7 +61,8 @@ export function TiendaProductosPage() {
     revisar: items.filter((p) => estadoDe(p) !== 'activo').length,
     oferta: items.filter((p) => enOferta(p.datos)).length,
     sinfoto: items.filter((p) => !p.datos.imagen).length,
-  }), [items])
+    sincosto: items.filter((p) => estadoDe(p) === 'activo' && !(costos.get(p.codigo.toUpperCase()) ?? 0)).length,
+  }), [items, costos])
   const marcas = useMemo(() => [...new Set(items.map((p) => String(p.datos.marca || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [items])
   const categorias = useMemo(() => [...new Set(items.map((p) => p.datos.categoria).filter(Boolean))].sort(), [items])
 
@@ -71,6 +76,7 @@ export function TiendaProductosPage() {
       if (tab === 'revisar' && est === 'activo') return false
       if (tab === 'oferta' && !enOferta(p.datos)) return false
       if (tab === 'sinfoto' && p.datos.imagen) return false
+      if (tab === 'sincosto' && (est !== 'activo' || (costos.get(p.codigo.toUpperCase()) ?? 0) > 0)) return false
       if (marca && String(p.datos.marca).trim() !== marca) return false
       if (categoria && p.datos.categoria !== categoria) return false
       return !t || `${p.datos.nombre} ${p.codigo} ${p.datos.marca}`.toLowerCase().includes(t)
@@ -79,7 +85,7 @@ export function TiendaProductosPage() {
     else if (orden === 'precio-desc') r.sort((a, b) => Number(b.datos.precio) - Number(a.datos.precio))
     else if (orden === 'nombre') r.sort((a, b) => a.datos.nombre.localeCompare(b.datos.nombre))
     return r
-  }, [items, tab, q, marca, categoria, orden])
+  }, [items, tab, q, marca, categoria, orden, costos])
   const visibles = filtrados.slice(0, pagina * POR_PAGINA)
   const todosSel = visibles.length > 0 && visibles.every((p) => sel.has(p.codigo))
   const alternar = (c: string) => setSel((s) => { const n = new Set(s); if (n.has(c)) n.delete(c); else n.add(c); return n })
@@ -93,7 +99,7 @@ export function TiendaProductosPage() {
 
   if (conectado === false) return <div><Cabecera /><ConectarTienda email={user?.email ?? ''} onOk={() => { setConectado(true); cargar() }} /></div>
 
-  const TABS: [Tab, string][] = [['todos', 'Todos'], ['activo', 'Activos'], ['ei', 'Entrega inmediata'], ['encamino', 'Llega pronto'], ['revisar', 'Borradores y ocultos'], ['oferta', 'En oferta'], ['sinfoto', 'Sin foto']]
+  const TABS: [Tab, string][] = [['todos', 'Todos'], ['activo', 'Activos'], ['ei', 'Entrega inmediata'], ['encamino', 'Llega pronto'], ['revisar', 'Borradores y ocultos'], ['oferta', 'En oferta'], ['sincosto', 'Sin costo'], ['sinfoto', 'Sin foto']]
   return <div>
     <Cabecera onRecargar={cargar} cargando={cargando} />
     <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -123,20 +129,20 @@ export function TiendaProductosPage() {
         : !filtrados.length ? <p className="p-8 text-center text-sm text-muted">No hay productos con ese filtro.</p>
         : <>
           {/* Encabezado (solo computadora) */}
-          <div className="hidden grid-cols-[32px_minmax(0,2.4fr)_110px_minmax(0,1.6fr)_minmax(0,1fr)_90px_20px] items-center gap-3 border-b border-line bg-white/[0.02] px-3 py-2 text-xs font-medium text-muted lg:grid">
+          <div className="hidden grid-cols-[32px_minmax(0,2.4fr)_110px_minmax(0,1.6fr)_minmax(0,1fr)_120px_20px] items-center gap-3 border-b border-line bg-white/[0.02] px-3 py-2 text-xs font-medium text-muted lg:grid">
             <button type="button" aria-label={todosSel ? 'Quitar todos' : 'Elegir todos'} onClick={() => setSel(todosSel ? new Set() : new Set(visibles.map((p) => p.codigo)))} className={`grid size-5 place-items-center rounded border ${todosSel ? 'border-accent bg-accent text-[#fff]' : 'border-line'}`}>{todosSel && <Check size={13} />}</button>
             <span>Producto</span><span>Estado</span><span>Disponibilidad</span><span>Categoría · marca</span><span className="text-right">Precio</span><span />
           </div>
           <ul className="divide-y divide-line">
             {visibles.map((p) => {
               const on = sel.has(p.codigo), oferta = enOferta(p.datos)
-              return <li key={p.codigo} className={`grid cursor-pointer grid-cols-[28px_minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 px-3 py-3 hover:bg-white/[0.02] lg:grid-cols-[32px_minmax(0,2.4fr)_110px_minmax(0,1.6fr)_minmax(0,1fr)_90px_20px] lg:items-center lg:py-2.5 ${on ? 'bg-accent/[0.05]' : ''}`} onClick={() => navigate(`/tienda/${encodeURIComponent(p.codigo)}`)}>
+              return <li key={p.codigo} className={`grid cursor-pointer grid-cols-[28px_minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 px-3 py-3 hover:bg-white/[0.02] lg:grid-cols-[32px_minmax(0,2.4fr)_110px_minmax(0,1.6fr)_minmax(0,1fr)_120px_20px] lg:items-center lg:py-2.5 ${on ? 'bg-accent/[0.05]' : ''}`} onClick={() => navigate(`/tienda/${encodeURIComponent(p.codigo)}`)}>
                 <button type="button" aria-label={on ? 'Quitar de la selección' : 'Elegir'} onClick={(e) => { e.stopPropagation(); alternar(p.codigo) }} className="row-span-3 -m-2 mt-1 grid size-10 place-items-center self-start lg:row-span-1 lg:-m-2.5 lg:self-center"><span className={`grid size-5 place-items-center rounded border ${on ? 'border-accent bg-accent text-[#fff]' : 'border-line'}`}>{on && <Check size={13} />}</span></button>
                 <div className="flex min-w-0 items-center gap-3">
                   {p.datos.imagen ? <img src={resolverImagenCatalogo(p.datos.imagen)} alt="" loading="lazy" className="size-12 shrink-0 rounded-lg border border-line object-cover lg:size-10" /> : <span className="grid size-12 shrink-0 place-items-center rounded-lg border border-dashed border-line text-muted lg:size-10"><ImageOff size={16} /></span>}
                   <div className="min-w-0"><b className="line-clamp-2 text-sm font-semibold lg:line-clamp-1">{p.datos.nombre}</b><span className="text-xs text-muted">{p.codigo}{p.origen === 'original' ? ' · de fábrica' : ''}</span></div>
                 </div>
-                <div className="text-right lg:order-last lg:col-start-6 lg:row-start-1"><b className="text-sm">{p.datos.cotizar ? 'Cotizar' : usd(oferta ? Number(p.datos.precioOferta) : Number(p.datos.precio))}</b>{oferta && <span className="block text-[11px] text-muted line-through">{usd(Number(p.datos.precio))}</span>}</div>
+                <div className="text-right lg:order-last lg:col-start-6 lg:row-start-1"><b className="text-sm">{p.datos.cotizar ? 'Cotizar' : usd(oferta ? Number(p.datos.precioOferta) : Number(p.datos.precio))}</b>{oferta && <span className="block text-[11px] text-muted line-through">{usd(Number(p.datos.precio))}</span>}{(() => { const c = costoDe(p), v = ventaDe(p); if (!c) return <span className="block text-[11px] text-muted">sin costo</span>; const m = v > 0 ? Math.round(((v - c) / v) * 100) : 0; return <span className={`block text-[11px] ${m < 25 ? 'text-amber-200' : 'text-muted'}`}>costo {usd(c)} · {m} %</span> })()}</div>
                 <div className="col-start-2 lg:col-start-3 lg:row-start-1"><EstadoChip estado={estadoDe(p)} /></div>
                 <div className="col-span-2 col-start-2 lg:col-span-1 lg:col-start-4 lg:row-start-1"><Disponibilidad p={p} /></div>
                 <span className="hidden truncate text-xs text-muted lg:col-start-5 lg:row-start-1 lg:block">{p.datos.categoria}{p.datos.marca ? ` · ${p.datos.marca}` : ''}</span>

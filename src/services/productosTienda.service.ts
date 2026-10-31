@@ -127,11 +127,31 @@ export async function listarProductosTienda(): Promise<ProductoTienda[]> {
   return cache
 }
 
-// Costo del producto en el tracking (productos.precio_compra), para calcular la ganancia.
+// COSTO del producto = productos.precio_compra del tracking (la misma tabla que usan la ganancia,
+// los pedidos y "Pagar al proveedor"). Antes se editaba en "Costos de productos"; ahora en la ficha.
 export async function costoDe(codigo: string): Promise<number> {
   if (!supabase || !codigo) return 0
   const { data } = await supabase.from('productos').select('precio_compra').eq('codigo', codigo.trim().toUpperCase()).maybeSingle()
   return Number(data?.precio_compra) || 0
+}
+// Todos los costos de una vez (para la lista): código → costo.
+export async function costosTracking(): Promise<Map<string, number>> {
+  if (!supabase) return new Map()
+  const { data } = await supabase.from('productos').select('codigo, precio_compra').limit(5000)
+  return new Map(((data ?? []) as { codigo: string; precio_compra: number | null }[]).map((r) => [String(r.codigo).trim().toUpperCase(), Number(r.precio_compra) || 0]))
+}
+// Guarda el costo en el tracking. Si el producto todavía no existe ahí (recién creado), lo crea con
+// los datos de la tienda; la sincronización del catálogo mantiene el resto (nombre, precio, foto).
+export async function guardarCosto(d: DatosTienda, costo: number) {
+  if (!supabase) return
+  const codigo = d.codigo.trim().toUpperCase()
+  const venta = d.cotizar ? 0 : enOferta(d) ? Number(d.precioOferta) : Number(d.precio) || 0
+  const valor = Math.max(0, Math.round(costo * 100) / 100)
+  const { data: fila } = await supabase.from('productos').select('id').eq('codigo', codigo).maybeSingle()
+  const { error } = fila
+    ? await supabase.from('productos').update({ precio_compra: valor }).eq('id', fila.id)
+    : await supabase.from('productos').insert({ codigo, nombre: d.nombre || codigo, marca: d.marca || null, categoria: d.categoria || null, tallas: d.tallas ?? [], precio_venta: venta, precio_compra: valor, imagen: d.imagen || null, activo: true })
+  if (error) throw new Error(`No se pudo guardar el costo: ${error.message}`)
 }
 
 // Siguiente código para una marca, siguiendo los que ya existen (GG021 → GG022, CLW006 → CLW007).

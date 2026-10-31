@@ -17,7 +17,6 @@ const SolicitudesPage = lazy(() => import('./pages/private/SolicitudesPage').the
 const LogisticaPage = lazy(() => import('./pages/private/LogisticaPage').then((module) => ({ default: module.LogisticaPage })))
 const ConfiguracionPage = lazy(() => import('./pages/private/ConfiguracionPage').then((module) => ({ default: module.ConfiguracionPage })))
 const VentasPage = lazy(() => import('./pages/private/VentasPage').then((module) => ({ default: module.VentasPage })))
-const ProductosPage = lazy(() => import('./pages/private/ProductosPage').then((module) => ({ default: module.ProductosPage })))
 const TiendaProductosPage = lazy(() => import('./pages/private/TiendaProductosPage').then((module) => ({ default: module.TiendaProductosPage })))
 const ProductoTiendaPage = lazy(() => import('./pages/private/ProductoTiendaPage').then((module) => ({ default: module.ProductoTiendaPage })))
 const PagosPage = lazy(() => import('./pages/private/PagosPage').then((module) => ({ default: module.PagosPage })))
@@ -62,7 +61,8 @@ export function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/pedidos/nuevo" element={<NuevoPedidoPage />} />
           <Route path="/ventas" element={<VentasPage />} />
-          <Route path="/productos" element={<ProductosPage />} />
+          {/* Costos de productos se unió a Productos (el costo se edita en la ficha). */}
+          <Route path="/productos" element={<Navigate to="/tienda" replace />} />
           <Route path="/tienda" element={<TiendaProductosPage />} />
           <Route path="/tienda/:codigo" element={<ProductoTiendaPage />} />
           <Route path="/stock" element={<InventarioPage />} />

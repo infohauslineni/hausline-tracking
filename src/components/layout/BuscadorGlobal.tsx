@@ -61,7 +61,7 @@ export function BuscadorGlobal({ esAdmin, pantallas }: { esAdmin: boolean; panta
     const compras = datos.compras.filter((i) => [i.producto, i.codigo, i.marca, i.talla_color, i.tracking].some((v) => norm(v).includes(t)))
       .slice(0, 5).map((i) => ({ id: `i-${i.id}`, grupo: 'Compras libres' as const, titulo: `${i.codigo ? `${i.codigo} · ` : ''}${i.producto}`, detalle: [i.talla_color && `Talla ${i.talla_color}`, { en_transito: 'En camino', en_inventario: 'Disponible', reservado: 'Apartado', vendido: 'Vendido', descartado: 'Descartado' }[i.estado]].filter(Boolean).join(' · '), ir: cerrar(() => { fijarEstadoVista('stock.busqueda', i.codigo || i.producto); fijarEstadoVista('stock.filtro', 'todos'); navigate('/stock') }) }))
     const productos = datos.productos.filter((p) => [p.nombre, p.codigo, p.marca].some((v) => norm(v).includes(t)))
-      .slice(0, 5).map((p) => ({ id: `r-${p.id}`, grupo: 'Productos' as const, titulo: `${p.codigo} · ${p.nombre}`, detalle: [p.marca, `venta $${Number(p.precio_venta || 0).toFixed(2)}`].filter(Boolean).join(' · '), ir: cerrar(() => navigate('/productos')) }))
+      .slice(0, 5).map((p) => ({ id: `r-${p.id}`, grupo: 'Productos' as const, titulo: `${p.codigo} · ${p.nombre}`, detalle: [p.marca, `venta $${Number(p.precio_venta || 0).toFixed(2)}`].filter(Boolean).join(' · '), ir: cerrar(() => navigate(`/tienda/${encodeURIComponent(p.codigo)}`)) }))
     return [...pedidos, ...clientes, ...compras, ...productos, ...irA]
   }, [q, datos, pantallas, navigate])
 

@@ -64,9 +64,8 @@ const operaciones: NavItem[] = [
 const clientesProductos: NavItem[] = [
   // Clientes y Reseñas van juntos (pestañas dentro del mismo apartado).
   { to: '/clientes', label: 'Clientes y reseñas', icon: Users, tambien: ['/resenas'] },
-  // Productos de la tienda (reemplaza al admin.html viejo) y, aparte, los costos del tracking.
-  { to: '/tienda', label: 'Productos', icon: Store },
-  { to: '/productos', label: 'Costos de productos', icon: PackageSearch },
+  // Productos de la tienda (reemplaza al admin.html viejo). El costo se edita en la ficha.
+  { to: '/tienda', label: 'Productos', icon: Store, tambien: ['/productos'] },
   // Un solo apartado con dos pestañas (Compras libres / Venta libre): siguen siendo páginas aparte.
   { to: '/stock', label: 'Compras y ventas libres', icon: HandCoins, tambien: ['/venta-libre'] },
 ]

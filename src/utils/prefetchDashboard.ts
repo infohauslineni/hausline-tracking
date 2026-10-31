@@ -3,7 +3,7 @@ const routeLoaders: Record<string, () => Promise<unknown>> = {
   '/ventas': () => import('../pages/private/VentasPage'),
   '/pedidos': () => import('../pages/private/PedidosPage'),
   '/clientes': () => import('../pages/private/ClientesPage'),
-  '/productos': () => import('../pages/private/ProductosPage'),
+  '/tienda': () => import('../pages/private/TiendaProductosPage'),
   '/stock': () => import('../pages/private/InventarioPage'),
   '/pagos': () => import('../pages/private/PagosPage'),
   '/gastos': () => import('../pages/private/GastosPage'),
