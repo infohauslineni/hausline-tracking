@@ -98,7 +98,7 @@ export function VentaLibrePage() {
   </div>
 }
 
-function ConectarTienda({ email: inicial, onOk }: { email: string; onOk: () => void }) {
+export function ConectarTienda({ email: inicial, onOk }: { email: string; onOk: () => void }) {
   const [email, setEmail] = useState(inicial)
   const [password, setPassword] = useState('')
   const [enviando, setEnviando] = useState(false)

@@ -112,6 +112,31 @@ async function leerCatalogoTienda() {
     })) }
 }
 
+// Catálogo BASE de la tienda tal cual está en productos.js (todos los campos), con el nombre,
+// la descripción y la marca que ve el cliente (mapa nombresReales). Lo usa la pantalla
+// "Productos" del panel para editar productos que todavía no tienen fila en catalogo_web.
+export async function leerBaseCruda() {
+  const res = await fetch(`${STORE_SCRIPT_URL}?base=${Date.now()}`, { headers: { accept: 'application/javascript,text/javascript,*/*' }, cache: 'no-store' })
+  if (!res.ok) return []
+  const source = await res.text()
+  let reales = {}
+  const ini = source.indexOf('const nombresReales')
+  if (ini >= 0) {
+    const a = source.indexOf('{', ini), b = source.indexOf('\n};', a)
+    try { reales = vm.runInNewContext(`(${source.slice(a, b + 2)})`, {}, { timeout: 1500 }) ?? {} } catch { reales = {} }
+  }
+  const start = source.indexOf('const productosBase')
+  if (start < 0) return []
+  const arrayStart = source.indexOf('[', start), arrayEnd = source.indexOf('\n];', arrayStart)
+  let lista
+  try { lista = vm.runInNewContext(source.slice(arrayStart, arrayEnd + 2), {}, { timeout: 1500 }) } catch { return [] }
+  if (!Array.isArray(lista)) return []
+  return lista.filter((p) => p && String(p.codigo || '').trim()).map((p) => {
+    const r = reales[String(p.codigo).trim()] || {}
+    return { ...p, codigo: String(p.codigo).trim(), nombreVisible: String(r.nombre || '').trim(), descripcionVisible: String(r.descripcion || '').trim(), marcaVisible: String(r.marca || '').trim() }
+  })
+}
+
 async function leerFeedJson() {
   try {
     const response = await fetch(`${CATALOG_URL}?actualizado=${Date.now()}`, { headers: { accept: 'application/json' }, cache: 'no-store' })

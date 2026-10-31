@@ -372,3 +372,12 @@ select option, select optgroup { background-color:#141414; color:#fff; }
 .hs-portal select option, .hsc-field select option { background-color:#fff; color:#111; }
 /* Filas de pestañas desplazables sin barra visible (Compras libres, Pedidos). */
 .sin-barra { scrollbar-width:none; }.sin-barra::-webkit-scrollbar { display:none; }
+
+/* Campos de la pantalla Productos (tienda) */
+.campo { width:100%; min-height:2.5rem; border-radius:.5rem; border:1px solid rgba(138,138,138,.45); background:var(--color-panel); padding:.5rem .75rem; font-size:.875rem; color:inherit; }
+.campo:focus { outline:2px solid var(--color-accent); outline-offset:-1px; border-color:transparent; }
+.campo:disabled { opacity:.6; }
+textarea.campo { resize:vertical; line-height:1.5; }
+
+/* Pantalla Productos: con cambios sin guardar, la barra Guardar ocupa el lugar del menú de abajo */
+body.sin-nav-movil nav[aria-label="Navegación móvil"] { display:none; }

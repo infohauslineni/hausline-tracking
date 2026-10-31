@@ -15,7 +15,7 @@ const BUCKET = 'catalogo'
 export const SITIO_TIENDA = 'https://hauslineshopni.es'
 
 let cliente: SupabaseClient | null = null
-function catalogo() {
+export function catalogo() {
   if (!cliente) cliente = createClient(CATALOGO_URL, CATALOGO_KEY, { auth: { storageKey: 'hausline-catalogo-auth', persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } })
   return cliente
 }
@@ -77,7 +77,7 @@ async function codigoOcupado(codigo: string, idPropio?: string) {
 }
 
 // JPEG (no webp): WhatsApp solo muestra la foto del link si es jpg/png.
-async function aJpeg(file: File): Promise<Blob> {
+export async function aJpeg(file: File): Promise<Blob> {
   if (!file.type.startsWith('image/')) throw new Error('El archivo no es una imagen.')
   const url = URL.createObjectURL(file)
   try {

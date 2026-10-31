@@ -1,4 +1,4 @@
-import { ArrowUpRight, BarChart3, Bell, Bike, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, Moon, MoreHorizontal, PackagePlus, PackageSearch, Plus, ReceiptText, RotateCcw, Settings, ShoppingBag, Sun, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
+import { ArrowUpRight, BarChart3, Bell, Bike, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, Moon, MoreHorizontal, PackagePlus, PackageSearch, Plus, Store, ReceiptText, RotateCcw, Settings, ShoppingBag, Sun, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { RestaurarScroll } from './Navegacion'
@@ -64,7 +64,9 @@ const operaciones: NavItem[] = [
 const clientesProductos: NavItem[] = [
   // Clientes y Reseñas van juntos (pestañas dentro del mismo apartado).
   { to: '/clientes', label: 'Clientes y reseñas', icon: Users, tambien: ['/resenas'] },
-  { to: '/productos', label: 'Productos', icon: PackageSearch },
+  // Productos de la tienda (reemplaza al admin.html viejo) y, aparte, los costos del tracking.
+  { to: '/tienda', label: 'Productos', icon: Store },
+  { to: '/productos', label: 'Costos de productos', icon: PackageSearch },
   // Un solo apartado con dos pestañas (Compras libres / Venta libre): siguen siendo páginas aparte.
   { to: '/stock', label: 'Compras y ventas libres', icon: HandCoins, tambien: ['/venta-libre'] },
 ]

@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { obtenerCatalogoMergeado, sincronizarProductos } from './_catalogo.js'
+import { leerBaseCruda, obtenerCatalogoMergeado, sincronizarProductos } from './_catalogo.js'
 
 // GET  → la app (comercial.service.ts → sincronizarCatalogo) recibe el catálogo unido de la
 //        tienda + feed + panel.
@@ -13,6 +13,14 @@ let ultimaCorrida = 0
 
 export default async function handler(request, response) {
   if (request.method === 'POST') return sincronizarAhora(response)
+  // ?base=1 → catálogo base de productos.js completo (pantalla Productos del panel).
+  if (String(request.query?.base ?? '') === '1') {
+    try {
+      const base = await leerBaseCruda()
+      response.setHeader('Cache-Control', 'no-store, max-age=0')
+      return response.status(base.length ? 200 : 502).json(base)
+    } catch { return response.status(502).json({ error: 'No se pudo leer productos.js.' }) }
+  }
   try {
     const merged = await obtenerCatalogoMergeado()
     if (!merged.length) return response.status(502).json({ error: 'No se pudo leer el catálogo publicado.' })
