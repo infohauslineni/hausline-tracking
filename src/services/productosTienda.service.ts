@@ -110,14 +110,14 @@ export async function listarProductosTienda(): Promise<ProductoTienda[]> {
     vistos.add(c)
     const f = porCodigo.get(c)
     if (f && f.datos) {
-      if (f.datos.ventaLibre === true) continue
+      if (f.datos.ventaLibre === true || f.datos.eliminado === true) continue
       const datos = { ...datosDeBase(p), ...f.datos, nombre: String(f.datos.nombreReal || f.datos.nombre || p.nombreVisible || p.nombre || c) } as DatosTienda
       salida.push({ codigo: p.codigo, datos, origen: 'editado', activo: f.activo, id: f.id, creado: f.created_at })
     } else salida.push({ codigo: p.codigo, datos: datosDeBase(p), origen: 'original', activo: true, id: null, creado: null })
   }
   for (const f of filas) {
     const c = String(f.codigo).trim().toUpperCase()
-    if (vistos.has(c) || !f.datos || f.datos.ventaLibre === true) continue
+    if (vistos.has(c) || !f.datos || f.datos.ventaLibre === true || f.datos.eliminado === true) continue
     vistos.add(c)
     const d = f.datos
     salida.push({ codigo: f.codigo, datos: { ...d, tallas: lista(d.tallas), colores: lista(d.colores), imagenes: lista(d.imagenes), nombre: String(d.nombreReal || d.nombre || f.codigo) } as DatosTienda, origen: 'nuevo', activo: f.activo, id: f.id, creado: f.created_at })
@@ -242,10 +242,17 @@ export async function cambiarEstadoProductos(items: ProductoTienda[], estado: Es
   lanzar(error, 'No se pudo cambiar el estado')
 }
 
-// Borra un producto cargado desde el panel. Uno de fábrica (productos.js) no se puede borrar: se oculta.
+// Elimina un producto. Si se cargó desde el panel, se borra su fila. Si es de fábrica (productos.js,
+// no se puede sacar del código), queda una fila inactiva con datos.eliminado=true: la tienda no lo
+// muestra (activo=false) y esta lista tampoco.
 export async function borrarProductoTienda(p: ProductoTienda) {
   if (vistaPrevia) throw new Error('Vista previa local: no se guarda nada.')
-  if (p.origen !== 'nuevo' || !p.id) throw new Error('Los productos de fábrica no se borran: ocultalo.')
-  const { error } = await catalogo().from('catalogo_web').delete().eq('id', p.id)
-  lanzar(error, 'No se pudo borrar')
+  if (p.origen === 'nuevo' && p.id) {
+    const { error } = await catalogo().from('catalogo_web').delete().eq('id', p.id)
+    lanzar(error, 'No se pudo eliminar')
+    return
+  }
+  const codigo = p.codigo.toUpperCase()
+  const { error } = await catalogo().from('catalogo_web').upsert({ codigo, activo: false, datos: { ...p.datos, codigo, borrador: false, eliminado: true } }, { onConflict: 'codigo' })
+  lanzar(error, 'No se pudo eliminar')
 }

@@ -1,10 +1,10 @@
-import { Check, ChevronRight, ExternalLink, ImageOff, Plus, RefreshCw, Search } from 'lucide-react'
+import { Check, ExternalLink, Eye, EyeOff, ImageOff, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '../../contexts/AuthContext'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
-import { cambiarEstadoProductos, conectadoCatalogo, costosTracking, disponibilidad, enOferta, estadoDe, listarProductosTienda, productosEnCache, type EstadoTienda, type ProductoTienda } from '../../services/productosTienda.service'
+import { borrarProductoTienda, cambiarEstadoProductos, conectadoCatalogo, costosTracking, disponibilidad, linkProducto, ordenarTallas, actualizarCache, enOferta, estadoDe, listarProductosTienda, productosEnCache, type EstadoTienda, type ProductoTienda } from '../../services/productosTienda.service'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { ConectarTienda } from './VentaLibrePage'
 
@@ -13,6 +13,9 @@ import { ConectarTienda } from './VentaLibrePage'
 type Tab = 'todos' | 'activo' | 'ei' | 'encamino' | 'revisar' | 'oferta' | 'sinfoto' | 'sincosto'
 type Orden = 'nuevos' | 'precio-asc' | 'precio-desc' | 'nombre'
 const POR_PAGINA = 60
+// Columnas de la tabla en computadora (escritas completas para que Tailwind las genere).
+const COLS = 'grid-cols-[32px_minmax(0,2.3fr)_120px_96px_minmax(0,1.5fr)_minmax(0,1fr)_168px]'
+const COLS_LG = 'lg:grid-cols-[32px_minmax(0,2.3fr)_120px_96px_minmax(0,1.5fr)_minmax(0,1fr)_168px]'
 const usd = (n: number) => `$${Number.isInteger(n) ? n : n.toFixed(2)}`
 const ESTADO: Record<EstadoTienda, { texto: string; clase: string }> = {
   activo: { texto: 'Activo', clase: 'bg-emerald-500/15 text-emerald-300' },
@@ -23,11 +26,20 @@ const ESTADO: Record<EstadoTienda, { texto: string; clase: string }> = {
 export function EstadoChip({ estado }: { estado: EstadoTienda }) {
   return <span className={`inline-flex shrink-0 items-center rounded-md px-2 py-0.5 text-xs font-medium ${ESTADO[estado].clase}`}>{ESTADO[estado].texto}</span>
 }
+// Tallas en corto: "37 a 44" si son números seguidos; si no, la lista ("S · M · L").
+function tallasCorto(t: string[]) {
+  const l = ordenarTallas(t)
+  if (!l.length) return ''
+  const nums = l.map(Number)
+  if (l.length > 2 && nums.every((n) => Number.isInteger(n)) && nums.every((n, i) => i === 0 || n - nums[i - 1] === 1)) return `${l[0]} a ${l[l.length - 1]}`
+  return l.length > 6 ? `${l.slice(0, 6).join(' · ')} +${l.length - 6}` : l.join(' · ')
+}
 function Disponibilidad({ p }: { p: ProductoTienda }) {
-  const d = disponibilidad(p.datos)
-  if (d.tipo === 'ei') return <span className="inline-flex items-center gap-1 rounded-md bg-[#1a1a1a] px-2 py-0.5 text-xs font-medium text-[#fff]">⚡ Entrega inmediata{d.tallas.length ? ` · ${d.tallas.join(', ')}` : ''}</span>
-  if (d.tipo === 'encamino') return <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-200">🚚 Llega pronto · {d.tallas.join(', ')}</span>
-  return <span className="text-xs text-muted">Por encargo{d.tallas.length ? ` · ${d.tallas.length} ${d.tallas.length === 1 ? 'talla' : 'tallas'}` : ''}</span>
+  const d = disponibilidad(p.datos), todas = p.datos.tallas ?? []
+  const lineaTallas = todas.length ? <span className="block truncate text-xs text-muted">{todas.length === 1 ? 'Talla' : 'Tallas'} {tallasCorto(todas)}</span> : <span className="block text-xs text-muted">Sin tallas</span>
+  if (d.tipo === 'ei') return <div className="min-w-0"><span className="inline-flex max-w-full items-center gap-1 truncate rounded-md bg-[#1a1a1a] px-2 py-0.5 text-xs font-medium text-[#fff]">⚡ En Nicaragua{d.tallas.length ? ` · ${tallasCorto(d.tallas)}` : ''}</span>{todas.length > d.tallas.length && lineaTallas}</div>
+  if (d.tipo === 'encamino') return <div className="min-w-0"><span className="inline-flex max-w-full items-center gap-1 truncate rounded-md bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-200">🚚 Llega pronto · {tallasCorto(d.tallas)}</span>{lineaTallas}</div>
+  return <div className="min-w-0"><span className="block truncate text-sm">{todas.length ? `${todas.length === 1 ? 'Talla' : 'Tallas'} ${tallasCorto(todas)}` : 'Sin tallas'}</span>{(p.datos.colores ?? []).length > 0 && <span className="block truncate text-xs text-muted">{p.datos.colores.join(' · ')}</span>}</div>
 }
 
 export function TiendaProductosPage() {
@@ -44,6 +56,8 @@ export function TiendaProductosPage() {
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [pagina, setPagina] = useState(1)
   const [trabajando, setTrabajando] = useState(false)
+  const [borrando, setBorrando] = useState<string | null>(null)
+  const [borrarSel, setBorrarSel] = useState(false)
   // Costos del panel (productos.precio_compra) por código: se muestran con el margen.
   const [costos, setCostos] = useState<Map<string, number>>(new Map())
   const costoDe = (p: ProductoTienda) => costos.get(p.codigo.toUpperCase()) ?? 0
@@ -97,6 +111,25 @@ export function TiendaProductosPage() {
     catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo cambiar.') } finally { setTrabajando(false) }
   }
 
+  // Acciones de una fila: ocultar/activar y eliminar.
+  const unEstado = async (p: ProductoTienda, estado: EstadoTienda) => {
+    setTrabajando(true)
+    try { await cambiarEstadoProductos([p], estado); toast.success(estado === 'activo' ? `${p.datos.nombre}: activo en la tienda.` : `${p.datos.nombre}: oculto.`); cargar() }
+    catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo cambiar.') } finally { setTrabajando(false) }
+  }
+  const eliminar = async (p: ProductoTienda) => {
+    setTrabajando(true)
+    try { await borrarProductoTienda(p); actualizarCache(null, p.codigo); setItems((l) => l.filter((x) => x.codigo !== p.codigo)); toast.success(`${p.datos.nombre} eliminado de la tienda.`); setBorrando(null) }
+    catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo eliminar.') } finally { setTrabajando(false) }
+  }
+
+  const eliminarSel = async () => {
+    const elegidos = items.filter((p) => sel.has(p.codigo))
+    setTrabajando(true)
+    try { for (const p of elegidos) { await borrarProductoTienda(p); actualizarCache(null, p.codigo) } setItems((l) => l.filter((x) => !sel.has(x.codigo))); toast.success(`${elegidos.length} ${elegidos.length === 1 ? 'producto eliminado' : 'productos eliminados'}.`); setSel(new Set()); setBorrarSel(false) }
+    catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo eliminar.') } finally { setTrabajando(false) }
+  }
+
   if (conectado === false) return <div><Cabecera /><ConectarTienda email={user?.email ?? ''} onOk={() => { setConectado(true); cargar() }} /></div>
 
   const TABS: [Tab, string][] = [['todos', 'Todos'], ['activo', 'Activos'], ['ei', 'Entrega inmediata'], ['encamino', 'Llega pronto'], ['revisar', 'Borradores y ocultos'], ['oferta', 'En oferta'], ['sincosto', 'Sin costo'], ['sinfoto', 'Sin foto']]
@@ -122,6 +155,8 @@ export function TiendaProductosPage() {
         <button type="button" disabled={trabajando} className="subtle-button min-h-10 shrink-0 px-3" onClick={() => void masivo('activo')}>Activar</button>
         <button type="button" disabled={trabajando} className="subtle-button min-h-10 shrink-0 px-3" onClick={() => void masivo('oculto')}>Ocultar</button>
         <button type="button" disabled={trabajando} className="subtle-button min-h-10 shrink-0 px-3" onClick={() => void masivo('borrador')}>Pasar a borrador</button>
+        <button type="button" disabled={trabajando} className="subtle-button min-h-10 shrink-0 px-3 text-[#b42318]" onClick={() => setBorrarSel(true)}>Eliminar</button>
+        {borrarSel && <span className="flex shrink-0 items-center gap-2"><b className="text-xs text-[#b42318]">¿Eliminar {sel.size}?</b><button type="button" disabled={trabajando} className="min-h-9 rounded-lg bg-[#b42318] px-3 text-xs font-semibold text-[#fff]" onClick={() => void eliminarSel()}>Sí</button><button type="button" className="subtle-button min-h-9 px-3 text-xs" onClick={() => setBorrarSel(false)}>No</button></span>}
         <button type="button" className="subtle-button min-h-10 shrink-0 px-3" onClick={() => setSel(new Set())}>Quitar selección</button>
       </div>}
 
@@ -129,24 +164,42 @@ export function TiendaProductosPage() {
         : !filtrados.length ? <p className="p-8 text-center text-sm text-muted">No hay productos con ese filtro.</p>
         : <>
           {/* Encabezado (solo computadora) */}
-          <div className="hidden grid-cols-[32px_minmax(0,2.4fr)_110px_minmax(0,1.6fr)_minmax(0,1fr)_120px_20px] items-center gap-3 border-b border-line bg-white/[0.02] px-3 py-2 text-xs font-medium text-muted lg:grid">
+          <div className={`hidden ${COLS} items-center gap-3 border-b border-line bg-white/[0.02] px-3 py-2 text-xs font-medium text-muted lg:grid`}>
             <button type="button" aria-label={todosSel ? 'Quitar todos' : 'Elegir todos'} onClick={() => setSel(todosSel ? new Set() : new Set(visibles.map((p) => p.codigo)))} className={`grid size-5 place-items-center rounded border ${todosSel ? 'border-accent bg-accent text-[#fff]' : 'border-line'}`}>{todosSel && <Check size={13} />}</button>
-            <span>Producto</span><span>Estado</span><span>Disponibilidad</span><span>Categoría · marca</span><span className="text-right">Precio</span><span />
+            <span>Producto</span><span>Precio · ganancia</span><span>Estado</span><span>Tallas y disponibilidad</span><span>Categoría · marca</span><span className="text-right">Acciones</span>
           </div>
           <ul className="divide-y divide-line">
             {visibles.map((p) => {
-              const on = sel.has(p.codigo), oferta = enOferta(p.datos)
-              return <li key={p.codigo} className={`grid cursor-pointer grid-cols-[28px_minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 px-3 py-3 hover:bg-white/[0.02] lg:grid-cols-[32px_minmax(0,2.4fr)_110px_minmax(0,1.6fr)_minmax(0,1fr)_120px_20px] lg:items-center lg:py-2.5 ${on ? 'bg-accent/[0.05]' : ''}`} onClick={() => navigate(`/tienda/${encodeURIComponent(p.codigo)}`)}>
-                <button type="button" aria-label={on ? 'Quitar de la selección' : 'Elegir'} onClick={(e) => { e.stopPropagation(); alternar(p.codigo) }} className="row-span-3 -m-2 mt-1 grid size-10 place-items-center self-start lg:row-span-1 lg:-m-2.5 lg:self-center"><span className={`grid size-5 place-items-center rounded border ${on ? 'border-accent bg-accent text-[#fff]' : 'border-line'}`}>{on && <Check size={13} />}</span></button>
+              const on = sel.has(p.codigo), oferta = enOferta(p.datos), est = estadoDe(p)
+              const c = costoDe(p), v = ventaDe(p), m = c && v > 0 ? Math.round(((v - c) / v) * 100) : null
+              const abrir = () => navigate(`/tienda/${encodeURIComponent(p.codigo)}`)
+              return <li key={p.codigo} className={`grid cursor-pointer grid-cols-[28px_minmax(0,1fr)_auto] gap-x-3 gap-y-2 px-3 py-3 hover:bg-white/[0.02] ${COLS_LG} lg:items-center lg:py-2.5 ${on ? 'bg-accent/[0.05]' : ''}`} onClick={abrir}>
+                <button type="button" aria-label={on ? 'Quitar de la selección' : 'Elegir'} onClick={(e) => { e.stopPropagation(); alternar(p.codigo) }} className="row-span-4 -m-2 mt-1 grid size-10 place-items-center self-start lg:row-span-1 lg:-m-2.5 lg:self-center"><span className={`grid size-5 place-items-center rounded border ${on ? 'border-accent bg-accent text-[#fff]' : 'border-line'}`}>{on && <Check size={13} />}</span></button>
                 <div className="flex min-w-0 items-center gap-3">
-                  {p.datos.imagen ? <img src={resolverImagenCatalogo(p.datos.imagen)} alt="" loading="lazy" className="size-12 shrink-0 rounded-lg border border-line object-cover lg:size-10" /> : <span className="grid size-12 shrink-0 place-items-center rounded-lg border border-dashed border-line text-muted lg:size-10"><ImageOff size={16} /></span>}
-                  <div className="min-w-0"><b className="line-clamp-2 text-sm font-semibold lg:line-clamp-1">{p.datos.nombre}</b><span className="text-xs text-muted">{p.codigo}{p.origen === 'original' ? ' · de fábrica' : ''}</span></div>
+                  {p.datos.imagen ? <img src={resolverImagenCatalogo(p.datos.imagen)} alt="" loading="lazy" className="size-12 shrink-0 rounded-lg border border-line object-cover lg:size-11" /> : <span className="grid size-12 shrink-0 place-items-center rounded-lg border border-dashed border-line text-muted lg:size-11"><ImageOff size={16} /></span>}
+                  <div className="min-w-0"><b className="line-clamp-2 text-sm font-semibold lg:line-clamp-1">{p.datos.nombre}</b><span className="text-xs text-muted">{p.codigo}</span></div>
                 </div>
-                <div className="text-right lg:order-last lg:col-start-6 lg:row-start-1"><b className="text-sm">{p.datos.cotizar ? 'Cotizar' : usd(oferta ? Number(p.datos.precioOferta) : Number(p.datos.precio))}</b>{oferta && <span className="block text-[11px] text-muted line-through">{usd(Number(p.datos.precio))}</span>}{(() => { const c = costoDe(p), v = ventaDe(p); if (!c) return <span className="block text-[11px] text-muted">sin costo</span>; const m = v > 0 ? Math.round(((v - c) / v) * 100) : 0; return <span className={`block text-[11px] ${m < 25 ? 'text-amber-200' : 'text-muted'}`}>costo {usd(c)} · {m} %</span> })()}</div>
-                <div className="col-start-2 lg:col-start-3 lg:row-start-1"><EstadoChip estado={estadoDe(p)} /></div>
-                <div className="col-span-2 col-start-2 lg:col-span-1 lg:col-start-4 lg:row-start-1"><Disponibilidad p={p} /></div>
-                <span className="hidden truncate text-xs text-muted lg:col-start-5 lg:row-start-1 lg:block">{p.datos.categoria}{p.datos.marca ? ` · ${p.datos.marca}` : ''}</span>
-                <ChevronRight size={16} className="hidden text-muted lg:col-start-7 lg:row-start-1 lg:block" />
+                {/* Precio y ganancia: al lado del producto (no al fondo de la fila) */}
+                <div className="text-right lg:text-left">
+                  <b className="text-sm">{p.datos.cotizar ? 'Cotizar' : usd(v)}</b>{oferta && <span className="ml-1.5 text-[11px] text-muted line-through">{usd(Number(p.datos.precio))}</span>}
+                  <span className={`block text-[11px] ${m === null ? 'text-muted' : m < 25 ? 'text-amber-200' : 'text-emerald-300'}`}>{m === null ? 'sin costo' : `gana ${usd(Math.round((v - c) * 100) / 100)} · ${m} %`}</span>
+                </div>
+                <div className="col-start-2 lg:col-start-auto"><EstadoChip estado={est} /></div>
+                <div className="col-span-2 col-start-2 min-w-0 lg:col-span-1 lg:col-start-auto"><Disponibilidad p={p} /></div>
+                <span className="hidden truncate text-xs text-muted lg:block">{p.datos.categoria}{p.datos.marca ? ` · ${p.datos.marca}` : ''}</span>
+                {/* Acciones */}
+                <div className="col-span-2 col-start-2 lg:col-span-1 lg:col-start-auto" onClick={(e) => e.stopPropagation()}>
+                  {borrando === p.codigo
+                    ? <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end"><span className="text-xs font-semibold text-[#b42318]">¿Eliminar?</span>
+                        <button type="button" disabled={trabajando} className="min-h-9 rounded-lg bg-[#b42318] px-3 text-xs font-semibold text-[#fff]" onClick={() => void eliminar(p)}>Sí, eliminar</button>
+                        <button type="button" className="subtle-button min-h-9 px-3 text-xs" onClick={() => setBorrando(null)}>No</button></div>
+                    : <div className="flex items-center justify-start gap-1.5 lg:justify-end">
+                        <Accion titulo="Editar" onClick={abrir}><Pencil size={15} /></Accion>
+                        <a className="grid size-10 place-items-center rounded-lg border border-line text-muted hover:text-white lg:size-9" href={linkProducto(p.codigo)} target="_blank" rel="noreferrer" title="Ver en la tienda" aria-label="Ver en la tienda"><ExternalLink size={15} /></a>
+                        <Accion titulo={est === 'activo' ? 'Ocultar de la tienda' : 'Activar en la tienda'} onClick={() => void unEstado(p, est === 'activo' ? 'oculto' : 'activo')}>{est === 'activo' ? <EyeOff size={15} /> : <Eye size={15} />}</Accion>
+                        <Accion titulo="Eliminar" peligro onClick={() => setBorrando(p.codigo)}><Trash2 size={15} /></Accion>
+                      </div>}
+                </div>
               </li>
             })}
           </ul>
@@ -154,6 +207,10 @@ export function TiendaProductosPage() {
         </>}
     </div>
   </div>
+}
+
+function Accion({ titulo, peligro, onClick, children }: { titulo: string; peligro?: boolean; onClick: () => void; children: React.ReactNode }) {
+  return <button type="button" title={titulo} aria-label={titulo} onClick={onClick} className={`grid size-10 place-items-center rounded-lg border border-line lg:size-9 ${peligro ? 'text-[#b42318] hover:bg-[#b42318]/10' : 'text-muted hover:text-white'}`}>{children}</button>
 }
 
 function Cabecera({ onRecargar, cargando }: { onRecargar?: () => void; cargando?: boolean }) {

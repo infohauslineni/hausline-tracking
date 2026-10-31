@@ -145,7 +145,7 @@ export function ProductoTiendaPage() {
   }
   const borrar = async () => {
     if (!previo) return
-    try { await borrarProductoTienda(previo); actualizarCache(null, previo.codigo); toast.success('Producto borrado.'); setSucio(false); navigate('/tienda') }
+    try { await borrarProductoTienda(previo); actualizarCache(null, previo.codigo); toast.success('Producto eliminado.'); setSucio(false); navigate('/tienda') }
     catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo borrar.') }
   }
 
@@ -299,9 +299,9 @@ export function ProductoTiendaPage() {
               <span className="text-[17px] font-semibold">{d.cotizar ? 'Cotiza el precio' : venta ? usd(venta) : 'Precio'}</span>{!d.cotizar && oferta > 0 && oferta < precio && <s className="ml-1.5 text-[13px] text-[#9C958A]">{usd(precio)}</s>}</div>
           </div>
         </Seccion>
-        {previo?.origen === 'nuevo' && <Seccion titulo="Borrar producto">
-          {!confirmarBorrar ? <button type="button" className="subtle-button min-h-10 px-3 text-[#b42318]" onClick={() => setConfirmarBorrar(true)}><Trash2 size={15} /> Borrar este producto</button>
-            : <div className="grid gap-2"><p className="text-sm">¿Seguro? Se borra de la tienda y no se puede deshacer. (Si solo querés pausarlo, poné el estado en Oculto.)</p><div className="flex gap-2"><button type="button" className="min-h-10 rounded-lg bg-[#b42318] px-4 text-sm font-semibold text-[#fff]" onClick={() => void borrar()}>Sí, borrar</button><button type="button" className="subtle-button min-h-10 px-4" onClick={() => setConfirmarBorrar(false)}>Cancelar</button></div></div>}
+        {previo && <Seccion titulo="Eliminar producto">
+          {!confirmarBorrar ? <button type="button" className="subtle-button min-h-10 px-3 text-[#b42318]" onClick={() => setConfirmarBorrar(true)}><Trash2 size={15} /> Eliminar este producto</button>
+            : <div className="grid gap-2"><p className="text-sm">¿Seguro? Deja de salir en la tienda y en esta lista. (Si solo querés pausarlo, poné el estado en Oculto.)</p><div className="flex gap-2"><button type="button" className="min-h-10 rounded-lg bg-[#b42318] px-4 text-sm font-semibold text-[#fff]" onClick={() => void borrar()}>Sí, eliminar</button><button type="button" className="subtle-button min-h-10 px-4" onClick={() => setConfirmarBorrar(false)}>Cancelar</button></div></div>}
         </Seccion>}
       </div>
     </div>
