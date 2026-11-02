@@ -80,7 +80,7 @@ function recortar(ctx: CanvasRenderingContext2D, t: string, max: number) {
   return `${t.trimEnd()}…`
 }
 
-const POR_HOJA = 6 // 2 columnas × 3 filas
+const POR_HOJA = 4 // 2 columnas × 2 filas: menos productos por hoja para que la foto se vea grande
 
 // Hojas 1080×1620 con la foto de cada producto y, debajo, código, talla, cantidad y pedido.
 // Fondo blanco y letra grande: es para que el proveedor lo lea rápido, no lleva marca ni precios.
@@ -88,8 +88,8 @@ export async function generarHojasProveedor(lineas: LineaCompra[]): Promise<Blob
   const hojas: Blob[] = []
   const total = Math.max(1, Math.ceil(lineas.length / POR_HOJA))
   const W = 1080, H = 1620, M = 40, CAB = 110, GAP = 24
-  const cw = (W - 2 * M - GAP) / 2, ch = (H - CAB - M - 2 * GAP) / 3
-  const FOTO = 270
+  const cw = (W - 2 * M - GAP) / 2, ch = (H - CAB - M - GAP) / 2
+  const FOTO = Math.round(ch - 210) // el resto de la celda es para el texto de abajo
   for (let h = 0; h < total; h++) {
     const grupo = lineas.slice(h * POR_HOJA, (h + 1) * POR_HOJA)
     const fotos = await Promise.all(grupo.map((l) => l.imagen ? cargar(resolverImagenCatalogo(l.imagen)) : Promise.resolve(null)))
