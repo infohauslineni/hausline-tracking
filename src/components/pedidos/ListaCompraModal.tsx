@@ -57,10 +57,10 @@ export function ListaCompraModal({ open, pedidos, onClose, onMarcados }: { open:
         <span><b className="text-white">{unidades}</b> {unidades === 1 ? 'producto' : 'productos'} de <b className="text-white">{pedidosIncluidos.length}</b> {pedidosIncluidos.length === 1 ? 'pedido' : 'pedidos'}</span>
         {yaEnviados > 0 && <label className="flex cursor-pointer items-center gap-2"><input type="checkbox" className="size-4 accent-accent" checked={verEnviados} onChange={(e) => setVerEnviados(e.target.checked)} /> Incluir {yaEnviados} ya enviados</label>}
       </div>
-      <div className="mt-3 max-h-[42vh] space-y-2 overflow-y-auto pr-1">
+      <div className="mt-3 max-h-[52vh] space-y-2 overflow-y-auto pr-1">
         {todas.map((l) => { const dentro = !fuera.has(l.clave); return <label key={l.clave} className={`flex cursor-pointer items-center gap-3 rounded-xl border p-2.5 transition ${dentro ? 'border-line bg-white/[.02]' : 'border-line opacity-45'}`}>
           <input type="checkbox" className="size-4 shrink-0 accent-accent" checked={dentro} onChange={() => alternar(l.clave)} />
-          <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-lg bg-white">{l.imagen ? <img src={resolverImagenCatalogo(l.imagen)} alt="" className="h-full w-full object-contain" loading="lazy" /> : <Package size={18} className="text-black/40" />}</span>
+          <span className="grid size-20 shrink-0 place-items-center overflow-hidden rounded-lg bg-white sm:size-24">{l.imagen ? <img src={resolverImagenCatalogo(l.imagen)} alt="" className="h-full w-full object-contain" loading="lazy" /> : <Package size={26} className="text-black/40" />}</span>
           <span className="min-w-0 flex-1"><strong className="block truncate text-sm">{l.codigo || l.producto} <span className="font-normal text-muted">· {l.talla}{l.cantidad > 1 ? ` · ${l.cantidad} unidades` : ''}</span></strong><span className="block truncate text-[11px] text-muted">{l.pedido}{l.cliente ? ` · ${l.cliente}` : ''}{l.codigo ? ` · ${l.producto}` : ''}{l.color ? ` · ${l.color}` : ''}</span></span>
         </label> })}
       </div>
