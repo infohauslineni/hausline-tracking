@@ -8,7 +8,9 @@ import {
   listarProductosTienda, ordenarTallas, productosEnCache, SUBCATEGORIAS, sugerirCodigo, TALLAS_CALZADO, TALLAS_ROPA, TIPOS_ROPA,
   type DatosTienda, type EstadoTienda, type FotoTienda, type ProductoTienda,
 } from '../../services/productosTienda.service'
+import { DATOS_PRECIO_DEFECTO, obtenerDatosPrecio, sugerirPrecios, tipoDeTienda, type DatosPrecio } from '../../services/preciosSugeridos.service'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
+import { TIPOS_PRODUCTO } from '../../utils/repartoCompra'
 import { abrirPostInstagram } from '../../utils/instagramPost'
 import { EstadoChip } from './TiendaProductosPage'
 import { ConectarTienda } from './VentaLibrePage'
@@ -47,6 +49,9 @@ export function ProductoTiendaPage() {
   const [costoTxt, setCostoTxt] = useState('')
   const [costoBase, setCostoBase] = useState(0)
   const costo = num(costoTxt)
+  // Márgenes y envío estimado para el precio sugerido y el mayorista (solo panel).
+  const [datosPrecio, setDatosPrecio] = useState<DatosPrecio>(DATOS_PRECIO_DEFECTO)
+  useEffect(() => { void obtenerDatosPrecio().then(setDatosPrecio).catch(() => undefined) }, [])
   const [sucio, setSucio] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [confirmarBorrar, setConfirmarBorrar] = useState(false)
@@ -259,6 +264,18 @@ export function ProductoTiendaPage() {
             {costo > 0 && venta > 0 ? <><span>Ganancia por unidad <b className={margen >= 25 ? 'text-emerald-300' : 'text-amber-200'}>{usd(Math.round(ganancia * 100) / 100)}</b></span><span>Margen <b className={margen >= 25 ? 'text-emerald-300' : 'text-amber-200'}>{margen} %</b></span><span>{margen < 25 ? '⚠️ Margen bajo' : '✓ Buen margen'}</span></>
               : <span>Poné el costo para ver tu ganancia y el margen. También se llena solo al registrar el pago al proveedor.</span>}
           </div>
+          {(() => {
+            const tipo = tipoDeTienda(d), sug = sugerirPrecios(costo, tipo, datosPrecio)
+            if (!sug) return null
+            return <div className="mt-3 rounded-lg border border-line px-3 py-2.5 text-sm">
+              <p className="text-xs text-muted">Costo {usd(costo)} + envío estimado {usd(sug.envio)} ({TIPOS_PRODUCTO[tipo].label.toLowerCase()}) = <b className="text-white">{usd(sug.base)}</b> · solo lo ves vos</p>
+              <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2">
+                <span>Precio sugerido ({datosPrecio.margenTienda} %) <b className="text-emerald-300">{usd(sug.tienda)}</b></span>
+                {!d.cotizar && Math.abs(precio - sug.tienda) > 0.004 && <button type="button" className="subtle-button min-h-9 px-3 text-xs" onClick={() => cambiar('precio', sug.tienda)}>Usar {usd(sug.tienda)}</button>}
+                <span>Mayorista ({datosPrecio.margenMayorista} %) <b className="text-sky-300">{usd(sug.mayorista)}</b></span>
+              </div>
+            </div>
+          })()}
         </Seccion>
 
         <Seccion titulo="Tallas y disponibilidad" ayuda="Tocá las tallas que se pueden encargar. Si una ya está en Nicaragua, marcala abajo con “En Nicaragua”.">

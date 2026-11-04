@@ -1,11 +1,14 @@
-import { Check, ExternalLink, Eye, EyeOff, ImageOff, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react'
+import { Calculator, Check, ExternalLink, Eye, EyeOff, ImageOff, Pencil, Plus, RefreshCw, Search, ShoppingCart, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '../../contexts/AuthContext'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { borrarProductoTienda, cambiarEstadoProductos, conectadoCatalogo, costosTracking, disponibilidad, linkProducto, ordenarTallas, actualizarCache, enOferta, estadoDe, listarProductosTienda, productosEnCache, type EstadoTienda, type ProductoTienda } from '../../services/productosTienda.service'
+import { DATOS_PRECIO_DEFECTO, obtenerDatosPrecio, sugerirPrecios, tipoDeTienda, type DatosPrecio } from '../../services/preciosSugeridos.service'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
+import { CarritoPrivadoModal } from '../../components/tienda/CarritoPrivadoModal'
+import { PreciosSugeridosModal } from '../../components/tienda/PreciosSugeridosModal'
 import { ConectarTienda } from './VentaLibrePage'
 
 // PRODUCTOS DE LA TIENDA: lista estilo Shopify (pestañas, búsqueda, filtros, acciones en grupo).
@@ -62,6 +65,11 @@ export function TiendaProductosPage() {
   const [costos, setCostos] = useState<Map<string, number>>(new Map())
   const costoDe = (p: ProductoTienda) => costos.get(p.codigo.toUpperCase()) ?? 0
   const ventaDe = (p: ProductoTienda) => (p.datos.cotizar ? 0 : enOferta(p.datos) ? Number(p.datos.precioOferta) : Number(p.datos.precio) || 0)
+  // Precio sugerido y mayorista (solo panel): costo + envío estimado con los márgenes guardados.
+  const [datosPrecio, setDatosPrecio] = useState<DatosPrecio>(DATOS_PRECIO_DEFECTO)
+  useEffect(() => { void obtenerDatosPrecio().then(setDatosPrecio).catch(() => undefined) }, [])
+  const [ajustesPrecio, setAjustesPrecio] = useState(false)
+  const [carrito, setCarrito] = useState<ProductoTienda[] | null>(null)
 
   const cargar = () => { setCargando(true); void costosTracking().then(setCostos).catch(() => undefined); void listarProductosTienda().then(setItems).catch((e) => { toast.error(e instanceof Error ? e.message : 'No se pudieron cargar los productos.'); if (/sesión/i.test(String(e?.message))) setConectado(false) }).finally(() => setCargando(false)) }
   useEffect(() => { void conectadoCatalogo().then((ok) => { setConectado(ok); if (ok) cargar(); else setCargando(false) }) }, [])
@@ -135,6 +143,12 @@ export function TiendaProductosPage() {
   const TABS: [Tab, string][] = [['todos', 'Todos'], ['activo', 'Activos'], ['ei', 'Entrega inmediata'], ['encamino', 'Llega pronto'], ['revisar', 'Borradores y ocultos'], ['oferta', 'En oferta'], ['sincosto', 'Sin costo'], ['sinfoto', 'Sin foto']]
   return <div>
     <Cabecera onRecargar={cargar} cargando={cargando} />
+    <div className="mt-3 flex flex-wrap gap-2">
+      <button type="button" className="subtle-button min-h-10 px-3" onClick={() => setCarrito([])}><ShoppingCart size={15} /> Carrito privado</button>
+      <button type="button" className="subtle-button min-h-10 px-3" onClick={() => setAjustesPrecio(true)}><Calculator size={15} /> Precios sugeridos · tienda {datosPrecio.margenTienda} % · mayorista {datosPrecio.margenMayorista} %</button>
+    </div>
+    {carrito && <CarritoPrivadoModal iniciales={carrito} todos={items.filter((p) => estadoDe(p) !== 'borrador')} costos={costos} datosPrecio={datosPrecio} onClose={() => setCarrito(null)} />}
+    {ajustesPrecio && <PreciosSugeridosModal datos={datosPrecio} onClose={() => setAjustesPrecio(false)} onGuardado={(d) => { setDatosPrecio(d); setAjustesPrecio(false) }} />}
     <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
       {[['Productos activos', cuenta.activo, 'en la tienda'], ['Entrega inmediata', cuenta.ei, 'ya en Nicaragua'], ['Llega pronto', cuenta.encamino, 'vienen en camino'], ['Para revisar', cuenta.revisar, 'borradores u ocultos']].map(([t, n, s]) =>
         <div key={String(t)} className="rounded-xl border border-line bg-panel p-3.5"><p className="text-xs font-medium text-muted">{t}</p><p className="mt-0.5 text-xl font-bold">{cargando && !items.length ? '…' : n}</p><p className="text-[11px] text-muted">{s}</p></div>)}
@@ -152,6 +166,7 @@ export function TiendaProductosPage() {
       </div>
       {sel.size > 0 && <div className="sin-barra flex items-center gap-2 overflow-x-auto border-b border-line bg-white/[0.02] px-3 py-2">
         <b className="shrink-0 text-sm">{sel.size} {sel.size === 1 ? 'seleccionado' : 'seleccionados'}</b>
+        <button type="button" className="primary-button min-h-10 shrink-0 px-3" onClick={() => setCarrito(items.filter((p) => sel.has(p.codigo)))}><ShoppingCart size={15} /> Carrito privado</button>
         <button type="button" disabled={trabajando} className="subtle-button min-h-10 shrink-0 px-3" onClick={() => void masivo('activo')}>Activar</button>
         <button type="button" disabled={trabajando} className="subtle-button min-h-10 shrink-0 px-3" onClick={() => void masivo('oculto')}>Ocultar</button>
         <button type="button" disabled={trabajando} className="subtle-button min-h-10 shrink-0 px-3" onClick={() => void masivo('borrador')}>Pasar a borrador</button>
@@ -172,6 +187,7 @@ export function TiendaProductosPage() {
             {visibles.map((p) => {
               const on = sel.has(p.codigo), oferta = enOferta(p.datos), est = estadoDe(p)
               const c = costoDe(p), v = ventaDe(p), m = c && v > 0 ? Math.round(((v - c) / v) * 100) : null
+              const sug = sugerirPrecios(c, tipoDeTienda(p.datos), datosPrecio)
               const abrir = () => navigate(`/tienda/${encodeURIComponent(p.codigo)}`)
               return <li key={p.codigo} className={`grid cursor-pointer grid-cols-[28px_minmax(0,1fr)_auto] gap-x-3 gap-y-2 px-3 py-3 hover:bg-white/[0.02] ${COLS_LG} lg:items-center lg:py-2.5 ${on ? 'bg-accent/[0.05]' : ''}`} onClick={abrir}>
                 <button type="button" aria-label={on ? 'Quitar de la selección' : 'Elegir'} onClick={(e) => { e.stopPropagation(); alternar(p.codigo) }} className="row-span-4 -m-2 mt-1 grid size-10 place-items-center self-start lg:row-span-1 lg:-m-2.5 lg:self-center"><span className={`grid size-5 place-items-center rounded border ${on ? 'border-accent bg-accent text-[#fff]' : 'border-line'}`}>{on && <Check size={13} />}</span></button>
@@ -183,6 +199,7 @@ export function TiendaProductosPage() {
                 <div className="text-right lg:text-left">
                   <b className="text-sm">{p.datos.cotizar ? 'Cotizar' : usd(v)}</b>{oferta && <span className="ml-1.5 text-[11px] text-muted line-through">{usd(Number(p.datos.precio))}</span>}
                   <span className={`block text-[11px] ${m === null ? 'text-muted' : m < 25 ? 'text-amber-200' : 'text-emerald-300'}`}>{m === null ? 'sin costo' : `gana ${usd(Math.round((v - c) * 100) / 100)} · ${m} %`}</span>
+                  {sug && <span className="block text-[11px] text-muted" title={`Costo + envío estimado ${usd(sug.base)}`}>sug. <b className={!p.datos.cotizar && v < sug.tienda ? 'text-amber-200' : 'text-white/80'}>{usd(sug.tienda)}</b> · may. <b className="text-sky-300">{usd(sug.mayorista)}</b></span>}
                 </div>
                 <div className="col-start-2 lg:col-start-auto"><EstadoChip estado={est} /></div>
                 <div className="col-span-2 col-start-2 min-w-0 lg:col-span-1 lg:col-start-auto"><Disponibilidad p={p} /></div>

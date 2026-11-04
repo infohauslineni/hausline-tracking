@@ -161,6 +161,20 @@ export async function crearEncargoPanel(i: EncargoPanelInput): Promise<string> {
   return String(data)
 }
 
+// "Carrito privado": varios productos con el precio que pone el equipo (mayorista, tienda o
+// especial), un solo código para el cliente (migración 202611050001). Devuelve el SOL-####.
+export type ItemCarritoPanel = { producto: string; productoCodigo?: string | null; marca?: string | null; talla?: string | null; color?: string | null; cantidad: number; precioUnitario: number; imagen?: string | null }
+export async function crearCarritoPanel(c: { nombre: string; whatsapp: string; correo?: string | null; ciudad?: string | null; direccion?: string | null; pago: '50' | 'total'; clienteId?: string | null; items: ItemCarritoPanel[] }): Promise<string> {
+  if (!supabase) throw new Error('Supabase no está configurado.')
+  const { data, error } = await supabase.rpc('crear_carrito_panel', {
+    p_nombre: c.nombre, p_whatsapp: c.whatsapp, p_correo: c.correo ?? null, p_ciudad: c.ciudad ?? null, p_direccion: c.direccion ?? null,
+    p_pago: c.pago, p_cliente_id: c.clienteId ?? null,
+    p_items: c.items.map((i) => ({ producto: i.producto, producto_codigo: i.productoCodigo ?? null, marca: i.marca ?? null, talla: i.talla ?? null, color: i.color ?? null, cantidad: i.cantidad, precio_unitario: i.precioUnitario, imagen: i.imagen ?? null })),
+  })
+  if (error) throw error
+  return String(data)
+}
+
 // Link de la tienda donde el cliente ve las cuentas y sube el comprobante.
 export const linkPagoEncargo = (codigo: string) => `https://hauslineshopni.es/checkout/?c=${encodeURIComponent(codigo)}&paso=pago`
 
