@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronLeft, ChevronRight, Copy, ExternalLink, Camera, ImagePlus, LoaderCircle, Star, Trash2, X } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Copy, Crop, ExternalLink, Camera, ImagePlus, LoaderCircle, Star, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -12,6 +12,7 @@ import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { abrirPostInstagram } from '../../utils/instagramPost'
 import { EstadoChip } from './TiendaProductosPage'
 import { ConectarTienda } from './VentaLibrePage'
+import { EncuadreFotoModal } from '../../components/tienda/EncuadreFotoModal'
 
 // FICHA DEL PRODUCTO (estilo Shopify). Columna principal: título, descripción, fotos, precio,
 // tallas y disponibilidad, tiempos. Columna lateral: estado, organización, etiquetas y la tarjeta
@@ -37,6 +38,7 @@ export function ProductoTiendaPage() {
   const [d, setD] = useState<DatosTienda>(vacio())
   const [estado, setEstado] = useState<EstadoTienda>('activo')
   const [fotos, setFotos] = useState<FotoTienda[]>([])
+  const [encuadrando, setEncuadrando] = useState<number | null>(null)
   const [tallas, setTallas] = useState<Record<string, EstadoTalla>>({})
   const [unidades, setUnidades] = useState<Record<string, number>>({})
   const [tallaExtra, setTallaExtra] = useState('')
@@ -198,8 +200,11 @@ export function ProductoTiendaPage() {
             {fotos.map((ft, i) => <div key={ft.url} draggable onDragStart={() => { arrastrando.current = i }} onDragOver={(e) => e.preventDefault()} onDrop={() => { if (arrastrando.current !== null) moverFoto(arrastrando.current, i); arrastrando.current = null }}
               className={`group relative overflow-hidden rounded-xl border border-line bg-white/[0.02] ${i === 0 ? 'col-span-2 row-span-2' : ''}`}>
               <img src={resolverImagenCatalogo(ft.url)} alt="" className="aspect-square w-full object-cover" />
-              {i === 0 && <span className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-md bg-[#1a1a1a] px-1.5 py-0.5 text-[10px] font-semibold text-[#fff]"><Star size={10} fill="currentColor" /> Principal</span>}
-              {ft.file && <span className="absolute right-1.5 top-1.5 rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-[#fff]">Nueva</span>}
+              <div className="pointer-events-none absolute left-1.5 top-1.5 flex flex-wrap gap-1">
+                {i === 0 && <span className="inline-flex items-center gap-1 rounded-md bg-[#1a1a1a] px-1.5 py-0.5 text-[10px] font-semibold text-[#fff]"><Star size={10} fill="currentColor" /> Principal</span>}
+                {ft.file && <span className="rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-[#fff]">Nueva</span>}
+              </div>
+              <button type="button" aria-label="Encuadrar foto" title="Encuadrar / centrar" onClick={() => setEncuadrando(i)} className="absolute right-1.5 top-1.5 inline-flex h-8 items-center gap-1 rounded-lg bg-[#fff]/90 px-2 text-[11px] font-semibold text-[#1a1a1a]"><Crop size={14} />{i === 0 && <span className="hidden sm:inline">Encuadrar</span>}</button>
               <div className="absolute inset-x-1.5 bottom-1.5 flex justify-between gap-1">
                 <button type="button" aria-label="Mover a la izquierda" disabled={i === 0} onClick={() => moverFoto(i, i - 1)} className="grid size-8 place-items-center rounded-lg bg-[#fff]/90 text-[#1a1a1a] disabled:opacity-30"><ChevronLeft size={16} /></button>
                 <button type="button" aria-label="Quitar foto" onClick={() => quitarFoto(i)} className="grid size-8 place-items-center rounded-lg bg-[#fff]/90 text-[#b42318]"><Trash2 size={15} /></button>
@@ -211,6 +216,16 @@ export function ProductoTiendaPage() {
             </button>
           </div>
           <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { agregarFotos(e.target.files); e.target.value = '' }} />
+          <EncuadreFotoModal src={encuadrando !== null && fotos[encuadrando] ? resolverImagenCatalogo(fotos[encuadrando].url) : null} onClose={() => setEncuadrando(null)}
+            onListo={(file) => {
+              const i = encuadrando
+              if (i === null) return
+              setFotos((f) => f.map((x, j) => (j === i ? { url: URL.createObjectURL(file), file } : x)))
+              // La foto principal ya viene encuadrada: se quitan los ajustes viejos de zoom/posición de la tarjeta.
+              if (i === 0) setD((x) => ({ ...x, posicionImagen: '', escalaImagen: null }))
+              setSucio(true); setEncuadrando(null)
+              toast.success('Foto encuadrada. Se sube al guardar.')
+            }} />
           <div className="mt-3 flex flex-wrap items-center gap-2 text-sm"><span className="text-muted">Cómo se muestra la foto:</span>
             <select className="campo w-auto" value={d.imagenFit === 'contain' ? 'contain' : ''} onChange={(e) => cambiar('imagenFit', e.target.value)}><option value="">Llenar el recuadro (recorta)</option><option value="contain">Foto completa (sin recortar)</option></select>
           </div>
@@ -286,7 +301,14 @@ export function ProductoTiendaPage() {
           {codigoSugerido && codigoSugerido !== d.codigo && <button type="button" className="-mt-1 mb-3 text-left text-xs font-semibold text-accent" onClick={() => cambiar('codigo', codigoSugerido)}>Usar el siguiente de {d.marca}: {codigoSugerido}</button>}
           <Campo label="Marca"><input className="campo" list="marcas-tienda" value={d.marca} onChange={(e) => cambiar('marca', e.target.value)} placeholder="GOLDEN GOOSE" /><datalist id="marcas-tienda">{marcas.map((m) => <option key={m} value={m} />)}</datalist></Campo>
           <Campo label="Categoría"><select className="campo" value={d.categoria} onChange={(e) => { const c = e.target.value; setD((x) => ({ ...x, categoria: c, subcategoria: (SUBCATEGORIAS[c] ?? [])[0] ?? '' })); setSucio(true) }}>{CATEGORIAS.map((c) => <option key={c}>{c}</option>)}</select></Campo>
-          {(SUBCATEGORIAS[d.categoria] ?? []).length > 0 && <Campo label="Subcategoría"><select className="campo" value={d.subcategoria} onChange={(e) => cambiar('subcategoria', e.target.value)}>{(SUBCATEGORIAS[d.categoria] ?? []).map((s) => <option key={s}>{s}</option>)}</select></Campo>}
+          {(SUBCATEGORIAS[d.categoria] ?? []).length > 0 && <Campo label={d.categoria === 'Accesorios' ? 'Accesorio de' : 'Subcategoría'}><select className="campo" value={d.subcategoria} onChange={(e) => {
+            // En la tienda los accesorios (bolsos, carteras, gorras…) van en Categoría "Accesorios" y
+            // la subcategoría dice si son de Hombre o Dama. Elegir "Accesorios" desde Dama/Hombre los mueve ahí.
+            const v = e.target.value
+            if (v === '__accesorios') { setD((x) => ({ ...x, categoria: 'Accesorios', subcategoria: x.categoria === 'Dama' ? 'Dama' : 'Hombre' })); setSucio(true) }
+            else cambiar('subcategoria', v)
+          }}>{(SUBCATEGORIAS[d.categoria] ?? []).map((s) => <option key={s}>{s}</option>)}{d.categoria !== 'Accesorios' && d.categoria !== 'Decoración' && <option value="__accesorios">Accesorios (bolsos, carteras, gorras…)</option>}</select>
+            {d.categoria === 'Accesorios' && <span className="mt-1 block text-[11px] text-muted">En la tienda sale en Accesorios › {d.subcategoria || 'Hombre'}</span>}</Campo>}
           {esRopa && <Campo label="Tipo de prenda"><select className="campo" value={String(d.tipoPrenda ?? '')} onChange={(e) => cambiar('tipoPrenda', e.target.value)}><option value="">—</option>{TIPOS_ROPA.map((t) => <option key={t}>{t}</option>)}</select></Campo>}
         </Seccion>
         <Seccion titulo="Etiquetas">

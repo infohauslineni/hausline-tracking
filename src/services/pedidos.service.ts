@@ -887,3 +887,46 @@ export async function pagarProveedorLote(lineas: LineaPagoLote[], pedidos: Pedid
   invalidateComercial()
   return resultado
 }
+
+// REPARTIR EL ENVÍO de un paquete donde vienen productos de varios pedidos (zapatos y camisas
+// juntos). A cada producto le toca su parte (por peso, igual o por precio):
+//   • cada pedido recibe un gasto "Envío internacional" con lo de sus productos (baja su
+//     ganancia y sale de la cuenta elegida, como cualquier gasto);
+//   • y a cada producto se le suma su parte en "envío internacional" (costo por producto).
+// En pedidos viejos sin gasto de proveedor el costo se calcula con los ítems + gastos, así que
+// ahí solo va el gasto (si no, el envío se contaría dos veces).
+export type LineaEnvioLote = { itemId: string; pedidoId: string; cantidad: number; monto: number; nombre: string; envioActual: number }
+export async function repartirEnvioPedidos(lineas: LineaEnvioLote[], pedidos: Pedido[], opciones: { fecha: string; metodo: string; cuentaId: string | null; montoCuentaTotal: number; totalUsd: number }) {
+  const client = requireSupabase()
+  const r2 = (n: number) => Math.round(n * 100) / 100
+  const { registrarGasto } = await import('./comercial.service')
+  const grupos = new Map<string, LineaEnvioLote[]>()
+  for (const l of lineas.filter((x) => x.monto > 0.004)) grupos.set(l.pedidoId, [...(grupos.get(l.pedidoId) ?? []), l])
+  const ids = [...grupos.keys()]
+  const totales = ids.map((id) => r2((grupos.get(id) ?? []).reduce((s, l) => s + l.monto, 0)))
+  // Lo que sale de la cuenta (puede estar en C$) se reparte igual que el envío.
+  const sumaTotales = totales.reduce((s, t) => s + t, 0)
+  const enCuenta = totales.map((t) => (opciones.cuentaId && sumaTotales > 0 ? r2(opciones.montoCuentaTotal * t / sumaTotales) : 0))
+  if (enCuenta.length) enCuenta[enCuenta.length - 1] = r2(opciones.montoCuentaTotal - enCuenta.slice(0, -1).reduce((s, x) => s + x, 0))
+  const n = lineas.length
+  const resultado: string[] = []
+  for (const [i, pedidoId] of ids.entries()) {
+    const propias = grupos.get(pedidoId) ?? []
+    const pedido = pedidos.find((p) => p.id === pedidoId)
+    await registrarGasto({
+      fecha: opciones.fecha, categoria: 'Envío internacional', monto: totales[i], moneda: 'USD', monto_original: totales[i], tipo_cambio: null,
+      metodo_pago: opciones.metodo || null, pedido_id: pedidoId, inversion_id: null, proveedor_id: null,
+      descripcion: `Envío a Nicaragua · ${propias.map((l) => l.nombre).join(', ')}`.slice(0, 300),
+      observaciones: `Paquete compartido de ${n} ${n === 1 ? 'producto' : 'productos'} (US$${r2(opciones.totalUsd).toFixed(2)} en total)`,
+    }, opciones.cuentaId ? { cuentaId: opciones.cuentaId, montoCuenta: enCuenta[i] } : undefined)
+    const conProveedor = (pedido?.gastos ?? []).some((g) => (g.categoria ?? '').toLowerCase().includes('proveedor'))
+    if (conProveedor) {
+      const filas = propias.map((l) => ({ item_id: l.itemId, envio_internacional: r2(l.envioActual + l.monto / Math.max(1, l.cantidad)) }))
+      const { error } = await client.from('pedido_item_costos').upsert(filas, { onConflict: 'item_id' })
+      if (error) throw error
+    }
+    resultado.push(pedido?.codigo ?? pedidoId)
+  }
+  invalidateComercial()
+  return resultado
+}
