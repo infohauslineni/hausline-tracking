@@ -189,6 +189,14 @@ export async function facturaPdfBuffer({ codigo, nombre, fecha, factura }) {
   if (esPago) drawTotal('Saldo pendiente', 'PAGADO', true, '#171310')
   else drawTotal('Saldo pendiente', usd(factura.saldo), true, (Number(factura.saldo) || 0) > 0.01 ? '#b26a00' : '#171310')
 
+  // Cuánto debe y cuándo lo paga (factura al crear el pedido con saldo).
+  if (!esPago && factura?.notaSaldo) {
+    y += 8
+    doc.roundedRect(M, y, contentW, 40, 8).fillAndStroke('#FFF6E5', '#F1D9A6')
+    doc.fillColor('#7a4d00').font('Helvetica-Bold').fontSize(11).text(String(factura.notaSaldo), M + 12, y + 14, { width: contentW - 24, align: 'center' })
+    y += 48
+  }
+
   // Pie
   y += 24
   doc.rect(M, y, contentW, 60).fill('#F4F1EB')

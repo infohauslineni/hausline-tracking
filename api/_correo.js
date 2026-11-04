@@ -154,6 +154,7 @@ export function bloqueFactura(factura) {
                 ${totalFila('Total del pedido', montoUSDcorto(factura.total), { cls: 't-primary' })}
                 ${totalFila(esPago ? 'Pago recibido' : 'Abono recibido', montoUSDcorto(factura.abono), { cls: 't-primary' })}
                 ${saldoFila}
+                ${factura.notaSaldo ? `<tr><td colspan="4" style="padding:12px 0 0;"><div style="background:#FFF6E5;border:1px solid #F1D9A6;border-radius:10px;padding:12px 14px;font-size:14px;line-height:1.5;color:#7a4d00;font-weight:600;text-align:center;">${esc(factura.notaSaldo)}</div></td></tr>` : ''}
               </table>
             </td></tr>
           </table>`

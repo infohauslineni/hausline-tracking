@@ -216,6 +216,8 @@ async function obtenerFactura(codigo, esNuevo, modo) {
     saldo,
     fecha: pedido.fecha_pedido || null,
     variante: esNuevo ? 'compra' : (modo === 'auto' && saldo > 0.01) ? 'saldo' : 'pago',
+    // Factura al crear el pedido con saldo (apartado o 50 %): cuánto debe y cuándo lo paga.
+    notaSaldo: esNuevo && saldo > 0.01 ? `Debe USD ${saldo.toFixed(2)}. Lo paga cuando su producto esté en Nicaragua, antes de la entrega.` : null,
   }
 }
 

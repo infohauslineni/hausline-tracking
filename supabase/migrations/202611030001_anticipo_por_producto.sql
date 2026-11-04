@@ -8,15 +8,21 @@ begin;
 
 alter table public.productos add column if not exists anticipo numeric(12,2) check (anticipo is null or anticipo > 0);
 
+-- Monto fijo para apartar del producto (null si no tiene).
+create or replace function public.anticipo_fijo(p_codigo text)
+returns numeric language sql stable security definer set search_path = public, pg_temp as $$
+  select pr.anticipo from public.productos pr
+  where p_codigo is not null and btrim(p_codigo) <> ''
+    and upper(btrim(pr.codigo)) = upper(btrim(p_codigo)) and pr.activo and pr.anticipo > 0
+  limit 1;
+$$;
+revoke all on function public.anticipo_fijo(text) from public, anon, authenticated;
+
 -- Anticipo de una línea: el fijo del producto × cantidad (tope: el total) o el 50 %.
 create or replace function public.anticipo_linea(p_codigo text, p_cantidad integer, p_total numeric)
 returns numeric language plpgsql stable security definer set search_path = public, pg_temp as $$
-declare v_fijo numeric(12,2);
+declare v_fijo numeric(12,2) := public.anticipo_fijo(p_codigo);
 begin
-  if p_codigo is not null and btrim(p_codigo) <> '' then
-    select pr.anticipo into v_fijo from public.productos pr
-    where upper(btrim(pr.codigo)) = upper(btrim(p_codigo)) and pr.activo limit 1;
-  end if;
   if v_fijo is not null and v_fijo > 0 then
     return least(round(coalesce(p_total, 0), 2), round(v_fijo * greatest(1, coalesce(p_cantidad, 1)), 2));
   end if;
@@ -53,6 +59,8 @@ declare
   v_total numeric(12,2);
   v_abono numeric(12,2);
   v_item_envio text;
+  v_item_pago text;
+  v_fijo numeric(12,2);
   v_n integer;
   v_tot_cant integer := 0;
   v_tot_bruto numeric(12,2) := 0;
@@ -108,6 +116,10 @@ begin
     v_cant := least(50, greatest(1, coalesce((it->>'cantidad')::integer, 1)));
     v_precio := public.precio_confiable(it->>'producto_codigo', (it->>'precio_unitario')::numeric);
     v_recargo := round(greatest(0, coalesce((it->>'recargo')::numeric, 0)), 2);
+    -- Producto con monto fijo para apartar: solo se aparta, solo envío estándar (sin recargo).
+    v_fijo := public.anticipo_fijo(it->>'producto_codigo');
+    if v_fijo is not null then v_recargo := 0; end if;
+    v_item_pago := case when v_fijo is not null then '50' else v_pago end;
     v_bruto := round(v_precio * v_cant + v_recargo, 2);
     -- Descuento (cupón o promo): porcentaje en cada ítem; monto fijo solo en el primero.
     v_desc := 0;
@@ -117,8 +129,8 @@ begin
       end if;
     end if;
     v_total := greatest(0, round(v_bruto - v_desc, 2));
-    v_abono := case when v_pago = '50' then public.anticipo_linea(it->>'producto_codigo', v_cant, v_total) else v_total end;
-    v_item_envio := case when coalesce(it->>'envio', v_envio) = 'rapido' then 'rapido' else 'estandar' end;
+    v_abono := case when v_item_pago = '50' then public.anticipo_linea(it->>'producto_codigo', v_cant, v_total) else v_total end;
+    v_item_envio := case when v_fijo is null and coalesce(it->>'envio', v_envio) = 'rapido' then 'rapido' else 'estandar' end;
 
     insert into public.solicitudes (
       cliente_nombre, cliente_whatsapp, cliente_correo, cliente_ciudad, cliente_direccion,
@@ -131,7 +143,7 @@ begin
       nullif(trim(coalesce(it->>'marca','')), ''), nullif(trim(coalesce(it->>'talla','')), ''), nullif(trim(coalesce(it->>'color','')), ''),
       v_cant, v_precio, v_total, v_rate,
       case when v_rate is not null then ceil(v_total * v_rate / 10.0) * 10 end,
-      v_item_envio, v_recargo, v_pago, v_abono, nullif(trim(coalesce(it->>'imagen','')), ''),
+      v_item_envio, v_recargo, v_item_pago, v_abono, nullif(trim(coalesce(it->>'imagen','')), ''),
       case when v_desc > 0 then v_dcid else null end, case when v_desc > 0 then v_dlabel else null end, v_desc,
       v_grupo
     );
@@ -191,9 +203,13 @@ begin
   v_cant := least(50, greatest(1, coalesce(p_cantidad, 1)));
   v_precio := public.precio_confiable(p_producto_codigo, p_precio_unitario);
   v_recargo := round(greatest(0, coalesce(p_recargo, 0)), 2);
-  v_bruto := round(v_precio * v_cant + v_recargo, 2);
   v_envio := case when p_envio = 'rapido' then 'rapido' else 'estandar' end;
   v_pago := case when p_pago = '50' then '50' else 'total' end;
+  -- Producto con monto fijo para apartar: solo se aparta, solo envío estándar (sin recargo).
+  if public.anticipo_fijo(p_producto_codigo) is not null then
+    v_recargo := 0; v_envio := 'estandar'; v_pago := '50';
+  end if;
+  v_bruto := round(v_precio * v_cant + v_recargo, 2);
 
   -- 1) CUPÓN (prioridad).
   if p_cupon_codigo is not null and btrim(p_cupon_codigo) <> '' then
