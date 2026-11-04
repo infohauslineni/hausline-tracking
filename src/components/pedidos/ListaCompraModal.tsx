@@ -1,4 +1,4 @@
-import { Check, Copy, Download, MessageCircle, Package, Share2 } from 'lucide-react'
+import { Camera, Check, Copy, Download, MessageCircle, Package, Share2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
@@ -7,6 +7,7 @@ import type { Pedido } from '../../types/domain'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { generarHojasProveedor, lineasDeCompra, mensajeListaProveedor, urlProveedor, yaEnListaProveedor } from '../../utils/listaProveedor'
 import { Modal } from '../ui/Modal'
+import { HistoriaOrdenModal } from './HistoriaOrdenModal'
 
 // Lista de compra para el proveedor: todos los productos de los pedidos confirmados que todavía
 // no se han comprado, en un solo mensaje y en hojas con la foto de cada producto.
@@ -14,6 +15,7 @@ export function ListaCompraModal({ open, pedidos, onClose, onMarcados }: { open:
   const [verEnviados, setVerEnviados] = useState(false)
   const [fuera, setFuera] = useState<Set<string>>(new Set()) // renglones que se quitaron de esta lista
   const [trabajando, setTrabajando] = useState<'hojas' | 'marcar' | null>(null)
+  const [historia, setHistoria] = useState(false)
   useEffect(() => { if (open) void Promise.resolve().then(() => setFuera(new Set())) }, [open])
 
   const confirmados = useMemo(() => pedidos.filter((p) => p.estado === 'pedido_confirmado'), [pedidos])
@@ -72,7 +74,9 @@ export function ListaCompraModal({ open, pedidos, onClose, onMarcados }: { open:
         <button className="subtle-button" disabled={!lineas.length} onClick={() => void copiar()}><Copy size={15} /> Copiar mensaje</button>
         <a className={`subtle-button ${lineas.length ? '' : 'pointer-events-none opacity-50'}`} href={urlProveedor(mensaje)} target="_blank" rel="noopener noreferrer"><MessageCircle size={15} className="text-[#62eaa0]" /> Abrir WhatsApp del proveedor</a>
         <button className="subtle-button" disabled={!lineas.length || trabajando !== null} onClick={() => void marcar()}><Check size={15} /> {trabajando === 'marcar' ? 'Marcando…' : 'Ya se lo mandé (marcar)'}</button>
+        <button className="subtle-button sm:col-span-2" disabled={!lineas.length} onClick={() => setHistoria(true)}><Camera size={15} /> Historia para Instagram (sin datos privados)</button>
       </div>
+      {historia && <HistoriaOrdenModal productos={lineas.map((l) => ({ producto: l.producto, talla: l.talla, cantidad: l.cantidad, imagen: l.imagen }))} fraseInicial="camino" open onClose={() => setHistoria(false)} />}
       <p className="mt-2 text-[11px] leading-4 text-muted">WhatsApp no deja adjuntar fotos desde un enlace: {puedeCompartir ? 'usá “Compartir” y elegí el chat del proveedor.' : 'descargá las hojas y arrastralas al chat; el mensaje ya va escrito al abrir WhatsApp.'} Al marcar, esos pedidos no vuelven a salir en la lista (siguen en “Orden confirmada” hasta que registrés el pago al proveedor).</p>
     </>}
   </Modal>

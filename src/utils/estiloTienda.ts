@@ -26,12 +26,12 @@ export function asegurarFuentesTienda(): Promise<void> {
     try {
       if (!document.getElementById('hl-fuentes-tienda')) {
         const link = document.createElement('link'); link.id = 'hl-fuentes-tienda'; link.rel = 'stylesheet'
-        link.href = 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Jost:wght@400;500;600;700&display=swap'
+        link.href = 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,600&family=Jost:wght@400;500;600;700&display=swap'
         document.head.appendChild(link)
         await new Promise((r) => { link.onload = r; link.onerror = r; setTimeout(r, 2500) })
       }
       await Promise.race([
-        Promise.all(['600 40px "Cormorant Garamond"', '400 20px Jost', '500 20px Jost', '600 20px Jost', '700 20px Jost'].map((x) => document.fonts.load(x))),
+        Promise.all(['600 40px "Cormorant Garamond"', 'italic 600 40px "Cormorant Garamond"', '400 20px Jost', '500 20px Jost', '600 20px Jost', '700 20px Jost'].map((x) => document.fonts.load(x))),
         new Promise((r) => setTimeout(r, 2500)),
       ])
     } catch { /* sin red: fuentes del sistema */ }
