@@ -26,6 +26,7 @@ export type DatosTienda = Record<string, unknown> & {
   precioEntregaInmediata?: number; cantidadDisponible?: number; enCamino?: boolean; tallasEnCamino?: string[]
   demoraExtendida?: boolean; diasExtra?: number; notaDemora?: string; prepMin?: number; prepMax?: number
   borrador?: boolean; ventaLibre?: boolean; fecha?: string
+  anticipo?: number | null // apartar con un monto fijo (opcional); vacío = abono del 50 %
 }
 export type Origen = 'original' | 'editado' | 'nuevo'
 export type EstadoTienda = 'activo' | 'borrador' | 'oculto'
@@ -82,6 +83,7 @@ function datosDeBase(p: Base): DatosTienda {
     prepMin: Number(p.prepMin) || 0, prepMax: Number(p.prepMax) || 0, fecha: String(p.fecha || '2025-01-01'),
     entregaInmediata: p.entregaInmediata === true, tallasEntregaInmediata: lista(p.tallasEntregaInmediata), coloresEntregaInmediata: lista(p.coloresEntregaInmediata),
     precioEntregaInmediata: Number(p.precioEntregaInmediata) || 0, cantidadDisponible: Number(p.cantidadDisponible) || 0,
+    anticipo: Number(p.anticipo) > 0 ? Number(p.anticipo) : null,
   }
   for (const [k] of ETIQUETAS) datos[k] = p[k] === true
   return datos
@@ -152,6 +154,15 @@ export async function guardarCosto(d: DatosTienda, costo: number) {
     ? await supabase.from('productos').update({ precio_compra: valor }).eq('id', fila.id)
     : await supabase.from('productos').insert({ codigo, nombre: d.nombre || codigo, marca: d.marca || null, categoria: d.categoria || null, tallas: d.tallas ?? [], precio_venta: venta, precio_compra: valor, imagen: d.imagen || null, activo: true })
   if (error) throw new Error(`No se pudo guardar el costo: ${error.message}`)
+}
+
+// Anticipo fijo para apartar → tabla productos del panel (la base lo usa al crear el encargo).
+// Si la columna todavía no existe (falta su SQL) no frena el guardado: lo lleva la sincronización.
+export async function guardarAnticipo(d: DatosTienda) {
+  if (!supabase) return
+  const valor = Number(d.anticipo) > 0 ? Math.round(Number(d.anticipo) * 100) / 100 : null
+  const { error } = await supabase.from('productos').update({ anticipo: valor }).eq('codigo', d.codigo.trim().toUpperCase())
+  if (error) console.warn('No se pudo guardar el anticipo en productos:', error.message)
 }
 
 // Siguiente código para una marca, siguiendo los que ya existen (GG021 → GG022, CLW006 → CLW007).

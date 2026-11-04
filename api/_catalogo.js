@@ -52,6 +52,7 @@ async function leerCatalogoPanel() {
           promocion_hasta: d.promocionHasta ?? null,
           imagen: d.imagen || null,
           descripcion: d.descripcion || null,
+          anticipo: Number(d.anticipo) > 0 ? Number(d.anticipo) : null,
           ...camposEntregaInmediata(d),
         }
       })
@@ -108,6 +109,7 @@ async function leerCatalogoTienda() {
       promocion_hasta: product.promocionHasta ?? product.promocion_hasta ?? null,
       imagen: product.imagen || null,
       descripcion: product.descripcion || null,
+      anticipo: Number(product.anticipo) > 0 ? Number(product.anticipo) : null,
       ...camposEntregaInmediata(product),
     })) }
 }
@@ -196,6 +198,8 @@ export function mapearCatalogoAProductos(merged) {
       precio_venta: precioVentaWeb(item),
       imagen: item.imagen ? new URL(item.imagen, CATALOG_URL).href : null,
       descripcion: item.descripcion || null,
+      // Anticipo fijo para apartar (opcional, p. ej. productos originales caros). null = 50 %.
+      anticipo: Number(item.anticipo) > 0 ? Math.round(Number(item.anticipo) * 100) / 100 : null,
       activo: true,
     }))
   return [...new Map(records.map((item) => [item.codigo, item])).values()]
@@ -208,7 +212,13 @@ export async function sincronizarProductos(client) {
   const records = mapearCatalogoAProductos(await obtenerCatalogoMergeado())
   if (!records.length) return 0
   for (let i = 0; i < records.length; i += 100) {
-    const { error } = await client.from('productos').upsert(records.slice(i, i + 100), { onConflict: 'codigo', ignoreDuplicates: false })
+    let lote = records.slice(i, i + 100)
+    let { error } = await client.from('productos').upsert(lote, { onConflict: 'codigo', ignoreDuplicates: false })
+    // Si todavía no existe la columna "anticipo" (falta correr su SQL), sincroniza lo demás igual.
+    if (error && /anticipo/i.test(error.message)) {
+      lote = lote.map((r) => { const copia = { ...r }; delete copia.anticipo; return copia })
+      ;({ error } = await client.from('productos').upsert(lote, { onConflict: 'codigo', ignoreDuplicates: false }))
+    }
     if (error) throw new Error(error.message)
   }
   return records.length

@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '../../contexts/AuthContext'
 import {
-  actualizarCache, borrarProductoTienda, CATEGORIAS, conectadoCatalogo, costoDe, disponibilidad, guardarCosto, ETIQUETAS, estadoDe, guardarProductoTienda, linkProducto,
+  actualizarCache, borrarProductoTienda, CATEGORIAS, conectadoCatalogo, costoDe, disponibilidad, guardarAnticipo, guardarCosto, ETIQUETAS, estadoDe, guardarProductoTienda, linkProducto,
   listarProductosTienda, ordenarTallas, productosEnCache, SUBCATEGORIAS, sugerirCodigo, TALLAS_CALZADO, TALLAS_ROPA, TIPOS_ROPA,
   type DatosTienda, type EstadoTienda, type FotoTienda, type ProductoTienda,
 } from '../../services/productosTienda.service'
@@ -142,6 +142,8 @@ export function ProductoTiendaPage() {
       const datos = await guardarProductoTienda(armar(), fotos, estado, previo, todos)
       // El costo va al panel (misma tabla de la ganancia y los pedidos).
       if (Math.abs(costo - costoBase) > 0.004) { try { await guardarCosto(datos, costo); setCostoBase(costo) } catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo guardar el costo.') } }
+      // El anticipo fijo también va directo a la base del panel (la que crea el encargo), sin esperar la sincronización.
+      if ((Number(datos.anticipo) || 0) !== (Number(previo?.datos.anticipo) || 0)) await guardarAnticipo(datos)
       const prod: ProductoTienda = { codigo: datos.codigo, datos, origen: previo?.origen === 'original' ? 'editado' : previo?.origen ?? 'nuevo', activo: estado === 'activo', id: previo?.id ?? null, creado: previo?.creado ?? new Date().toISOString() }
       actualizarCache(prod, previo?.codigo)
       setTodos((l) => [prod, ...l.filter((x) => x.codigo.toUpperCase() !== (previo?.codigo ?? datos.codigo).toUpperCase())])
@@ -241,7 +243,9 @@ export function ProductoTiendaPage() {
           <div className="grid gap-3 sm:grid-cols-3">
             <Campo label="Precio en Entrega inmediata" ayuda="Vacío = el mismo precio"><input className="campo" inputMode="decimal" value={d.precioEntregaInmediata || ''} onChange={(e) => cambiar('precioEntregaInmediata', num(e.target.value))} placeholder="Igual al precio" /></Campo>
             <Campo label="Costo (proveedor)" ayuda="Lo que te cuesta · no lo ve el cliente"><input className="campo" inputMode="decimal" value={costoTxt} onChange={(e) => { setCostoTxt(e.target.value); setSucio(true) }} placeholder="0.00" /></Campo>
+            <Campo label="Apartar con (US$)" ayuda={`Opcional · vacío = abono del 50 %${venta > 0 ? ` (${usd(Math.round(venta * 50) / 100)})` : ''}`}><input className="campo" inputMode="decimal" disabled={d.cotizar} value={d.anticipo || ''} onChange={(e) => cambiar('anticipo', num(e.target.value) || null)} placeholder="50 %" /></Campo>
           </div>
+          {Number(d.anticipo) > 0 && venta > 0 && <p className="-mt-1 mb-3 text-xs text-muted">En la tienda sale <b>"Apartar con {usd(Math.min(Number(d.anticipo), venta))}"</b> en vez de "Abono 50 %". El cliente paga el resto ({usd(Math.max(0, venta - Number(d.anticipo)))}) antes de la entrega.</p>}
           <div className="flex flex-wrap gap-x-5 gap-y-1 rounded-lg bg-white/[0.03] px-3 py-2.5 text-sm text-muted">
             {costo > 0 && venta > 0 ? <><span>Ganancia por unidad <b className={margen >= 25 ? 'text-emerald-300' : 'text-amber-200'}>{usd(Math.round(ganancia * 100) / 100)}</b></span><span>Margen <b className={margen >= 25 ? 'text-emerald-300' : 'text-amber-200'}>{margen} %</b></span><span>{margen < 25 ? '⚠️ Margen bajo' : '✓ Buen margen'}</span></>
               : <span>Poné el costo para ver tu ganancia y el margen. También se llena solo al registrar el pago al proveedor.</span>}
