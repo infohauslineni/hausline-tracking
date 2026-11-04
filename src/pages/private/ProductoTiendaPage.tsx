@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '../../contexts/AuthContext'
 import {
-  actualizarCache, borrarProductoTienda, CATEGORIAS, conectadoCatalogo, costoDe, disponibilidad, guardarAnticipo, guardarCosto, ETIQUETAS, estadoDe, guardarProductoTienda, linkProducto,
+  actualizarCache, borrarProductoTienda, CATEGORIAS, codigosOcupados, conectadoCatalogo, costoDe, disponibilidad, guardarAnticipo, guardarCosto, ETIQUETAS, estadoDe, guardarProductoTienda, linkProducto,
   listarProductosTienda, ordenarTallas, productosEnCache, SUBCATEGORIAS, sugerirCodigo, TALLAS_CALZADO, TALLAS_ROPA, TIPOS_ROPA,
   type DatosTienda, type EstadoTienda, type FotoTienda, type ProductoTienda,
 } from '../../services/productosTienda.service'
@@ -160,6 +160,16 @@ export function ProductoTiendaPage() {
     catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo borrar.') }
   }
 
+  // CÓDIGO AUTOMÁTICO (producto nuevo): al elegir la marca se pone solo el siguiente (GG056 → GG057),
+  // saltando los que ya se usaron en pedidos o Compras libres. Si lo escribe a mano, se respeta.
+  const [ocupados, setOcupados] = useState<Set<string>>(new Set())
+  const codigoManual = useRef(false)
+  useEffect(() => { if (esNuevo) void codigosOcupados().then(setOcupados).catch(() => undefined) }, [esNuevo, todos])
+  const codigoSugerido = esNuevo && d.marca.trim() ? sugerirCodigo(d.marca, todos, d.categoria === 'Dama', ocupados) : ''
+  useEffect(() => {
+    if (esNuevo && !codigoManual.current && codigoSugerido) setD((x) => (x.codigo === codigoSugerido ? x : { ...x, codigo: codigoSugerido }))
+  }, [esNuevo, codigoSugerido])
+
   if (conectado === false) return <div><Volver onClick={() => navigate('/tienda')} /><ConectarTienda email={user?.email ?? ''} onOk={() => window.location.reload()} /></div>
   if (!listo) return <div className="space-y-3"><div className="h-10 w-64 animate-pulse rounded-lg bg-white/[0.04]" /><div className="h-64 animate-pulse rounded-xl bg-white/[0.04]" /></div>
 
@@ -169,7 +179,6 @@ export function ProductoTiendaPage() {
   const ganancia = venta - costo, margen = venta > 0 ? Math.round((ganancia / venta) * 100) : 0
   const disp = disponibilidad(f)
   const fotoPrev = fotos[0] ? resolverImagenCatalogo(fotos[0].url) : ''
-  const codigoSugerido = esNuevo && d.marca ? sugerirCodigo(d.marca, todos, d.categoria === 'Dama') : ''
 
   return <div className="pb-6">
     {/* Cambios sin guardar: arriba en computadora (tapa la barra superior), abajo en el teléfono. */}
@@ -299,10 +308,10 @@ export function ProductoTiendaPage() {
           </select>
         </Seccion>
         <Seccion titulo="Organización">
-          <Campo label="Código" ayuda={!esNuevo ? 'El código no se cambia en productos ya creados.' : codigoSugerido && codigoSugerido !== d.codigo ? undefined : 'Mismo código que la carpeta de fotos (ej. GG022).'}>
-            <input className="campo uppercase" value={d.codigo} disabled={!esNuevo && previo?.origen !== 'nuevo'} onChange={(e) => cambiar('codigo', e.target.value.toUpperCase().replace(/\s+/g, ''))} placeholder="GG022" />
+          <Campo label="Código" ayuda={!esNuevo ? 'El código no se cambia en productos ya creados.' : codigoSugerido && codigoSugerido !== d.codigo ? undefined : codigoSugerido ? `Se puso solo: el siguiente de ${d.marca.trim()}. Podés cambiarlo.` : 'Elegí la marca y el código se pone solo.'}>
+            <input className="campo uppercase" value={d.codigo} disabled={!esNuevo && previo?.origen !== 'nuevo'} onChange={(e) => { const v = e.target.value.toUpperCase().replace(/\s+/g, ''); codigoManual.current = v !== ''; cambiar('codigo', v) }} placeholder="Se genera solo" />
           </Campo>
-          {codigoSugerido && codigoSugerido !== d.codigo && <button type="button" className="-mt-1 mb-3 text-left text-xs font-semibold text-accent" onClick={() => cambiar('codigo', codigoSugerido)}>Usar el siguiente de {d.marca}: {codigoSugerido}</button>}
+          {codigoSugerido && codigoSugerido !== d.codigo && <button type="button" className="-mt-1 mb-3 text-left text-xs font-semibold text-accent" onClick={() => { codigoManual.current = false; cambiar('codigo', codigoSugerido) }}>Usar el siguiente de {d.marca}: {codigoSugerido}</button>}
           <Campo label="Marca"><input className="campo" list="marcas-tienda" value={d.marca} onChange={(e) => cambiar('marca', e.target.value)} placeholder="GOLDEN GOOSE" /><datalist id="marcas-tienda">{marcas.map((m) => <option key={m} value={m} />)}</datalist></Campo>
           <Campo label="Categoría"><select className="campo" value={d.categoria} onChange={(e) => { const c = e.target.value; setD((x) => ({ ...x, categoria: c, subcategoria: (SUBCATEGORIAS[c] ?? [])[0] ?? '' })); setSucio(true) }}>{CATEGORIAS.map((c) => <option key={c}>{c}</option>)}</select></Campo>
           {(SUBCATEGORIAS[d.categoria] ?? []).length > 0 && <Campo label={d.categoria === 'Accesorios' ? 'Accesorio de' : 'Subcategoría'}><select className="campo" value={d.subcategoria} onChange={(e) => {

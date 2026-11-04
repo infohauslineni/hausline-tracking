@@ -104,6 +104,9 @@ export async function listarProductosTienda(): Promise<ProductoTienda[]> {
   const filas = (resFilas.data ?? []) as Fila[]
   const porCodigo = new Map(filas.map((f) => [String(f.codigo).trim().toUpperCase(), f]))
   const base = Array.isArray(resBase) ? resBase : []
+  // Todos los códigos que existen en la tienda, también los ocultos de la lista (eliminados de
+  // fábrica y venta libre): no se pueden volver a usar para un producto nuevo.
+  codigosCatalogo = new Set([...base.map((p) => String(p.codigo).trim().toUpperCase()), ...porCodigo.keys()])
   const vistos = new Set<string>()
   const salida: ProductoTienda[] = []
   for (const p of base) {
@@ -166,14 +169,43 @@ export async function guardarAnticipo(d: DatosTienda) {
 }
 
 // Siguiente código para una marca, siguiendo los que ya existen (GG021 → GG022, CLW006 → CLW007).
-export function sugerirCodigo(marca: string, todos: ProductoTienda[], dama = false) {
+// CÓDIGOS OCUPADOS: los que están en la tienda (aunque estén ocultos de la lista) y los que ya
+// aparecen en pedidos de clientes o en Compras libres. Un producto eliminado que NUNCA se vendió
+// libera su código (p. ej. uno creado por error); si ya está en un pedido, no se vuelve a usar
+// para no mezclar ese pedido con otro producto.
+let codigosCatalogo = new Set<string>()
+let codigosPedidos: Set<string> | null = null
+export async function codigosOcupados(): Promise<Set<string>> {
+  if (!codigosPedidos && supabase) {
+    const [items, compras] = await Promise.all([
+      supabase.from('pedido_items').select('codigo_producto').not('codigo_producto', 'is', null).limit(20000),
+      supabase.from('inversiones').select('codigo').not('codigo', 'is', null).limit(20000),
+    ])
+    const lista = [
+      ...((items.data ?? []) as { codigo_producto: string | null }[]).map((r) => r.codigo_producto),
+      ...((compras.data ?? []) as { codigo: string | null }[]).map((r) => r.codigo),
+    ]
+    codigosPedidos = new Set(lista.map((c) => String(c ?? '').trim().toUpperCase()).filter(Boolean))
+  }
+  return new Set([...codigosCatalogo, ...(codigosPedidos ?? [])])
+}
+
+// Siguiente código de la marca: el número más alto de esa marca (contando los que ya están en
+// pedidos aunque se hayan eliminado) + 1. GG056 → GG057. Dama usa su propio prefijo (GGW…).
+export function sugerirCodigo(marca: string, todos: ProductoTienda[], dama = false, ocupados: Set<string> = new Set()) {
   const m = marca.trim().toLowerCase()
   const deMarca = todos.filter((p) => String(p.datos.marca).trim().toLowerCase() === m).map((p) => p.codigo.toUpperCase())
   const prefijos = new Map<string, number>()
   for (const c of deMarca) { const x = /^([A-Z&]+)(\d+)$/.exec(c); if (!x) continue; const esDama = /W$/.test(x[1]); if (esDama !== dama && deMarca.some((d) => /W\d+$/.test(d))) continue; prefijos.set(x[1], Math.max(prefijos.get(x[1]) ?? 0, Number(x[2]))) }
-  const usados = new Set(todos.map((p) => p.codigo.toUpperCase()))
-  const [pref, max] = [...prefijos.entries()].sort((a, b) => b[1] - a[1])[0] ?? [m.replace(/[^a-z]/g, '').slice(0, 3).toUpperCase() || 'PRD', 0]
-  const ancho = deMarca.find((c) => c.startsWith(pref))?.slice(pref.length).length ?? 3
+  const usados = new Set([...todos.map((p) => p.codigo.toUpperCase()), ...ocupados])
+  const [pref] = [...prefijos.entries()].sort((a, b) => b[1] - a[1])[0] ?? [m.replace(/[^a-z]/g, '').slice(0, 3).toUpperCase() || 'PRD', 0]
+  // El más alto con ese prefijo, también entre los eliminados que siguen en pedidos.
+  let max = 0
+  for (const c of usados) { const x = /^([A-Z&]+)(\d+)$/.exec(c); if (x && x[1] === pref) max = Math.max(max, Number(x[2])) }
+  // Cantidad de dígitos: la más común en los códigos de la marca (GG001…GG021 → 3).
+  const anchos = new Map<number, number>()
+  for (const c of deMarca) { const x = /^([A-Z&]+)(\d+)$/.exec(c); if (x && x[1] === pref) anchos.set(x[2].length, (anchos.get(x[2].length) ?? 0) + 1) }
+  const ancho = [...anchos.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 3
   let n = max + 1
   while (usados.has(`${pref}${String(n).padStart(ancho, '0')}`)) n++
   return `${pref}${String(n).padStart(ancho, '0')}`
@@ -190,6 +222,12 @@ export async function guardarProductoTienda(form: DatosTienda, fotos: FotoTienda
   if (estado !== 'borrador' && (!nombre || !form.categoria)) throw new Error('Completá el título y la categoría.')
   const otro = todos.find((p) => p.codigo.toUpperCase() === codigo)
   if (otro && (!previo || previo.codigo.toUpperCase() !== codigo)) throw new Error(`El código ${codigo} ya existe (${otro.datos.nombre}). Usá otro.`)
+  // Un código que la tienda ya usa aunque no salga en la lista (producto de fábrica eliminado o venta
+  // libre) no se puede repetir. Los de pedidos/Compras libres sí se permiten escritos a mano: puede ser
+  // el mismo producto que se compró antes de subirlo a la tienda.
+  if ((!previo || previo.codigo.toUpperCase() !== codigo) && !otro && codigosCatalogo.has(codigo)) {
+    throw new Error(`El código ${codigo} ya lo usa otro producto de la tienda (eliminado o de venta libre). Usá el siguiente.`)
+  }
   const { data: ses } = await catalogo().auth.refreshSession()
   if (!ses.session) throw new Error('La sesión con la tienda venció. Volvé a conectar.')
 
@@ -261,6 +299,8 @@ export async function borrarProductoTienda(p: ProductoTienda) {
   if (p.origen === 'nuevo' && p.id) {
     const { error } = await catalogo().from('catalogo_web').delete().eq('id', p.id)
     lanzar(error, 'No se pudo eliminar')
+    // Su código queda libre para un producto nuevo (salvo que ya esté en un pedido o Compras libres).
+    codigosCatalogo.delete(p.codigo.trim().toUpperCase())
     return
   }
   const codigo = p.codigo.toUpperCase()
