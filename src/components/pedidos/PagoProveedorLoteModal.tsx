@@ -30,7 +30,7 @@ const nombreDe = (f: Fila) => f.tipo === 'pedido' ? f.item.producto : f.compra.p
 const imagenDe = (f: Fila) => resolverImagenCatalogo(f.tipo === 'pedido' ? f.item.imagen : f.compra.imagen)
 const detalleDe = (f: Fila) => f.tipo === 'pedido'
   ? `${f.pedido.codigo} · ${f.pedido.clientes?.nombre ?? 'Cliente'}${f.item.talla ? ` · Talla ${f.item.talla}` : ''}${Number(f.item.cantidad) > 1 ? ` · ${f.item.cantidad}×` : ''}${f.pedido.estado === 'en_preparacion' ? ' · En preparación' : ''}`
-  : `Compra libre${f.compra.codigo ? ` · ${f.compra.codigo}` : ''}${f.compra.talla_color ? ` · ${f.compra.talla_color}` : ''}${Number(f.compra.cantidad) > 1 ? ` · ${f.compra.cantidad}×` : ''} · debe ${usd(f.falta)}`
+  : `Compra libre${f.compra.codigo ? ` · ${f.compra.codigo}` : ''}${f.compra.talla_color ? ` · ${f.compra.talla_color}` : ''}${Number(f.compra.cantidad) > 1 ? ` · ${f.compra.cantidad}×` : ''} · ${f.falta > 0.005 ? `debe ${usd(f.falta)}` : 'sin costo, escribí el precio'}`
 const textoBusqueda = (f: Fila) => (f.tipo === 'pedido'
   ? `${f.pedido.codigo} ${f.pedido.clientes?.nombre ?? ''} ${f.item.producto} ${f.item.codigo_producto ?? ''}`
   : `compra libre ${f.compra.codigo ?? ''} ${f.compra.producto} ${f.compra.talla_color ?? ''}`).toLowerCase()
@@ -52,10 +52,10 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
     .filter((p) => p.estado === 'pedido_confirmado' || (verPreparacion && p.estado === 'en_preparacion'))
     .sort((a, b) => String(a.fecha_pedido).localeCompare(String(b.fecha_pedido)))
     .flatMap((p) => (p.pedido_items ?? []).filter((it) => it.id && !esLineaEnvio(it)).map((it) => ({ tipo: 'pedido' as const, clave: it.id!, itemId: it.id!, pedido: p, item: it }))), [pedidos, verPreparacion])
-  // Compras libres que todavía le deben algo al proveedor (las más viejas primero).
+  // Compras libres marcadas "Por pagar" (el mismo criterio que la tarjeta en Compras libres), las
+  // más viejas primero. Entran aunque el saldo dé $0 (p. ej. registrada sin costo): ahí se escribe el precio.
   const filasLibres = useMemo<Fila[]>(() => libres
     .map((c) => ({ tipo: 'libre' as const, clave: `libre:${c.id}`, compra: c, falta: porPagarInversion(c, costoCompra(c)) }))
-    .filter((f) => f.falta > 0.005)
     .sort((a, b) => a.compra.fecha.localeCompare(b.compra.fecha)), [libres])
   const filas = useMemo(() => [...filasPedidos, ...filasLibres], [filasPedidos, filasLibres])
 
