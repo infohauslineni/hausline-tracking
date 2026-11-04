@@ -45,7 +45,12 @@ export async function resenaPublica(response, body) {
     const buf = Buffer.from(b64, 'base64')
     if (!buf.length || buf.length > MAX_FOTO) return response.status(200).json({ ok: false, error: 'foto_grande' })
     let jpg
-    try { jpg = await sharp(buf).rotate().resize(1200, 1200, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 82, mozjpeg: true }).toBuffer() }
+    try {
+      // Solo fotos de verdad (nada de SVG u otros formatos con código adentro) y sin fotos gigantes.
+      const meta = await sharp(buf, { limitInputPixels: 50_000_000 }).metadata()
+      if (!['jpeg', 'png', 'webp', 'heif', 'avif', 'gif'].includes(String(meta.format))) return response.status(200).json({ ok: false, error: 'foto_invalida' })
+      jpg = await sharp(buf, { limitInputPixels: 50_000_000 }).rotate().resize(1200, 1200, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 82, mozjpeg: true }).toBuffer()
+    }
     catch { return response.status(200).json({ ok: false, error: 'foto_invalida' }) }
     // El bucket se crea solo la primera vez.
     const { data: bucket } = await db.storage.getBucket(BUCKET)

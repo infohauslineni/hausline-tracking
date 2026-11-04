@@ -29,11 +29,8 @@ export default async function handler(request, response) {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return response.status(500).json({ ok: false, error: 'Missing server configuration' })
   }
-  if (!process.env.REPLICATE_API_TOKEN) {
-    return response.status(500).json({ ok: false, error: 'Falta REPLICATE_API_TOKEN' })
-  }
 
-  // --- 1) validar sesión ---------------------------------------------------
+  // --- 1) validar sesión (antes que nada: a un extraño no se le dice qué falta configurar) ---
   const client = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
@@ -41,6 +38,9 @@ export default async function handler(request, response) {
   const token = String(authorization).replace(/^Bearer\s+/i, '').trim()
   if (!token) return response.status(401).json({ ok: false })
   if (!(await personalActivo(client, token))) return response.status(401).json({ ok: false })
+  if (!process.env.REPLICATE_API_TOKEN) {
+    return response.status(500).json({ ok: false, error: 'Falta REPLICATE_API_TOKEN' })
+  }
 
   // --- 2) leer entradas ----------------------------------------------------
   const body = typeof request.body === 'string' ? JSON.parse(request.body || '{}') : (request.body ?? {})
