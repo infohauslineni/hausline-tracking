@@ -3,21 +3,37 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { isSupabaseConfigured, supabase } from '../../lib/supabase'
 import { esLineaEnvio, pagarProveedorLote, type LineaPagoLote } from '../../services/pedidos.service'
-import { obtenerTipoCambio } from '../../services/comercial.service'
-import type { Pedido, PedidoItem } from '../../types/domain'
+import { listarInversiones, obtenerTipoCambio, pagarVariasCompras } from '../../services/comercial.service'
+import type { Inversion, Pedido, PedidoItem } from '../../types/domain'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
+import { porPagarInversion } from '../../utils/compraPago'
 import { repartir } from '../../utils/repartoCompra'
 import { CuentaSelect, type DestinoPago } from '../finanzas/CuentaSelect'
 import { Modal } from '../ui/Modal'
 
 // PAGAR AL PROVEEDOR VARIOS PRODUCTOS DE UNA VEZ (un solo envío por PayPal). Se eligen los
 // productos, se pone el precio de cada uno y cuánto se manda en total; la comisión se reparte
-// según el precio (el que cuesta más carga más) y a cada producto de cada pedido le queda su
-// costo real. Ej.: productos por $460 y se mandan $483 → cada uno sale a su precio × 1.05.
+// según el precio (el que cuesta más carga más) y a cada producto le queda su costo real.
+// Ej.: productos por $460 y se mandan $483 → cada uno sale a su precio × 1.05.
+// Entran los productos de pedidos y también las Compras libres que están "por pagar": a esas
+// la comisión se les suma en gastos adicionales y quedan pagadas.
 
-type Fila = { clave: string; itemId: string; pedido: Pedido; item: PedidoItem }
+type Fila =
+  | { tipo: 'pedido'; clave: string; itemId: string; pedido: Pedido; item: PedidoItem }
+  | { tipo: 'libre'; clave: string; compra: Inversion; falta: number }
 const r2 = (n: number) => Math.round(n * 100) / 100
 const usd = (n: number) => `$${n.toFixed(2)}`
+const costoCompra = (x: Inversion) => Number(x.costo_unitario) * Number(x.cantidad) + Number(x.gastos_adicionales)
+const hoy = () => new Date().toISOString().slice(0, 10)
+
+const nombreDe = (f: Fila) => f.tipo === 'pedido' ? f.item.producto : f.compra.producto
+const imagenDe = (f: Fila) => resolverImagenCatalogo(f.tipo === 'pedido' ? f.item.imagen : f.compra.imagen)
+const detalleDe = (f: Fila) => f.tipo === 'pedido'
+  ? `${f.pedido.codigo} · ${f.pedido.clientes?.nombre ?? 'Cliente'}${f.item.talla ? ` · Talla ${f.item.talla}` : ''}${Number(f.item.cantidad) > 1 ? ` · ${f.item.cantidad}×` : ''}${f.pedido.estado === 'en_preparacion' ? ' · En preparación' : ''}`
+  : `Compra libre${f.compra.codigo ? ` · ${f.compra.codigo}` : ''}${f.compra.talla_color ? ` · ${f.compra.talla_color}` : ''}${Number(f.compra.cantidad) > 1 ? ` · ${f.compra.cantidad}×` : ''} · debe ${usd(f.falta)}`
+const textoBusqueda = (f: Fila) => (f.tipo === 'pedido'
+  ? `${f.pedido.codigo} ${f.pedido.clientes?.nombre ?? ''} ${f.item.producto} ${f.item.codigo_producto ?? ''}`
+  : `compra libre ${f.compra.codigo ?? ''} ${f.compra.producto} ${f.compra.talla_color ?? ''}`).toLowerCase()
 
 export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { open: boolean; pedidos: Pedido[]; onClose: () => void; onPagado: () => void }) {
   const [verPreparacion, setVerPreparacion] = useState(false)
@@ -30,27 +46,44 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
   const [pasar, setPasar] = useState(true)
   const [tipoCambio, setTipoCambio] = useState(36.6)
   const [guardando, setGuardando] = useState(false)
+  const [libres, setLibres] = useState<Inversion[]>([])
 
-  const filas = useMemo<Fila[]>(() => pedidos
+  const filasPedidos = useMemo<Fila[]>(() => pedidos
     .filter((p) => p.estado === 'pedido_confirmado' || (verPreparacion && p.estado === 'en_preparacion'))
     .sort((a, b) => String(a.fecha_pedido).localeCompare(String(b.fecha_pedido)))
-    .flatMap((p) => (p.pedido_items ?? []).filter((it) => it.id && !esLineaEnvio(it)).map((it) => ({ clave: it.id!, itemId: it.id!, pedido: p, item: it }))), [pedidos, verPreparacion])
+    .flatMap((p) => (p.pedido_items ?? []).filter((it) => it.id && !esLineaEnvio(it)).map((it) => ({ tipo: 'pedido' as const, clave: it.id!, itemId: it.id!, pedido: p, item: it }))), [pedidos, verPreparacion])
+  // Compras libres que todavía le deben algo al proveedor (las más viejas primero).
+  const filasLibres = useMemo<Fila[]>(() => libres
+    .map((c) => ({ tipo: 'libre' as const, clave: `libre:${c.id}`, compra: c, falta: porPagarInversion(c, costoCompra(c)) }))
+    .filter((f) => f.falta > 0.005)
+    .sort((a, b) => a.compra.fecha.localeCompare(b.compra.fecha)), [libres])
+  const filas = useMemo(() => [...filasPedidos, ...filasLibres], [filasPedidos, filasLibres])
 
   // Al abrir: limpia y propone el precio de cada producto (el que ya tenía, o el del catálogo).
+  // En las compras libres el precio propuesto es lo que falta pagar.
   useEffect(() => {
     if (!open) return
-    setElegidos(new Set()); setTotal(''); setBusqueda(''); setMetodo('PayPal'); setDestino({ cuentaId: null, montoCuenta: 0 }); setPasar(true)
+    setElegidos(new Set()); setTotal(''); setBusqueda(''); setMetodo('PayPal'); setDestino({ cuentaId: null, montoCuenta: 0 }); setPasar(true); setLibres([])
     if (isSupabaseConfigured) void obtenerTipoCambio().then((t) => { if (t) setTipoCambio(t) }).catch(() => undefined)
     const base: Record<string, string> = {}
-    for (const f of filas) if (Number(f.item.precio_compra || 0) > 0) base[f.clave] = String(r2(Number(f.item.precio_compra) * Number(f.item.cantidad || 1)))
+    for (const f of filasPedidos) if (f.tipo === 'pedido' && Number(f.item.precio_compra || 0) > 0) base[f.clave] = String(r2(Number(f.item.precio_compra) * Number(f.item.cantidad || 1)))
     setPrecios(base)
-    const codigos = [...new Set(filas.filter((f) => !base[f.clave]).map((f) => (f.item.codigo_producto ?? '').trim().toUpperCase()).filter(Boolean))]
+    if (isSupabaseConfigured) void listarInversiones().then((lista) => {
+      const deben = lista.filter((c) => c.pagado === false && c.estado !== 'descartado')
+      setLibres(deben)
+      setPrecios((act) => {
+        const sig = { ...act }
+        for (const c of deben) { const falta = porPagarInversion(c, costoCompra(c)); if (falta > 0.005 && !sig[`libre:${c.id}`]) sig[`libre:${c.id}`] = String(falta) }
+        return sig
+      })
+    }).catch(() => toast.error('No se pudieron cargar las Compras libres por pagar.'))
+    const codigos = [...new Set(filasPedidos.flatMap((f) => f.tipo === 'pedido' && !base[f.clave] ? [(f.item.codigo_producto ?? '').trim().toUpperCase()] : []).filter(Boolean))]
     if (!codigos.length || !supabase) return
     void supabase.from('productos').select('codigo, precio_compra').in('codigo', codigos).then(({ data }) => {
       const mapa = new Map((data ?? []).map((p: { codigo: string | null; precio_compra: number | null }) => [(p.codigo ?? '').trim().toUpperCase(), Number(p.precio_compra || 0)]))
       setPrecios((act) => {
         const sig = { ...act }
-        for (const f of filas) { const c = mapa.get((f.item.codigo_producto ?? '').trim().toUpperCase()); if (!sig[f.clave] && c && c > 0) sig[f.clave] = String(r2(c * Number(f.item.cantidad || 1))) }
+        for (const f of filasPedidos) { if (f.tipo !== 'pedido') continue; const c = mapa.get((f.item.codigo_producto ?? '').trim().toUpperCase()); if (!sig[f.clave] && c && c > 0) sig[f.clave] = String(r2(c * Number(f.item.cantidad || 1))) }
         return sig
       })
     })
@@ -58,7 +91,7 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
   }, [open])
 
   const term = busqueda.trim().toLowerCase()
-  const visibles = term ? filas.filter((f) => `${f.pedido.codigo} ${f.pedido.clientes?.nombre ?? ''} ${f.item.producto} ${f.item.codigo_producto ?? ''}`.toLowerCase().includes(term)) : filas
+  const visibles = term ? filas.filter((f) => textoBusqueda(f).includes(term)) : filas
   const seleccion = filas.filter((f) => elegidos.has(f.clave))
   const precioDe = (f: Fila) => Math.max(0, Number(String(precios[f.clave] ?? '').replace(',', '.')) || 0)
   const suma = r2(seleccion.reduce((s, f) => s + precioDe(f), 0))
@@ -67,6 +100,7 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
   const partes = totalUsd > 0 && suma > 0 ? repartir(totalUsd, seleccion.map(precioDe)) : []
   const costoDe = new Map(seleccion.map((f, i) => [f.clave, partes[i] ?? precioDe(f)]))
   const sinPrecio = seleccion.filter((f) => precioDe(f) <= 0)
+  const hayPedidos = seleccion.some((f) => f.tipo === 'pedido')
 
   const alternar = (clave: string) => setElegidos((s) => { const n = new Set(s); if (n.has(clave)) n.delete(clave); else n.add(clave); return n })
   const todos = visibles.length > 0 && visibles.every((f) => elegidos.has(f.clave))
@@ -74,43 +108,65 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
 
   const guardar = async () => {
     if (!seleccion.length) return toast.error('Elegí los productos que vas a pagar.')
-    if (sinPrecio.length) return toast.error(`Falta el precio de: ${sinPrecio.map((f) => f.item.producto).join(', ')}`)
+    if (sinPrecio.length) return toast.error(`Falta el precio de: ${sinPrecio.map(nombreDe).join(', ')}`)
     if (totalUsd <= 0) return toast.error('Escribí cuánto vas a mandar en total (con la comisión).')
     if (totalUsd < suma) return toast.error('El total que mandás es menor que la suma de los productos. Revisá los precios.')
     if (!destino.cuentaId) return toast.error('Elegí de qué cuenta sale el pago.')
     setGuardando(true)
     try {
-      const lineas: LineaPagoLote[] = seleccion.map((f) => ({ itemId: f.itemId, pedidoId: f.pedido.id, cantidad: Number(f.item.cantidad || 1), costoTotal: costoDe.get(f.clave) ?? 0 }))
-      const codigos = isSupabaseConfigured ? await pagarProveedorLote(lineas, pedidos, { cuentaId: destino.cuentaId, montoCuentaTotal: destino.montoCuenta, totalUsd, metodo, pasarAPreparacion: pasar }) : []
-      toast.success(`Pago registrado: ${seleccion.length} ${seleccion.length === 1 ? 'producto' : 'productos'} en ${codigos.length || new Set(lineas.map((l) => l.pedidoId)).size} ${codigos.length === 1 ? 'pedido' : 'pedidos'}. Cada uno ya tiene su costo con la comisión.`)
+      const dePedidos = seleccion.flatMap((f) => f.tipo === 'pedido' ? [f] : [])
+      const deLibres = seleccion.flatMap((f) => f.tipo === 'libre' ? [f] : [])
+      // Lo que sale de la cuenta (puede estar en C$) se reparte entre pedidos y compras libres según su costo.
+      const usdPedidos = r2(dePedidos.reduce((s, f) => s + (costoDe.get(f.clave) ?? 0), 0))
+      const cuentaPedidos = deLibres.length ? r2(destino.montoCuenta * (usdPedidos / totalUsd)) : destino.montoCuenta
+      const cuentaLibres = r2(destino.montoCuenta - cuentaPedidos)
+      let codigos: string[] = []
+      if (isSupabaseConfigured && dePedidos.length) {
+        const lineas: LineaPagoLote[] = dePedidos.map((f) => ({ itemId: f.itemId, pedidoId: f.pedido.id, cantidad: Number(f.item.cantidad || 1), costoTotal: costoDe.get(f.clave) ?? 0 }))
+        codigos = await pagarProveedorLote(lineas, pedidos, { cuentaId: destino.cuentaId, montoCuentaTotal: cuentaPedidos, totalUsd: usdPedidos, metodo, pasarAPreparacion: pasar })
+      }
+      if (isSupabaseConfigured && deLibres.length) {
+        // A cada compra se le suma en gastos adicionales la diferencia entre su costo real y lo que debía.
+        const extras = deLibres.map((f) => r2((costoDe.get(f.clave) ?? f.falta) - f.falta))
+        await pagarVariasCompras(deLibres.map((f) => f.compra), extras, { fecha: hoy(), metodo }, { cuentaId: destino.cuentaId, montoCuenta: cuentaLibres })
+      }
+      const partesTexto = [
+        dePedidos.length ? `${dePedidos.length} ${dePedidos.length === 1 ? 'producto' : 'productos'} en ${codigos.length || new Set(dePedidos.map((f) => f.pedido.id)).size} ${codigos.length === 1 ? 'pedido' : 'pedidos'}` : '',
+        deLibres.length ? `${deLibres.length} ${deLibres.length === 1 ? 'compra libre' : 'compras libres'}` : '',
+      ].filter(Boolean).join(' y ')
+      toast.success(`Pago registrado: ${partesTexto}. Cada uno ya tiene su costo con la comisión.`)
       onPagado(); onClose()
     } catch (error) { toast.error(error instanceof Error ? error.message : 'No se pudo registrar el pago.') }
     finally { setGuardando(false) }
   }
 
-  return <Modal open={open} onClose={onClose} ancho="amplio" title="Pagar al proveedor" description="Elegí los productos que vas a pagar juntos, poné el precio de cada uno y cuánto mandás en total por PayPal. La comisión se reparte según el precio y a cada producto le queda su costo real.">
+  return <Modal open={open} onClose={onClose} ancho="amplio" title="Pagar al proveedor" description="Elegí los productos que vas a pagar juntos (de pedidos y de Compras libres por pagar), poné el precio de cada uno y cuánto mandás en total por PayPal. La comisión se reparte según el precio y a cada producto le queda su costo real.">
     <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <label className="relative flex-1"><Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" /><input className="search-input w-full pl-9" placeholder="Buscar pedido, cliente o producto" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} /></label>
         <label className="flex items-center gap-2 text-xs text-muted"><input type="checkbox" checked={verPreparacion} onChange={(e) => setVerPreparacion(e.target.checked)} /> Ver también los que están En preparación</label>
       </div>
 
-      {filas.length === 0 ? <p className="rounded-xl border border-line p-4 text-sm text-muted">No hay pedidos en Orden confirmada esperando pago al proveedor.</p> : <div className="rounded-xl border border-line">
+      {filas.length === 0 ? <p className="rounded-xl border border-line p-4 text-sm text-muted">No hay pedidos en Orden confirmada ni Compras libres por pagar al proveedor.</p> : <div className="rounded-xl border border-line">
         <button type="button" className="flex w-full items-center gap-2 border-b border-line px-3 py-2.5 text-left text-xs font-semibold text-muted" onClick={alternarTodos}><span className={`grid size-5 place-items-center rounded border ${todos ? 'border-accent bg-accent text-black' : 'border-line'}`}>{todos && <Check size={13} />}</span>{todos ? 'Quitar todos' : `Elegir todos (${visibles.length})`}</button>
         <div className="max-h-[46vh] divide-y divide-line overflow-y-auto">
-          {visibles.map((f) => {
+          {visibles.map((f, i) => {
             const on = elegidos.has(f.clave)
-            const img = resolverImagenCatalogo(f.item.imagen)
+            const img = imagenDe(f)
             const costo = costoDe.get(f.clave)
-            return <div key={f.clave} className={`flex flex-wrap items-center gap-3 px-3 py-3 ${on ? 'bg-accent/[0.06]' : ''}`}>
-              <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => alternar(f.clave)} aria-pressed={on}>
-                <span className={`grid size-5 shrink-0 place-items-center rounded border ${on ? 'border-accent bg-accent text-black' : 'border-line'}`}>{on && <Check size={13} />}</span>
-                {img ? <img src={img} alt="" className="size-11 shrink-0 rounded-lg border border-line object-cover" loading="lazy" /> : <span className="size-11 shrink-0 rounded-lg border border-line bg-white/[0.03]" />}
-                <span className="min-w-0"><strong className="block truncate text-sm">{f.item.producto}</strong><span className="block truncate text-xs text-muted">{f.pedido.codigo} · {f.pedido.clientes?.nombre ?? 'Cliente'}{f.item.talla ? ` · Talla ${f.item.talla}` : ''}{Number(f.item.cantidad) > 1 ? ` · ${f.item.cantidad}×` : ''}{f.pedido.estado === 'en_preparacion' ? ' · En preparación' : ''}</span></span>
-              </button>
-              <div className="flex w-full items-center justify-end gap-3 pl-8 sm:w-auto sm:pl-0">
-                <label className="flex items-center gap-1.5 text-xs text-muted">Precio <input inputMode="decimal" className="simple-input w-24 text-right" placeholder="0.00" value={precios[f.clave] ?? ''} onChange={(e) => { setPrecios((p) => ({ ...p, [f.clave]: e.target.value })); if (!on) alternar(f.clave) }} /></label>
-                <span className="w-24 text-right text-xs">{on && costo != null && totalUsd > 0 ? <><span className="block text-[10px] uppercase tracking-wide text-muted">Costo real</span><b className="font-mono text-sm">{usd(costo)}</b></> : null}</span>
+            const primeraLibre = f.tipo === 'libre' && visibles[i - 1]?.tipo !== 'libre'
+            return <div key={f.clave}>
+              {primeraLibre && <p className="bg-white/[0.03] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">Compras libres por pagar</p>}
+              <div className={`flex flex-wrap items-center gap-3 px-3 py-3 ${on ? 'bg-accent/[0.06]' : ''}`}>
+                <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => alternar(f.clave)} aria-pressed={on}>
+                  <span className={`grid size-5 shrink-0 place-items-center rounded border ${on ? 'border-accent bg-accent text-black' : 'border-line'}`}>{on && <Check size={13} />}</span>
+                  {img ? <img src={img} alt="" className="size-11 shrink-0 rounded-lg border border-line object-cover" loading="lazy" /> : <span className="size-11 shrink-0 rounded-lg border border-line bg-white/[0.03]" />}
+                  <span className="min-w-0"><strong className="block truncate text-sm">{nombreDe(f)}</strong><span className="block truncate text-xs text-muted">{detalleDe(f)}</span></span>
+                </button>
+                <div className="flex w-full items-center justify-end gap-3 pl-8 sm:w-auto sm:pl-0">
+                  <label className="flex items-center gap-1.5 text-xs text-muted">Precio <input inputMode="decimal" className="simple-input w-24 text-right" placeholder="0.00" value={precios[f.clave] ?? ''} onChange={(e) => { setPrecios((p) => ({ ...p, [f.clave]: e.target.value })); if (!on) alternar(f.clave) }} /></label>
+                  <span className="w-24 text-right text-xs">{on && costo != null && totalUsd > 0 ? <><span className="block text-[10px] uppercase tracking-wide text-muted">Costo real</span><b className="font-mono text-sm">{usd(costo)}</b></> : null}</span>
+                </div>
               </div>
             </div>
           })}
@@ -132,7 +188,7 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
       <div className="form-grid">
         <label className="form-field"><span>Método</span><input value={metodo} onChange={(e) => setMetodo(e.target.value)} /></label>
         <CuentaSelect requerido montoUsd={totalUsd} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" proposito="comprar" />
-        <label className="col-span-full flex items-center gap-2 text-sm"><input type="checkbox" checked={pasar} onChange={(e) => setPasar(e.target.checked)} /> Pasar esos pedidos a <b>En preparación</b></label>
+        {(hayPedidos || !seleccion.length) && <label className="col-span-full flex items-center gap-2 text-sm"><input type="checkbox" checked={pasar} onChange={(e) => setPasar(e.target.checked)} /> Pasar esos pedidos a <b>En preparación</b></label>}
       </div>
 
       <div className="flex flex-col-reverse gap-2 border-t border-line pt-4 sm:flex-row sm:justify-end">
