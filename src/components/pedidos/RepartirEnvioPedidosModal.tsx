@@ -3,8 +3,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { esLineaEnvio, repartirEnvioPedidos, type LineaEnvioLote } from '../../services/pedidos.service'
-import { obtenerTipoCambio } from '../../services/comercial.service'
-import type { Pedido, PedidoItem } from '../../types/domain'
+import { listarInversiones, obtenerTipoCambio, registrarEnvioCompras } from '../../services/comercial.service'
+import type { Inversion, Pedido, PedidoItem } from '../../types/domain'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { MODOS_REPARTO, TIPOS_PRODUCTO, repartir, tipoDeProducto, type ModoReparto, type TipoProducto } from '../../utils/repartoCompra'
 import { CuentaSelect, type DestinoPago } from '../finanzas/CuentaSelect'
@@ -14,13 +14,30 @@ import { Modal } from '../ui/Modal'
 // Llega una caja con zapatos y camisas de varios pedidos y se paga un solo envío: se eligen los
 // productos que venían, cada uno con su peso (ya propone 3 lb por par y 0.7 lb por prenda), y a
 // cada pedido le queda su parte como gasto "Envío internacional" + el costo de cada producto.
+// En la misma caja pueden venir Compras libres: también se eligen aquí y a cada una le queda su
+// parte como gasto "Envío" ligado a la compra (igual que "Repartir envío" en Compras libres).
 
-type Fila = { clave: string; pedido: Pedido; item: PedidoItem }
+type Fila =
+  | { tipo: 'pedido'; clave: string; pedido: Pedido; item: PedidoItem }
+  | { tipo: 'libre'; clave: string; compra: Inversion }
 const r2 = (n: number) => Math.round(n * 100) / 100
 const usd = (n: number) => `$${(Number.isFinite(n) ? n : 0).toFixed(2)}`
 const hoy = () => new Date().toISOString().slice(0, 10)
 const num = (s: string | undefined) => Math.max(0, Number(String(s ?? '').replace(',', '.')) || 0)
 const ACTIVOS: Pedido['estado'][] = ['en_preparacion', 'control_calidad', 'etiqueta_creada', 'despachado', 'transito_internacional', 'recibido_estados_unidos', 'transito_nicaragua', 'llego_nicaragua', 'disponible_entrega', 'pagado', 'empaquetado', 'incidencia']
+const cantidadDe = (f: Fila) => Number((f.tipo === 'pedido' ? f.item.cantidad : f.compra.cantidad) || 1)
+const nombreDe = (f: Fila) => f.tipo === 'pedido' ? f.item.producto : f.compra.producto
+const tipoInicial = (f: Fila) => tipoDeProducto(f.tipo === 'pedido' ? `${f.item.producto} ${f.item.categoria ?? ''}` : f.compra.producto)
+const precioVentaDe = (f: Fila) => (f.tipo === 'pedido' ? Number(f.item.precio_unitario || 0) : Number(f.compra.precio_venta_estimado || 0)) * cantidadDe(f)
+// Envío que ya tiene el producto (para avisar que esto se suma).
+const envioActualDe = (f: Fila) => f.tipo === 'pedido' ? Number(f.item.envio_internacional || 0) * cantidadDe(f)
+  : (f.compra.gastos ?? []).filter((g) => /env[íi]o/i.test(g.categoria ?? '')).reduce((s, g) => s + Number(g.monto || 0), 0)
+const detalleDe = (f: Fila) => f.tipo === 'pedido'
+  ? `${f.pedido.codigo} · ${f.pedido.clientes?.nombre ?? 'Cliente'}${f.item.talla ? ` · Talla ${f.item.talla}` : ''}${Number(f.item.cantidad) > 1 ? ` · ${f.item.cantidad}×` : ''}`
+  : `Compra libre${f.compra.codigo ? ` · ${f.compra.codigo}` : ''}${f.compra.talla_color ? ` · ${f.compra.talla_color}` : ''}${Number(f.compra.cantidad) > 1 ? ` · ${f.compra.cantidad}×` : ''}${f.compra.estado === 'en_transito' ? ' · En camino' : ''}`
+const textoBusqueda = (f: Fila) => (f.tipo === 'pedido'
+  ? `${f.pedido.codigo} ${f.pedido.clientes?.nombre ?? ''} ${f.item.producto} ${f.item.codigo_producto ?? ''}`
+  : `compra libre ${f.compra.codigo ?? ''} ${f.compra.producto} ${f.compra.talla_color ?? ''}`).toLowerCase()
 const opcion = (activo: boolean) => `rounded-xl border px-3 py-2 text-left text-xs transition ${activo ? 'border-accent bg-accent/[.1]' : 'border-line text-muted hover:border-accent/50'}`
 
 export function RepartirEnvioPedidosModal({ open, pedidos, onClose, onListo }: { open: boolean; pedidos: Pedido[]; onClose: () => void; onListo: () => void }) {
@@ -36,34 +53,42 @@ export function RepartirEnvioPedidosModal({ open, pedidos, onClose, onListo }: {
   const [destino, setDestino] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
   const [tipoCambio, setTipoCambio] = useState(36.6)
   const [guardando, setGuardando] = useState(false)
+  const [compras, setCompras] = useState<Inversion[]>([])
 
-  const filas = useMemo<Fila[]>(() => pedidos
+  const filasPedidos = useMemo<Fila[]>(() => pedidos
     .filter((p) => ACTIVOS.includes(p.estado) || (verTodos && p.estado !== 'cancelado'))
     .sort((a, b) => String(b.fecha_pedido).localeCompare(String(a.fecha_pedido)))
-    .flatMap((p) => (p.pedido_items ?? []).filter((it) => it.id && !esLineaEnvio(it)).map((it) => ({ clave: it.id!, pedido: p, item: it }))), [pedidos, verTodos])
+    .flatMap((p) => (p.pedido_items ?? []).filter((it) => it.id && !esLineaEnvio(it)).map((it) => ({ tipo: 'pedido' as const, clave: it.id!, pedido: p, item: it }))), [pedidos, verTodos])
+  // Compras libres que vienen en camino (con "Ver también…", todas menos las descartadas).
+  const filasLibres = useMemo<Fila[]>(() => compras
+    .filter((c) => c.estado !== 'descartado' && (verTodos || c.estado === 'en_transito'))
+    .map((c) => ({ tipo: 'libre' as const, clave: `libre:${c.id}`, compra: c })), [compras, verTodos])
+  const filas = useMemo(() => [...filasPedidos, ...filasLibres], [filasPedidos, filasLibres])
 
   // Al abrir: limpia y propone el tipo/peso de cada producto según su nombre.
   useEffect(() => {
     if (!open) return
     setElegidos(new Set()); setTotal(''); setBusqueda(''); setModo('peso'); setFecha(hoy()); setMetodo('Transferencia'); setDestino({ cuentaId: null, montoCuenta: 0 })
     if (isSupabaseConfigured) void obtenerTipoCambio().then((t) => { if (t) setTipoCambio(t) }).catch(() => undefined)
+    if (isSupabaseConfigured) void listarInversiones().then(setCompras).catch(() => toast.error('No se pudieron cargar las Compras libres.'))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
   useEffect(() => {
     if (!open) return
-    setTipos((act) => { const sig = { ...act }; for (const f of filas) if (!sig[f.clave]) sig[f.clave] = tipoDeProducto(`${f.item.producto} ${f.item.categoria ?? ''}`); return sig })
-    setLibras((act) => { const sig = { ...act }; for (const f of filas) if (sig[f.clave] == null) sig[f.clave] = String(r2(TIPOS_PRODUCTO[tipoDeProducto(`${f.item.producto} ${f.item.categoria ?? ''}`)].lb * Number(f.item.cantidad || 1))); return sig })
+    setTipos((act) => { const sig = { ...act }; for (const f of filas) if (!sig[f.clave]) sig[f.clave] = tipoInicial(f); return sig })
+    setLibras((act) => { const sig = { ...act }; for (const f of filas) if (sig[f.clave] == null) sig[f.clave] = String(r2(TIPOS_PRODUCTO[tipoInicial(f)].lb * cantidadDe(f))); return sig })
   }, [open, filas])
 
   const term = busqueda.trim().toLowerCase()
-  const visibles = term ? filas.filter((f) => `${f.pedido.codigo} ${f.pedido.clientes?.nombre ?? ''} ${f.item.producto} ${f.item.codigo_producto ?? ''}`.toLowerCase().includes(term)) : filas
+  const visibles = term ? filas.filter((f) => textoBusqueda(f).includes(term)) : filas
   const seleccion = filas.filter((f) => elegidos.has(f.clave))
   const totalUsd = num(total)
   const pesoTotal = r2(seleccion.reduce((s, f) => s + num(libras[f.clave]), 0))
-  const pesos = seleccion.map((f) => (modo === 'igual' ? Number(f.item.cantidad || 1) : modo === 'peso' ? num(libras[f.clave]) : Number(f.item.precio_unitario || 0) * Number(f.item.cantidad || 1)))
+  const pesos = seleccion.map((f) => (modo === 'igual' ? cantidadDe(f) : modo === 'peso' ? num(libras[f.clave]) : precioVentaDe(f)))
   const partes = totalUsd > 0 ? repartir(totalUsd, pesos) : []
   const parteDe = new Map(seleccion.map((f, i) => [f.clave, partes[i] ?? 0]))
-  const pedidosN = new Set(seleccion.map((f) => f.pedido.id)).size
+  const pedidosN = new Set(seleccion.flatMap((f) => f.tipo === 'pedido' ? [f.pedido.id] : [])).size
+  const libresN = seleccion.filter((f) => f.tipo === 'libre').length
 
   const alternar = (clave: string) => setElegidos((s) => { const n = new Set(s); if (n.has(clave)) n.delete(clave); else n.add(clave); return n })
   const todos = visibles.length > 0 && visibles.every((f) => elegidos.has(f.clave))
@@ -76,45 +101,67 @@ export function RepartirEnvioPedidosModal({ open, pedidos, onClose, onListo }: {
     if (!destino.cuentaId) return toast.error('Elegí de qué cuenta salió el pago del envío.')
     setGuardando(true)
     try {
-      const lineas: LineaEnvioLote[] = seleccion.map((f) => ({ itemId: f.clave, pedidoId: f.pedido.id, cantidad: Number(f.item.cantidad || 1), monto: parteDe.get(f.clave) ?? 0, nombre: `${f.item.producto}${f.item.talla ? ` (${f.item.talla})` : ''}`, envioActual: Number(f.item.envio_internacional || 0) }))
-      const codigos = isSupabaseConfigured ? await repartirEnvioPedidos(lineas, pedidos, { fecha, metodo, cuentaId: destino.cuentaId, montoCuentaTotal: destino.montoCuenta, totalUsd }) : []
-      toast.success(`Envío de ${usd(totalUsd)} repartido entre ${seleccion.length} ${seleccion.length === 1 ? 'producto' : 'productos'} de ${codigos.length || pedidosN} ${(codigos.length || pedidosN) === 1 ? 'pedido' : 'pedidos'}.`)
+      const dePedidos = seleccion.flatMap((f) => f.tipo === 'pedido' ? [f] : [])
+      const deLibres = seleccion.flatMap((f) => f.tipo === 'libre' ? [f] : [])
+      // Lo que sale de la cuenta (puede estar en C$) se reparte entre pedidos y compras libres según su parte.
+      const usdPedidos = r2(dePedidos.reduce((s, f) => s + (parteDe.get(f.clave) ?? 0), 0))
+      const usdLibres = r2(totalUsd - usdPedidos)
+      const cuentaPedidos = deLibres.length ? r2(destino.montoCuenta * (usdPedidos / totalUsd)) : destino.montoCuenta
+      const cuentaLibres = r2(destino.montoCuenta - cuentaPedidos)
+      let codigos: string[] = []
+      if (isSupabaseConfigured && dePedidos.length) {
+        const lineas: LineaEnvioLote[] = dePedidos.map((f) => ({ itemId: f.clave, pedidoId: f.pedido.id, cantidad: Number(f.item.cantidad || 1), monto: parteDe.get(f.clave) ?? 0, nombre: `${f.item.producto}${f.item.talla ? ` (${f.item.talla})` : ''}`, envioActual: Number(f.item.envio_internacional || 0) }))
+        codigos = await repartirEnvioPedidos(lineas, pedidos, { fecha, metodo, cuentaId: destino.cuentaId, montoCuentaTotal: cuentaPedidos, totalUsd: usdPedidos })
+      }
+      if (isSupabaseConfigured && deLibres.length && usdLibres > 0.004) {
+        await registrarEnvioCompras(deLibres.map((f) => ({ item: f.compra, monto: parteDe.get(f.clave) ?? 0 })), { fecha, metodo, descripcion: 'Envío a Nicaragua' }, { cuentaId: destino.cuentaId, montoCuenta: cuentaLibres })
+      }
+      const n = codigos.length || pedidosN
+      const partesTexto = [
+        dePedidos.length ? `${dePedidos.length} ${dePedidos.length === 1 ? 'producto' : 'productos'} de ${n} ${n === 1 ? 'pedido' : 'pedidos'}` : '',
+        deLibres.length ? `${deLibres.length} ${deLibres.length === 1 ? 'compra libre' : 'compras libres'}` : '',
+      ].filter(Boolean).join(' y ')
+      toast.success(`Envío de ${usd(totalUsd)} repartido entre ${partesTexto}.`)
       onListo(); onClose()
     } catch (error) { toast.error(error instanceof Error ? error.message : 'No se pudo repartir el envío.') }
     finally { setGuardando(false) }
   }
 
-  return <Modal open={open} onClose={onClose} ancho="amplio" title="Repartir envío del paquete" description="Elegí los productos que vinieron en la misma caja y cuánto pagaste por traerla. Cada producto carga su parte según su peso y queda en el costo de su pedido.">
+  return <Modal open={open} onClose={onClose} ancho="amplio" title="Repartir envío del paquete" description="Elegí los productos que vinieron en la misma caja (de pedidos y de Compras libres) y cuánto pagaste por traerla. Cada producto carga su parte según su peso y queda en su costo.">
     <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <label className="relative flex-1"><Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" /><input className="search-input w-full pl-9" placeholder="Buscar pedido, cliente o producto" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} /></label>
         <label className="flex items-center gap-2 text-xs text-muted"><input type="checkbox" checked={verTodos} onChange={(e) => setVerTodos(e.target.checked)} /> Ver también confirmados y entregados</label>
       </div>
 
-      {filas.length === 0 ? <p className="rounded-xl border border-line p-4 text-sm text-muted">No hay pedidos en camino.</p> : <div className="rounded-xl border border-line">
+      {filas.length === 0 ? <p className="rounded-xl border border-line p-4 text-sm text-muted">No hay pedidos ni Compras libres en camino.</p> : <div className="rounded-xl border border-line">
         <button type="button" className="flex w-full items-center gap-2 border-b border-line px-3 py-2.5 text-left text-xs font-semibold text-muted" onClick={alternarTodos}><span className={`grid size-5 place-items-center rounded border ${todos ? 'border-accent bg-accent text-black' : 'border-line'}`}>{todos && <Check size={13} />}</span>{todos ? 'Quitar todos' : `Elegir todos (${visibles.length})`}</button>
         <div className="max-h-[42vh] divide-y divide-line overflow-y-auto">
-          {visibles.map((f) => {
+          {visibles.map((f, i) => {
             const on = elegidos.has(f.clave)
-            const img = resolverImagenCatalogo(f.item.imagen)
-            const yaTiene = Number(f.item.envio_internacional || 0)
-            return <div key={f.clave} className={`flex flex-wrap items-center gap-3 px-3 py-3 ${on ? 'bg-accent/[0.06]' : ''}`}>
+            const img = resolverImagenCatalogo(f.tipo === 'pedido' ? f.item.imagen : f.compra.imagen)
+            const yaTiene = envioActualDe(f)
+            const primeraLibre = f.tipo === 'libre' && visibles[i - 1]?.tipo !== 'libre'
+            return <div key={f.clave}>
+            {primeraLibre && <p className="bg-white/[0.03] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">Compras libres</p>}
+            <div className={`flex flex-wrap items-center gap-3 px-3 py-3 ${on ? 'bg-accent/[0.06]' : ''}`}>
               <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => alternar(f.clave)} aria-pressed={on}>
                 <span className={`grid size-5 shrink-0 place-items-center rounded border ${on ? 'border-accent bg-accent text-black' : 'border-line'}`}>{on && <Check size={13} />}</span>
                 {img ? <img src={img} alt="" className="size-11 shrink-0 rounded-lg border border-line object-cover" loading="lazy" /> : <span className="size-11 shrink-0 rounded-lg border border-line bg-white/[0.03]" />}
-                <span className="min-w-0"><strong className="block truncate text-sm">{f.item.producto}</strong>
-                  <span className="block truncate text-xs text-muted">{f.pedido.codigo} · {f.pedido.clientes?.nombre ?? 'Cliente'}{f.item.talla ? ` · Talla ${f.item.talla}` : ''}{Number(f.item.cantidad) > 1 ? ` · ${f.item.cantidad}×` : ''}</span>
-                  {yaTiene > 0 && <span className="block text-[11px] text-amber-500">Ya tiene {usd(yaTiene * Number(f.item.cantidad || 1))} de envío: esto se suma</span>}</span>
+                <span className="min-w-0"><strong className="block truncate text-sm">{nombreDe(f)}</strong>
+                  <span className="block truncate text-xs text-muted">{detalleDe(f)}</span>
+                  {yaTiene > 0 && <span className="block text-[11px] text-amber-500">Ya tiene {usd(yaTiene)} de envío: esto se suma</span>}</span>
               </button>
               <div className="flex w-full items-center justify-end gap-2 pl-8 sm:w-auto sm:pl-0">
                 {modo === 'peso' && <>
-                  <select className="simple-input w-28! px-2!" value={tipos[f.clave] ?? 'zapatos'} aria-label="Tipo de producto" onChange={(e) => { const t = e.target.value as TipoProducto; setTipos((x) => ({ ...x, [f.clave]: t })); setLibras((x) => ({ ...x, [f.clave]: String(r2(TIPOS_PRODUCTO[t].lb * Number(f.item.cantidad || 1))) })); if (!on) alternar(f.clave) }}>
+                  <select className="simple-input w-28! px-2!" value={tipos[f.clave] ?? 'zapatos'} aria-label="Tipo de producto" onChange={(e) => { const t = e.target.value as TipoProducto; setTipos((x) => ({ ...x, [f.clave]: t })); setLibras((x) => ({ ...x, [f.clave]: String(r2(TIPOS_PRODUCTO[t].lb * cantidadDe(f))) })); if (!on) alternar(f.clave) }}>
                     {(Object.keys(TIPOS_PRODUCTO) as TipoProducto[]).map((t) => <option key={t} value={t}>{TIPOS_PRODUCTO[t].label}</option>)}
                   </select>
                   <label className="flex items-center gap-1 text-xs text-muted"><input inputMode="decimal" className="simple-input w-16! text-right" value={libras[f.clave] ?? ''} aria-label="Peso en libras" onChange={(e) => { setLibras((x) => ({ ...x, [f.clave]: e.target.value })); if (!on) alternar(f.clave) }} />lb</label>
                 </>}
                 <span className="w-20 text-right text-xs">{on && totalUsd > 0 ? <><span className="block text-[10px] uppercase tracking-wide text-muted">Le toca</span><b className="font-mono text-sm">{usd(parteDe.get(f.clave) ?? 0)}</b></> : null}</span>
               </div>
+            </div>
             </div>
           })}
         </div>
@@ -124,7 +171,7 @@ export function RepartirEnvioPedidosModal({ open, pedidos, onClose, onListo }: {
 
       <div className="grid gap-3 rounded-xl border border-line bg-white/[0.02] p-4 sm:grid-cols-2">
         <div className="space-y-1 text-sm">
-          <p className="flex justify-between"><span className="text-muted">Productos elegidos</span><b>{seleccion.length}{pedidosN > 0 ? ` · ${pedidosN} ${pedidosN === 1 ? 'pedido' : 'pedidos'}` : ''}</b></p>
+          <p className="flex justify-between"><span className="text-muted">Productos elegidos</span><b>{seleccion.length}{pedidosN > 0 ? ` · ${pedidosN} ${pedidosN === 1 ? 'pedido' : 'pedidos'}` : ''}{libresN > 0 ? ` · ${libresN} ${libresN === 1 ? 'compra libre' : 'compras libres'}` : ''}</b></p>
           {modo === 'peso' && <p className="flex justify-between"><span className="text-muted">Peso total</span><b className="font-mono">{pesoTotal} lb</b></p>}
           {modo === 'peso' && totalUsd > 0 && pesoTotal > 0 && <p className="flex justify-between"><span className="text-muted">Sale a</span><b className="font-mono">{usd(totalUsd / pesoTotal)} por libra</b></p>}
         </div>
