@@ -1,10 +1,10 @@
-import { Check, EyeOff, Mail, Plus, Share2, Star, Trash2, X } from 'lucide-react'
+import { Check, Eye, EyeOff, Mail, Plus, Share2, Star, Trash2, X } from 'lucide-react'
 import { ClientesTabs } from '../../components/layout/LibresTabs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
-import { aprobarResena, crearResena, destacarResena, eliminarResena, listarResenas, pedirResenasAhora, type Resena, type ResultadoPedirResenas } from '../../services/resenas.service'
+import { aprobarResena, crearResena, destacarResena, eliminarResena, listarResenas, nombreResena, pedirResenasAhora, SIN_NOMBRE, type Resena, type ResultadoPedirResenas } from '../../services/resenas.service'
 import { listarProductos } from '../../services/comercial.service'
 import { HistoriaResenaModal } from '../../components/resenas/HistoriaResenaModal'
 import type { Producto } from '../../types/domain'
@@ -54,7 +54,7 @@ export function ResenasPage() {
   const accion = async (id: string, fn: () => Promise<void>, ok: string) => {
     setBusy(id)
     try { await fn(); toast.success(ok); await cargar(true) }
-    catch { toast.error('No se pudo completar la acción.') }
+    catch (e) { toast.error(e instanceof Error && e.message ? e.message : 'No se pudo completar la acción.') }
     finally { setBusy(null) }
   }
 
@@ -115,9 +115,11 @@ export function ResenasPage() {
                 {r.aprobada ? (
                   <button className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white/[0.02] px-3 py-2 text-xs font-semibold text-muted transition hover:border-white/20 hover:text-white" disabled={busy === r.id} onClick={() => void accion(r.id, () => aprobarResena(r.id, false), 'Reseña ocultada.')}><EyeOff size={15} /> Ocultar</button>
                 ) : (
-                  <button className="primary-button min-h-9 px-3 text-xs whitespace-nowrap" disabled={busy === r.id} onClick={() => void accion(r.id, () => aprobarResena(r.id, true), 'Reseña aprobada. Ya se ve en la tienda.')}><Check size={15} /> Aprobar</button>
+                  <>{r.cliente_nombre !== SIN_NOMBRE && <button className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white/[0.02] px-3 py-2 text-xs font-semibold text-muted transition hover:border-white/20 hover:text-white whitespace-nowrap" disabled={busy === r.id} onClick={() => void accion(r.id, async () => { await nombreResena(r, true); await aprobarResena(r.id, true) }, 'Reseña aprobada sin nombre: sale como "Cliente verificado".')}><EyeOff size={15} /> Aprobar sin nombre</button>}
+                  <button className="primary-button min-h-9 px-3 text-xs whitespace-nowrap" disabled={busy === r.id} onClick={() => void accion(r.id, () => aprobarResena(r.id, true), 'Reseña aprobada. Ya se ve en la tienda.')}><Check size={15} /> Aprobar</button></>
                 )}
                 <button className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white/[0.02] px-3 py-2 text-xs font-semibold text-muted transition hover:border-white/20 hover:text-white" disabled={busy === r.id} onClick={() => void accion(r.id, () => destacarResena(r.id, !r.destacada), r.destacada ? 'Quitada de destacadas.' : 'Marcada como destacada.')}><Star size={15} className={r.destacada ? 'fill-accent text-accent' : ''} /> {r.destacada ? 'Quitar destacada' : 'Destacar'}</button>
+                {(r.cliente_nombre !== SIN_NOMBRE || r.pedido_codigo) && <button className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white/[0.02] px-3 py-2 text-xs font-semibold text-muted transition hover:border-white/20 hover:text-white" disabled={busy === r.id} onClick={() => void accion(r.id, () => nombreResena(r, r.cliente_nombre !== SIN_NOMBRE), r.cliente_nombre !== SIN_NOMBRE ? 'Nombre oculto: sale como "Cliente verificado".' : 'Nombre visible otra vez.')}>{r.cliente_nombre !== SIN_NOMBRE ? <><EyeOff size={15} /> Ocultar nombre</> : <><Eye size={15} /> Mostrar nombre</>}</button>}
                 <button className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white/[0.02] px-3 py-2 text-xs font-semibold text-muted transition hover:border-white/20 hover:text-white" onClick={() => setCompartiendo(r)}><Share2 size={15} /> Compartir en historia</button>
                 <button className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-line bg-white/[0.02] px-3 py-2 text-xs font-semibold text-muted transition hover:border-red-400/40 hover:text-red-300" disabled={busy === r.id} onClick={() => { if (confirm('¿Eliminar esta reseña? No se puede deshacer.')) void accion(r.id, () => eliminarResena(r.id), 'Reseña eliminada.') }}><Trash2 size={15} /> Eliminar</button>
               </div>

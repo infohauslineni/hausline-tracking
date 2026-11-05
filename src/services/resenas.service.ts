@@ -32,6 +32,28 @@ export async function aprobarResena(id: string, aprobada: boolean): Promise<void
   if (error) throw new Error(error.message)
 }
 
+// Nombre que se ve en la tienda: "María José López" → "María L." (igual que api/_resena-publica.js).
+export const SIN_NOMBRE = 'Cliente verificado'
+export function nombrePublico(nombre: string | null | undefined) {
+  const p = String(nombre ?? '').trim().split(/\s+/).filter(Boolean)
+  if (!p.length) return SIN_NOMBRE
+  const pila = p[0].charAt(0).toUpperCase() + p[0].slice(1).toLowerCase()
+  return p.length > 1 ? `${pila} ${p[p.length - 1].charAt(0).toUpperCase()}.` : pila
+}
+// Ocultar el nombre del cliente ("Cliente verificado") o volver a mostrarlo (se toma del pedido).
+export async function nombreResena(r: Pick<Resena, 'id' | 'pedido_codigo'>, ocultar: boolean): Promise<void> {
+  if (!supabase) return
+  let nombre = SIN_NOMBRE
+  if (!ocultar) {
+    if (!r.pedido_codigo) throw new Error('Esta reseña no tiene pedido: no se sabe el nombre del cliente.')
+    const { data } = await supabase.from('pedidos').select('clientes(nombre)').eq('codigo', r.pedido_codigo).maybeSingle()
+    const cli = (data as { clientes?: { nombre?: string } | { nombre?: string }[] } | null)?.clientes
+    nombre = nombrePublico(Array.isArray(cli) ? cli[0]?.nombre : cli?.nombre)
+  }
+  const { error } = await supabase.from('resenas').update({ cliente_nombre: nombre }).eq('id', r.id)
+  if (error) throw new Error(error.message)
+}
+
 export async function destacarResena(id: string, destacada: boolean): Promise<void> {
   if (!supabase) return
   const { error } = await supabase.from('resenas').update({ destacada }).eq('id', id)
