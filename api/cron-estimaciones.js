@@ -293,13 +293,9 @@ export default async function handler(request, response) {
     console.error('cron: vencer encargos falló', vencerError?.message)
   }
 
-  // Recordatorio automático de cargo por bodega al cliente. Aislado para no tumbar lo principal.
-  let bodega = 0
-  try {
-    bodega = await enviarRecordatoriosBodega(client)
-  } catch (bodegaError) {
-    console.error('cron: recordatorio bodega falló', bodegaError?.message)
-  }
+  // El aviso de bodega ahora sale en la tarea de cada 15 min (api/_automatico.js → saldoBodega),
+  // en horario de clientes y con el total (saldo + bodega). Aquí ya no se manda.
+  const bodega = 0
 
   // Recordatorio de abandono de checkout (encargo pendiente sin pago). Aislado también.
   let abandonos = 0

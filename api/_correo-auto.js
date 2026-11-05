@@ -22,6 +22,26 @@ export async function enviarCorreoRecordatorioSaldo({ correo, nombre, codigo, sa
   })
 }
 
+// (1b) SALDO + BODEGA, cada día desde el día 3 mientras siga disponible sin marcarse "Pagado":
+// el saldo del pedido más el cargo por bodega acumulado (US$5 por día después de los 2 de gracia)
+// = lo que debe pagar HOY, con las cuentas para transferir. Reemplaza al aviso de bodega viejo.
+export async function enviarCorreoSaldoBodega({ correo, nombre, codigo, dias, diasCobrados, cargo, saldo, total, cordobas, cuentas }) {
+  const usd = (n) => `US$${Number(n).toFixed(2)}`
+  const lista = (cuentas ?? []).slice(0, 4)
+    .map((c) => `<br>• <strong>${esc(c.banco)}</strong> (${esc(c.moneda)}): ${esc(c.numero)}${c.titular ? ` · ${esc(c.titular)}` : ''}`).join('')
+  const nota = `Su pedido <strong>${esc(codigo)}</strong> lleva <strong>${dias} días</strong> disponible para entrega. Pasados los 2 días de gracia se cobran US$5 por cada día extra en bodega.`
+    + `<br><br>Saldo del pedido: <strong>${usd(saldo)}</strong>`
+    + `<br>Cargo por bodega (${diasCobrados} ${diasCobrados === 1 ? 'día' : 'días'}): <strong>${usd(cargo)}</strong>`
+    + `<br><span style="font-size:16px">Total a pagar hoy: <strong>${usd(total)}</strong>${cordobas ? ` (≈ C$ ${Number(cordobas).toLocaleString('es-NI')})` : ''}</span>`
+    + `<br><br>Mañana el total sube a <strong>${usd(total + 5)}</strong>. Coordine hoy su pago y entrega para que no siga subiendo.`
+    + `${lista ? `<br><br>Puede transferir a:${lista}<br><br>Envíenos el comprobante por WhatsApp y coordinamos la entrega.` : ''}`
+  await transporteSmtp().sendMail({
+    from: remitente(), to: correo,
+    subject: `${codigo}: total a pagar hoy ${usd(total)} (incluye ${usd(cargo)} de bodega)`,
+    html: plantillaCorreo({ nombre, codigo, estado: 'disponible_entrega', estadoLabel: 'Saldo pendiente + bodega', nota, urlSeguimiento: urlPedidoCuenta(codigo), esNuevo: false, factura: null, fotos: [], pedirResena: false }),
+  })
+}
+
 // (7) VOLVER A COMPRAR: 30 días después de la entrega, cupón personal de un solo uso.
 export async function enviarCorreoRecompra({ correo, nombre, cupon, porcentaje, vence }) {
   const url = `${baseTienda()}/?cupon=${encodeURIComponent(cupon)}`

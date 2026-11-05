@@ -2,6 +2,7 @@
 // {tarea:"recordatorios_encargos"}). Cada una es independiente y best-effort: si una falla,
 // las demás siguen. Ninguna manda dos veces lo mismo: el candado es email_eventos (clave única).
 //   1. Recordatorio de saldo      → disponible hace 2 días con saldo (mañana empieza bodega)
+//   1b. Saldo + bodega            → desde el día 3, cada día: saldo + US$5 por día = total a pagar hoy
 //   3. Reporte diario al dueño    → 7 a. m. Nicaragua
 //   6. Carrito abandonado         → dejó su correo en el checkout y no terminó (2 h después)
 //   7. Volver a comprar           → 30 días después de entregado, cupón personal
@@ -11,7 +12,7 @@
 // A los CLIENTES solo se les escribe de 9 a. m. a 8 p. m. (hora de Nicaragua).
 import { createClient } from '@supabase/supabase-js'
 import { ESTADO_LABEL } from './_correo.js'
-import { enviarCorreoBajaPrecio, enviarCorreoCarritoAbandonado, enviarCorreoAvisoGastosFijos, enviarCorreoNovedades, enviarCorreoRedes, enviarCorreoRecompra, enviarCorreoRecordatorioResena, enviarCorreoRecordatorioSaldo, enviarCorreoReporteDiario } from './_correo-auto.js'
+import { enviarCorreoBajaPrecio, enviarCorreoCarritoAbandonado, enviarCorreoAvisoGastosFijos, enviarCorreoNovedades, enviarCorreoRedes, enviarCorreoRecompra, enviarCorreoRecordatorioResena, enviarCorreoRecordatorioSaldo, enviarCorreoReporteDiario, enviarCorreoSaldoBodega } from './_correo-auto.js'
 import { cerrarEmail, reservarEmail } from './_email-eventos.js'
 import { hacerRespaldo } from './_respaldo.js'
 import { gastosFijosDeManana } from './_fondo.js'
@@ -86,6 +87,45 @@ async function recordatorioSaldo(db) {
     const saldo = Number(p.saldo)
     if (await unaVez(`saldo:${p.codigo}`, 'recordatorio_saldo', { codigo: p.codigo, destinatario: correo }, () =>
       enviarCorreoRecordatorioSaldo({ correo, nombre: cli?.nombre ?? null, codigo: p.codigo, saldo, cordobas: Math.ceil((saldo * tc) / 10) * 10, cuentas }))) n++
+  }
+  return n
+}
+
+// ---------- 1b. Saldo + bodega (diario desde el día 3) ----------
+// Mientras el pedido siga "Disponible para entrega" (no se marcó Pagado), cada día le llega el
+// total actualizado: saldo + US$5 por cada día después de los 2 de gracia. Una vez por día de
+// bodega (clave bodega:CODIGO:DIAS). "Paga al recibir" no lo recibe (ya confirmó la entrega).
+const GRACIA_BODEGA = 2
+const CARGO_BODEGA_DIARIO = 5
+async function saldoBodega(db) {
+  if (!horarioCliente()) return 0
+  const { data, error } = await db.from('pedidos')
+    .select('id, codigo, saldo, notas_internas, clientes(nombre, correo), historial_pedidos(estado_nuevo, created_at)')
+    .eq('estado', 'disponible_entrega').limit(300)
+  if (error) throw new Error(error.message)
+  let tc = 37
+  const { data: cfg } = await db.from('configuracion').select('valor_json').eq('clave', 'moneda').maybeSingle()
+  if (Number(cfg?.valor_json?.tipo_cambio) > 0) tc = Number(cfg.valor_json.tipo_cambio)
+  let cuentas = null
+  let n = 0
+  for (const p of data ?? []) {
+    if (String(p.notas_internas ?? '').includes('[PAGA_AL_RECIBIR]')) continue
+    const cli = uno(p.clientes)
+    const correo = String(cli?.correo ?? '').trim()
+    const inicio = desde(p.historial_pedidos, 'disponible_entrega')
+    if (!correo || !inicio) continue
+    const dias = Math.max(0, Math.floor((Date.now() - inicio) / DIA))
+    const diasCobrados = dias - GRACIA_BODEGA
+    if (diasCobrados <= 0) continue // aún en gracia (el día 2 lo cubre el recordatorio de saldo)
+    if (!cuentas) { const { data: c } = await db.rpc('cuentas_pago_publicas'); cuentas = c?.cuentas ?? [] }
+    const saldo = Math.max(0, Number(p.saldo) || 0)
+    const cargo = diasCobrados * CARGO_BODEGA_DIARIO
+    const total = Math.round((saldo + cargo) * 100) / 100
+    if (await unaVez(`bodega:${p.codigo}:${dias}`, 'saldo_bodega', { codigo: p.codigo, destinatario: correo }, () =>
+      enviarCorreoSaldoBodega({ correo, nombre: cli?.nombre ?? null, codigo: p.codigo, dias, diasCobrados, cargo, saldo, total, cordobas: Math.ceil((total * tc) / 10) * 10, cuentas }))) {
+      n++
+      await db.from('pedidos').update({ bodega_aviso_at: new Date().toISOString() }).eq('id', p.id)
+    }
   }
   return n
 }
@@ -491,6 +531,7 @@ export async function automatizaciones() {
   await paso('rebotes', rebotesGmail)
   // Reporte diario de las 7 a. m.: APAGADO a pedido del dueño (2026-10-29).
   await paso('saldo', recordatorioSaldo)
+  await paso('saldo_bodega', saldoBodega)
   await paso('carritos', carritosAbandonados)
   await paso('post_entrega', postEntrega)
   await paso('baja_precio', bajaPrecioFavoritos)
