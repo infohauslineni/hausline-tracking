@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
-import { CircleDollarSign, PackagePlus, Plus, Save, Ticket, Trash2, UserPlus, X } from 'lucide-react'
+import { CircleDollarSign, PackagePlus, Plus, Save, Ticket, Trash2, UserPlus, UserX, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useFieldArray, useForm, useWatch } from 'react-hook-form'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -155,6 +155,19 @@ export function NuevoPedidoPage() {
     } catch { toast.error('No se pudo crear el cliente.') }
   }
 
+  // VENTA SIN NOMBRE: cuando no se sabe quién es el cliente. Todas esas ventas van a un mismo
+  // cliente "Cliente sin nombre" (se crea solo la primera vez). Sin correo: no le llegan correos.
+  const SIN_NOMBRE = { nombre: 'Cliente sin nombre', whatsapp: '0000000' }
+  const elegirSinNombre = async () => {
+    const existente = clientes.find((c) => String(c.whatsapp ?? '').replace(/\D/g, '') === SIN_NOMBRE.whatsapp || c.nombre === SIN_NOMBRE.nombre)
+    if (existente) { setValue('cliente_id', existente.id, { shouldValidate: true, shouldDirty: true }); return }
+    try {
+      const input = { ...SIN_NOMBRE, correo: null, departamento: null, ciudad: null, direccion: null, referencia: null, notas: 'Ventas donde no se sabe el nombre del cliente.' }
+      const created = isSupabaseConfigured ? await guardarCliente(input) : { ...input, id: crypto.randomUUID(), created_at: new Date().toISOString() }
+      setClientes((current) => [created, ...current]); setValue('cliente_id', created.id, { shouldValidate: true, shouldDirty: true })
+    } catch { toast.error('No se pudo elegir "Cliente sin nombre".') }
+  }
+
   const submit = async (values: FormValues) => {
     try {
       const normalizedItems = values.items.map((item, index) => ({ ...item, producto: item.producto || item.codigo_producto, cantidad: 1, color: (item.color ?? '').trim(), envio_internacional: 0, costo_delivery: 0, otros_gastos: 0, notas: '', imagen: productos.find((product) => product.id === item.producto_id)?.imagen ?? (index === 0 ? prefill?.imagen ?? null : null) }))
@@ -192,7 +205,7 @@ export function NuevoPedidoPage() {
     {prefill && <div className="mb-4 rounded-xl border border-accent/30 bg-accent/[.06] p-3 text-[12px] leading-5 text-accent"><strong>Apartado de compra libre:</strong> estás convirtiendo <strong>{prefill.producto}</strong> en un pedido normal (con su código, control de calidad y estados). Elegí el cliente; el abono ya viene con el 50%. El costo no se descuenta otra vez (su pago al proveedor se lleva en Compras libres); al guardar, la compra queda ligada a este pedido.</div>}
     <div><p className="eyebrow">Nuevo registro</p><h1 className="page-title">Registrar venta y pedido</h1><p className="page-subtitle">Guarda la venta una sola vez; el código público HS se genera automáticamente.</p></div>
     <form onSubmit={handleSubmit(submit)} className="mt-7 space-y-5">
-      <section className="form-section"><SectionTitle number="01" title="Cliente y estado" /><div className="form-grid mt-5"><div className="form-field sm:col-span-2"><span>Cliente</span><div className="flex gap-2"><input type="hidden" {...register('cliente_id')} /><ClienteBuscador clientes={clientes} valor={clienteId ?? ''} onElegir={(id) => setValue('cliente_id', id, { shouldValidate: true, shouldDirty: true })} /><button type="button" className="subtle-button shrink-0 px-3" onClick={() => setQuickOpen((value) => !value)}><UserPlus size={17} /><span className="hidden sm:inline">Nuevo</span></button></div>{errors.cliente_id && <small>{errors.cliente_id.message}</small>}</div>
+      <section className="form-section"><SectionTitle number="01" title="Cliente y estado" /><div className="form-grid mt-5"><div className="form-field sm:col-span-2"><span>Cliente</span><div className="flex gap-2"><input type="hidden" {...register('cliente_id')} /><ClienteBuscador clientes={clientes} valor={clienteId ?? ''} onElegir={(id) => setValue('cliente_id', id, { shouldValidate: true, shouldDirty: true })} /><button type="button" className="subtle-button shrink-0 px-3" onClick={() => setQuickOpen((value) => !value)}><UserPlus size={17} /><span className="hidden sm:inline">Nuevo</span></button></div>{!clienteId && <button type="button" className="mt-2 inline-flex min-h-9 items-center gap-1.5 self-start rounded-lg border border-dashed border-line px-3 text-xs font-semibold text-muted hover:border-accent hover:text-accent" onClick={() => void elegirSinNombre()}><UserX size={14} /> No sé el nombre · vender así</button>}{errors.cliente_id && <small>{errors.cliente_id.message}</small>}</div>
         {quickOpen && <div className="col-span-full grid gap-3 rounded-xl border border-accent/15 bg-accent/[0.035] p-3 sm:grid-cols-2"><input className="simple-input" placeholder="Nombre completo" value={quick.nombre} onChange={(e) => setQuick({ ...quick, nombre: e.target.value })} /><input className="simple-input" placeholder="WhatsApp" value={quick.whatsapp} onChange={(e) => setQuick({ ...quick, whatsapp: e.target.value })} /><input className="simple-input" type="email" inputMode="email" autoComplete="email" placeholder="Correo (para la factura)" value={quick.correo} onChange={(e) => setQuick({ ...quick, correo: e.target.value })} /><select className="simple-input" value={quick.departamento} onChange={(e) => setQuick({ ...quick, departamento: e.target.value })}><option value="">Departamento (define el envío)…</option>{DEPARTAMENTOS_NI.map((depto) => <option key={depto} value={depto}>{depto}</option>)}</select><button type="button" className="primary-button col-span-full px-4 sm:col-auto" onClick={() => void createQuickClient()}>Crear cliente</button></div>}
         <Field label="Estado"><select {...register('estado')}>{ESTADOS_PEDIDO.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field><Field label="Fecha de venta"><input type="date" {...register('fecha_pedido')} /></Field><Field label="Llegada estimada"><input type="date" {...register('fecha_estimada')} /></Field><Field label="Método de pago"><input {...register('metodo_pago')} placeholder="Transferencia" /></Field>
         <label className="col-span-full flex cursor-pointer items-center gap-3 rounded-xl border border-line bg-white/[0.02] p-3 transition hover:border-accent/40"><input type="checkbox" className="size-4 shrink-0 accent-accent" {...register('envio_rapido')} /><span className="flex flex-col"><span className="text-sm font-medium">El cliente quiere envío rápido</span><span className="text-[11px] text-muted">Llega en 14 a 17 días en vez de 20 a 25. Suma US$15 al total del pedido (una sola vez) y aparece como línea en la factura.</span></span></label></div></section>
