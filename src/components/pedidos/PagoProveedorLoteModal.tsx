@@ -139,7 +139,7 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
         // A cada compra se le suma en gastos adicionales la diferencia entre su costo real y lo que debía (la comisión).
         const extras = deLibres.map((f, i) => r2((costoDe.get(f.clave) ?? debia[i]) - debia[i]))
         await pagarVariasCompras(compras, extras, { fecha: hoy(), metodo }, { cuentaId: destino.cuentaId, montoCuenta: cuentaLibres })
-        // El producto del catálogo queda con el costo real por unidad de este pago (con la comisión).
+        // Costo del producto en el catálogo: se pone si no tiene; si tiene, solo sube cuando este pago salió más caro.
         for (const f of deLibres) await aprenderCostoDeCodigo(f.compra.codigo, r2((costoDe.get(f.clave) ?? 0) / Math.max(1, Number(f.compra.cantidad) || 1)))
       }
       const partesTexto = [

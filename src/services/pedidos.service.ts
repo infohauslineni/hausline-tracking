@@ -152,8 +152,10 @@ async function guardarCostosItems(client: NonNullable<typeof supabase>, insertad
 // pedido. NUNCA pisa un costo ya existente. Empareja por producto_id o, si no, por
 // código. Así, al registrar el pago al proveedor de un encargo sin costo, el producto
 // queda con su costo real (deja de salir en $0.00).
-// pisar=true (pago al proveedor en conjunto): el costo real de ese pago reemplaza al que tenía.
-async function aprenderCostoProducto(client: NonNullable<typeof supabase>, item: Pick<PedidoItem, 'producto_id' | 'codigo_producto'>, costoUnitario: number, pisar = false) {
+// subir=true (pago al proveedor en conjunto): el costo de la ficha solo cambia si este pago salió
+// MÁS CARO. Si salió igual o más barato queda el de siempre (ese pedido guarda su costo real, así
+// que gana más). El precio de venta nunca se toca.
+async function aprenderCostoProducto(client: NonNullable<typeof supabase>, item: Pick<PedidoItem, 'producto_id' | 'codigo_producto'>, costoUnitario: number, subir = false) {
   const costo = Number(costoUnitario)
   if (!(costo > 0)) return
   const codigo = (item.codigo_producto ?? '').trim()
@@ -163,12 +165,12 @@ async function aprenderCostoProducto(client: NonNullable<typeof supabase>, item:
   else return
   const { data, error } = await query.limit(1).maybeSingle()
   if (error || !data) return
-  if (!pisar && Number(data.precio_compra || 0) > 0) return // ya tiene costo: no lo tocamos
-  if (Math.abs(Number(data.precio_compra || 0) - costo) < 0.005) return
+  const actual = Number(data.precio_compra || 0)
+  if (actual > 0 && (!subir || costo <= actual + 0.004)) return // ya tiene costo (y no salió más caro): no se toca
   await client.from('productos').update({ precio_compra: costo }).eq('id', data.id)
 }
-// Igual, por código (pago en conjunto de Compras libres): el producto del catálogo queda con el
-// costo real por unidad de ese pago (reemplaza al anterior).
+// Igual, por código (pago en conjunto de Compras libres): si el producto no tiene costo queda con
+// este; si ya tiene, solo cambia cuando este pago salió más caro.
 export async function aprenderCostoDeCodigo(codigo: string | null | undefined, costoUnitario: number) {
   if (!supabase || !(codigo ?? '').trim()) return
   try { await aprenderCostoProducto(supabase, { producto_id: null, codigo_producto: codigo }, costoUnitario, true) } catch { /* no frena el pago */ }
@@ -890,7 +892,7 @@ export async function pagarProveedorLote(lineas: LineaPagoLote[], pedidos: Pedid
     const montoCuenta = opciones.cuentaId && opciones.totalUsd > 0 ? r2(opciones.montoCuentaTotal * (total / opciones.totalUsd)) : 0
     await pagarProveedorPedido(pedidoId, { monto: total, moneda: 'USD', montoOriginal: total, metodo: opciones.metodo }, { cuentaId: opciones.cuentaId, montoCuenta })
     if (opciones.pasarAPreparacion && pedido && pedido.estado === 'pedido_confirmado') await actualizarEstadoPedido(pedidoId, 'en_preparacion')
-    // El producto del catálogo queda con el costo real por unidad de este pago (con la comisión).
+    // Costo del producto en el catálogo: se pone si no tiene; si tiene, solo sube cuando este pago salió más caro.
     if (pedido && !(await vieneDeCompraLibre(client, pedidoId))) {
       for (const l of lineas.filter((x) => x.pedidoId === pedidoId)) {
         const it = (pedido.pedido_items ?? []).find((i) => i.id === l.itemId)
