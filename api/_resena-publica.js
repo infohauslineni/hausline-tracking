@@ -17,9 +17,37 @@ function nombrePublico(nombre) {
   return p.length > 1 ? `${pila} ${p[p.length - 1].charAt(0).toUpperCase()}.` : pila
 }
 
+const conexion = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+
+// Producto de la reseña: el que pidió el enlace si está en el pedido; si no, el primero del pedido.
+function productoDeResena(pedido, pedido_producto) {
+  const items = (Array.isArray(pedido.pedido_items) ? pedido.pedido_items : []).filter((it) => !esEnvio(it) && it.codigo_producto)
+  const pedido_prod = String(pedido_producto ?? '').trim().toUpperCase()
+  return (pedido_prod && items.some((it) => String(it.codigo_producto).toUpperCase() === pedido_prod) ? pedido_prod : String(items[0]?.codigo_producto ?? '').toUpperCase()) || null
+}
+// UNA reseña por producto de cada pedido: ¿ya la mandó?
+async function yaEnviada(db, codigo, producto) {
+  let q = db.from('resenas').select('id', { count: 'exact', head: true }).eq('pedido_codigo', codigo)
+  q = producto ? q.eq('producto_codigo', producto) : q.is('producto_codigo', null)
+  const { count } = await q
+  return (count ?? 0) > 0
+}
+
+// ¿Este pedido (y producto) ya tiene reseña? Lo usa la tienda para no volver a mostrar el
+// formulario ni las estrellas de "¿Cómo le fue?" en Mi cuenta. Solo responde sí/no.
+export async function resenaEstado(response, body) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(500).json({ ok: false, error: 'config' })
+  const codigo = String(body.codigo ?? '').trim().toUpperCase()
+  if (!/^[A-Z]{1,4}-?\d{3,10}$/.test(codigo)) return response.status(200).json({ ok: false, error: 'codigo' })
+  const db = conexion()
+  const { data: pedido } = await db.from('pedidos').select('codigo, pedido_items(codigo_producto, producto)').eq('codigo', codigo).maybeSingle()
+  if (!pedido) return response.status(200).json({ ok: false, error: 'pedido' })
+  return response.status(200).json({ ok: true, enviada: await yaEnviada(db, codigo, productoDeResena(pedido, body.producto)) })
+}
+
 export async function resenaPublica(response, body) {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(500).json({ ok: false, error: 'config' })
-  const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  const db = conexion()
   const codigo = String(body.codigo ?? '').trim().toUpperCase()
   const estrellas = Math.round(Number(body.estrellas))
   const comentario = String(body.comentario ?? '').trim().slice(0, 500) || null
@@ -32,10 +60,12 @@ export async function resenaPublica(response, body) {
   const { count } = await db.from('resenas').select('id', { count: 'exact', head: true }).eq('pedido_codigo', codigo)
   if ((count ?? 0) >= 5) return response.status(200).json({ ok: false, error: 'demasiadas' })
 
-  const items = (Array.isArray(pedido.pedido_items) ? pedido.pedido_items : []).filter((it) => !esEnvio(it) && it.codigo_producto)
-  const pedido_producto = String(body.producto ?? '').trim().toUpperCase()
-  const producto = (pedido_producto && items.some((it) => String(it.codigo_producto).toUpperCase() === pedido_producto) ? pedido_producto : String(items[0]?.codigo_producto ?? '').toUpperCase()) || null
+  const producto = productoDeResena(pedido, body.producto)
+  // Solo UNA reseña por producto del pedido.
+  if (await yaEnviada(db, codigo, producto)) return response.status(200).json({ ok: false, error: 'ya_enviada' })
   const cli = Array.isArray(pedido.clientes) ? pedido.clientes[0] : pedido.clientes
+  // El nombre es opcional: el cliente puede publicarla sin nombre ("Cliente verificado").
+  const nombre = body.anonimo === true ? 'Cliente verificado' : nombrePublico(cli?.nombre)
 
   // Foto opcional (data URL o base64).
   let foto_url = null
@@ -61,7 +91,7 @@ export async function resenaPublica(response, body) {
     foto_url = db.storage.from(BUCKET).getPublicUrl(ruta).data.publicUrl
   }
 
-  const { error } = await db.from('resenas').insert({ pedido_codigo: codigo, producto_codigo: producto, cliente_nombre: nombrePublico(cli?.nombre), estrellas, comentario, foto_url })
+  const { error } = await db.from('resenas').insert({ pedido_codigo: codigo, producto_codigo: producto, cliente_nombre: nombre, estrellas, comentario, foto_url })
   if (error) { console.error('resena: no se pudo guardar', error.message); return response.status(200).json({ ok: false, error: 'guardar' }) }
   return response.status(200).json({ ok: true, foto: Boolean(foto_url) })
 }
