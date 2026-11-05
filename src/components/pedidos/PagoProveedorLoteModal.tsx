@@ -2,8 +2,8 @@ import { Check, Search } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { isSupabaseConfigured, supabase } from '../../lib/supabase'
-import { esLineaEnvio, pagarProveedorLote, type LineaPagoLote } from '../../services/pedidos.service'
-import { listarInversiones, obtenerTipoCambio, pagarVariasCompras } from '../../services/comercial.service'
+import { aprenderCostoDeCodigo, esLineaEnvio, pagarProveedorLote, type LineaPagoLote } from '../../services/pedidos.service'
+import { actualizarInversion, listarInversiones, obtenerTipoCambio, pagarVariasCompras } from '../../services/comercial.service'
 import type { Inversion, Pedido, PedidoItem } from '../../types/domain'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { porPagarInversion } from '../../utils/compraPago'
@@ -126,9 +126,21 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
         codigos = await pagarProveedorLote(lineas, pedidos, { cuentaId: destino.cuentaId, montoCuentaTotal: cuentaPedidos, totalUsd: usdPedidos, metodo, pasarAPreparacion: pasar })
       }
       if (isSupabaseConfigured && deLibres.length) {
-        // A cada compra se le suma en gastos adicionales la diferencia entre su costo real y lo que debía.
-        const extras = deLibres.map((f) => r2((costoDe.get(f.clave) ?? f.falta) - f.falta))
-        await pagarVariasCompras(deLibres.map((f) => f.compra), extras, { fecha: hoy(), metodo }, { cuentaId: destino.cuentaId, montoCuenta: cuentaLibres })
+        // Compra registrada sin costo: el precio que se escribió pasa a ser su costo (no "otros gastos").
+        const compras: Inversion[] = []
+        const debia: number[] = []
+        for (const f of deLibres) {
+          if (Number(f.compra.costo_unitario || 0) <= 0 && f.falta <= 0.005) {
+            const cant = Math.max(1, Number(f.compra.cantidad) || 1)
+            compras.push(await actualizarInversion(f.compra.id, { costo_unitario: r2(precioDe(f) / cant) }))
+            debia.push(r2(r2(precioDe(f) / cant) * cant))
+          } else { compras.push(f.compra); debia.push(f.falta) }
+        }
+        // A cada compra se le suma en gastos adicionales la diferencia entre su costo real y lo que debía (la comisión).
+        const extras = deLibres.map((f, i) => r2((costoDe.get(f.clave) ?? debia[i]) - debia[i]))
+        await pagarVariasCompras(compras, extras, { fecha: hoy(), metodo }, { cuentaId: destino.cuentaId, montoCuenta: cuentaLibres })
+        // El producto del catálogo queda con el costo real por unidad de este pago (con la comisión).
+        for (const f of deLibres) await aprenderCostoDeCodigo(f.compra.codigo, r2((costoDe.get(f.clave) ?? 0) / Math.max(1, Number(f.compra.cantidad) || 1)))
       }
       const partesTexto = [
         dePedidos.length ? `${dePedidos.length} ${dePedidos.length === 1 ? 'producto' : 'productos'} en ${codigos.length || new Set(dePedidos.map((f) => f.pedido.id)).size} ${codigos.length === 1 ? 'pedido' : 'pedidos'}` : '',

@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { useAuth } from '../../contexts/AuthContext'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { borrarProductoTienda, cambiarEstadoProductos, conectadoCatalogo, costosTracking, disponibilidad, linkProducto, ordenarTallas, actualizarCache, enOferta, estadoDe, listarProductosTienda, productosEnCache, type EstadoTienda, type ProductoTienda } from '../../services/productosTienda.service'
-import { DATOS_PRECIO_DEFECTO, obtenerDatosPrecio, sugerirPrecios, tipoDeTienda, type DatosPrecio } from '../../services/preciosSugeridos.service'
+import { costosDeCompras, DATOS_PRECIO_DEFECTO, obtenerDatosPrecio, sugerirPrecios, tipoDeTienda, type CostoCompra, type DatosPrecio } from '../../services/preciosSugeridos.service'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { CarritoPrivadoModal } from '../../components/tienda/CarritoPrivadoModal'
 import { PreciosSugeridosModal } from '../../components/tienda/PreciosSugeridosModal'
@@ -17,8 +17,8 @@ type Tab = 'todos' | 'activo' | 'ei' | 'encamino' | 'revisar' | 'oferta' | 'sinf
 type Orden = 'nuevos' | 'precio-asc' | 'precio-desc' | 'nombre'
 const POR_PAGINA = 60
 // Columnas de la tabla en computadora (escritas completas para que Tailwind las genere).
-const COLS = 'grid-cols-[32px_minmax(0,2.3fr)_120px_96px_minmax(0,1.5fr)_minmax(0,1fr)_168px]'
-const COLS_LG = 'lg:grid-cols-[32px_minmax(0,2.3fr)_120px_96px_minmax(0,1.5fr)_minmax(0,1fr)_168px]'
+const COLS = 'grid-cols-[32px_minmax(0,2.3fr)_120px_104px_96px_minmax(0,1.5fr)_minmax(0,1fr)_168px]'
+const COLS_LG = 'lg:grid-cols-[32px_minmax(0,2.3fr)_120px_104px_96px_minmax(0,1.5fr)_minmax(0,1fr)_168px]'
 const usd = (n: number) => `$${Number.isInteger(n) ? n : n.toFixed(2)}`
 const ESTADO: Record<EstadoTienda, { texto: string; clase: string }> = {
   activo: { texto: 'Activo', clase: 'bg-emerald-500/15 text-emerald-300' },
@@ -63,7 +63,13 @@ export function TiendaProductosPage() {
   const [borrarSel, setBorrarSel] = useState(false)
   // Costos del panel (productos.precio_compra) por código: se muestran con el margen.
   const [costos, setCostos] = useState<Map<string, number>>(new Map())
-  const costoDe = (p: ProductoTienda) => costos.get(p.codigo.toUpperCase()) ?? 0
+  // Si la ficha no tiene costo, el último costo real pagado en un pedido o una Compra libre.
+  const [costosCompra, setCostosCompra] = useState<Map<string, CostoCompra>>(new Map())
+  useEffect(() => { void costosDeCompras().then(setCostosCompra).catch(() => undefined) }, [])
+  const respaldoDe = (p: ProductoTienda) => (costos.get(p.codigo.toUpperCase()) ?? 0) > 0 ? null : costosCompra.get(p.codigo.toUpperCase()) ?? null
+  const costoDe = (p: ProductoTienda) => costos.get(p.codigo.toUpperCase()) || respaldoDe(p)?.costo || 0
+  // Para el carrito privado: los costos de la ficha y, si faltan, los de las compras.
+  const costosParaCarrito = useMemo(() => { const m = new Map(costos); for (const [k, v] of costosCompra) if (!(m.get(k) ?? 0)) m.set(k, v.costo); return m }, [costos, costosCompra])
   const ventaDe = (p: ProductoTienda) => (p.datos.cotizar ? 0 : enOferta(p.datos) ? Number(p.datos.precioOferta) : Number(p.datos.precio) || 0)
   // Precio sugerido y mayorista (solo panel): costo + envío estimado con los márgenes guardados.
   const [datosPrecio, setDatosPrecio] = useState<DatosPrecio>(DATOS_PRECIO_DEFECTO)
@@ -147,7 +153,7 @@ export function TiendaProductosPage() {
       <button type="button" className="subtle-button min-h-10 px-3" onClick={() => setCarrito([])}><ShoppingCart size={15} /> Carrito privado</button>
       <button type="button" className="subtle-button min-h-10 px-3" onClick={() => setAjustesPrecio(true)}><Calculator size={15} /> Precios sugeridos · tienda {datosPrecio.margenTienda} % · mayorista {datosPrecio.margenMayorista} %</button>
     </div>
-    {carrito && <CarritoPrivadoModal iniciales={carrito} todos={items.filter((p) => estadoDe(p) !== 'borrador')} costos={costos} datosPrecio={datosPrecio} onClose={() => setCarrito(null)} />}
+    {carrito && <CarritoPrivadoModal iniciales={carrito} todos={items.filter((p) => estadoDe(p) !== 'borrador')} costos={costosParaCarrito} datosPrecio={datosPrecio} onClose={() => setCarrito(null)} />}
     {ajustesPrecio && <PreciosSugeridosModal datos={datosPrecio} onClose={() => setAjustesPrecio(false)} onGuardado={(d) => { setDatosPrecio(d); setAjustesPrecio(false) }} />}
     <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
       {[['Productos activos', cuenta.activo, 'en la tienda'], ['Entrega inmediata', cuenta.ei, 'ya en Nicaragua'], ['Llega pronto', cuenta.encamino, 'vienen en camino'], ['Para revisar', cuenta.revisar, 'borradores u ocultos']].map(([t, n, s]) =>
@@ -181,13 +187,13 @@ export function TiendaProductosPage() {
           {/* Encabezado (solo computadora) */}
           <div className={`hidden ${COLS} items-center gap-3 border-b border-line bg-white/[0.02] px-3 py-2 text-xs font-medium text-muted lg:grid`}>
             <button type="button" aria-label={todosSel ? 'Quitar todos' : 'Elegir todos'} onClick={() => setSel(todosSel ? new Set() : new Set(visibles.map((p) => p.codigo)))} className={`grid size-5 place-items-center rounded border ${todosSel ? 'border-accent bg-accent text-[#fff]' : 'border-line'}`}>{todosSel && <Check size={13} />}</button>
-            <span>Producto</span><span>Precio · ganancia</span><span>Estado</span><span>Tallas y disponibilidad</span><span>Categoría · marca</span><span className="text-right">Acciones</span>
+            <span>Producto</span><span>Precio · ganancia</span><span>Mayorista</span><span>Estado</span><span>Tallas y disponibilidad</span><span>Categoría · marca</span><span className="text-right">Acciones</span>
           </div>
           <ul className="divide-y divide-line">
             {visibles.map((p) => {
               const on = sel.has(p.codigo), oferta = enOferta(p.datos), est = estadoDe(p)
               const c = costoDe(p), v = ventaDe(p), m = c && v > 0 ? Math.round(((v - c) / v) * 100) : null
-              const sug = sugerirPrecios(c, tipoDeTienda(p.datos), datosPrecio)
+              const sug = sugerirPrecios(c, tipoDeTienda(p.datos), datosPrecio), resp = respaldoDe(p)
               const abrir = () => navigate(`/tienda/${encodeURIComponent(p.codigo)}`)
               return <li key={p.codigo} className={`grid cursor-pointer grid-cols-[28px_minmax(0,1fr)_auto] gap-x-3 gap-y-2 px-3 py-3 hover:bg-white/[0.02] ${COLS_LG} lg:items-center lg:py-2.5 ${on ? 'bg-accent/[0.05]' : ''}`} onClick={abrir}>
                 <button type="button" aria-label={on ? 'Quitar de la selección' : 'Elegir'} onClick={(e) => { e.stopPropagation(); alternar(p.codigo) }} className="row-span-4 -m-2 mt-1 grid size-10 place-items-center self-start lg:row-span-1 lg:-m-2.5 lg:self-center"><span className={`grid size-5 place-items-center rounded border ${on ? 'border-accent bg-accent text-[#fff]' : 'border-line'}`}>{on && <Check size={13} />}</span></button>
@@ -198,8 +204,12 @@ export function TiendaProductosPage() {
                 {/* Precio y ganancia: al lado del producto (no al fondo de la fila) */}
                 <div className="text-right lg:text-left">
                   <b className="text-sm">{p.datos.cotizar ? 'Cotizar' : usd(v)}</b>{oferta && <span className="ml-1.5 text-[11px] text-muted line-through">{usd(Number(p.datos.precio))}</span>}
-                  <span className={`block text-[11px] ${m === null ? 'text-muted' : m < 25 ? 'text-amber-200' : 'text-emerald-300'}`}>{m === null ? 'sin costo' : `gana ${usd(Math.round((v - c) * 100) / 100)} · ${m} %`}</span>
-                  {sug && <span className="block text-[11px] text-muted" title={`Costo + envío estimado ${usd(sug.base)}`}>sug. <b className={!p.datos.cotizar && v < sug.tienda ? 'text-amber-200' : 'text-white/80'}>{usd(sug.tienda)}</b> · may. <b className="text-sky-300">{usd(sug.mayorista)}</b></span>}
+                  <span className={`block text-[11px] ${m === null ? 'text-muted' : m < 25 ? 'text-amber-200' : 'text-emerald-300'}`} title={resp ? `Costo de tu última ${resp.fuente === 'pedido' ? 'compra en un pedido' : 'compra libre'}: ${usd(resp.costo)} (no está en la ficha)` : undefined}>{m === null ? 'sin costo' : `gana ${usd(Math.round((v - c) * 100) / 100)} · ${m} %${resp ? ' *' : ''}`}</span>
+                  {sug && <span className="block text-[11px] text-muted lg:hidden">may. <b className="text-sky-300">{usd(sug.mayorista)}</b> · sug. <b className={!p.datos.cotizar && v < sug.tienda ? 'text-amber-200' : 'text-white/80'}>{usd(sug.tienda)}</b></span>}
+                </div>
+                {/* Mayorista (solo computadora: en el teléfono va debajo del precio) */}
+                <div className="hidden lg:block" title={sug ? `Costo ${usd(c)}${resp ? ` (de tu última ${resp.fuente})` : ''} + envío estimado ${usd(sug.envio)} = ${usd(sug.base)}` : 'Poné el costo en la ficha para ver el mayorista'}>
+                  {sug ? <><b className="text-sm text-sky-300">{usd(sug.mayorista)}</b><span className="block text-[11px] text-muted">sug. tienda <b className={!p.datos.cotizar && v < sug.tienda ? 'text-amber-200' : 'text-white/80'}>{usd(sug.tienda)}</b></span></> : <span className="text-xs text-muted">—</span>}
                 </div>
                 <div className="col-start-2 lg:col-start-auto"><EstadoChip estado={est} /></div>
                 <div className="col-span-2 col-start-2 min-w-0 lg:col-span-1 lg:col-start-auto"><Disponibilidad p={p} /></div>

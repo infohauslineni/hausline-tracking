@@ -1,5 +1,6 @@
 import type { ConfiguracionFinanzas, Pedido } from '../types/domain'
 import { TIPOS_PRODUCTO, tipoDeProducto, type TipoProducto } from '../utils/repartoCompra'
+import { listarInversiones } from './comercial.service'
 import { guardarConfiguracionFinanzas, obtenerConfiguracionFinanzas } from './finanzas.service'
 import { listarPedidos } from './pedidos.service'
 
@@ -89,4 +90,26 @@ export async function guardarDatosPrecio(cambios: { margenTienda: number; margen
   })
   cache = null
   return obtenerDatosPrecio(true)
+}
+
+// COSTO DE RESPALDO para productos sin costo en la ficha: el último costo real pagado al
+// proveedor por ese código, en un pedido (costo por unidad con la comisión) o en una Compra libre.
+export type CostoCompra = { costo: number; fuente: 'pedido' | 'compra libre'; fecha: string }
+export async function costosDeCompras(): Promise<Map<string, CostoCompra>> {
+  const [pedidos, compras] = await Promise.all([listarPedidos().catch(() => [] as Pedido[]), listarInversiones().catch(() => [])])
+  const mapa = new Map<string, CostoCompra>()
+  const poner = (codigo: string | null | undefined, c: CostoCompra) => {
+    const k = String(codigo ?? '').trim().toUpperCase()
+    if (!k || !(c.costo > 0)) return
+    const actual = mapa.get(k)
+    if (!actual || c.fecha > actual.fecha) mapa.set(k, c)
+  }
+  for (const p of pedidos) for (const it of p.pedido_items ?? []) poner(it.codigo_producto, { costo: r2(Number(it.precio_compra || 0)), fuente: 'pedido', fecha: String(p.fecha_pedido ?? '') })
+  // Compra libre: costo por unidad + lo pagado como "otros gastos" (comisión, o todo el pago si se
+  // registró sin costo). El envío va aparte (gastos de envío), así que no se cuenta dos veces.
+  for (const c of compras) if (c.estado !== 'descartado') {
+    const cant = Math.max(1, Number(c.cantidad) || 1)
+    poner(c.codigo, { costo: r2((Number(c.costo_unitario || 0) * cant + Number(c.gastos_adicionales || 0)) / cant), fuente: 'compra libre', fecha: String(c.fecha ?? '') })
+  }
+  return mapa
 }

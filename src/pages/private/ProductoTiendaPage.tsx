@@ -8,7 +8,7 @@ import {
   listarProductosTienda, ordenarTallas, productosEnCache, SUBCATEGORIAS, sugerirCodigo, TALLAS_CALZADO, TALLAS_ROPA, TIPOS_ROPA,
   type DatosTienda, type EstadoTienda, type FotoTienda, type ProductoTienda,
 } from '../../services/productosTienda.service'
-import { DATOS_PRECIO_DEFECTO, obtenerDatosPrecio, sugerirPrecios, tipoDeTienda, type DatosPrecio } from '../../services/preciosSugeridos.service'
+import { costosDeCompras, DATOS_PRECIO_DEFECTO, obtenerDatosPrecio, sugerirPrecios, tipoDeTienda, type CostoCompra, type DatosPrecio } from '../../services/preciosSugeridos.service'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { TIPOS_PRODUCTO } from '../../utils/repartoCompra'
 import { abrirPostInstagram } from '../../utils/instagramPost'
@@ -52,6 +52,9 @@ export function ProductoTiendaPage() {
   // Márgenes y envío estimado para el precio sugerido y el mayorista (solo panel).
   const [datosPrecio, setDatosPrecio] = useState<DatosPrecio>(DATOS_PRECIO_DEFECTO)
   useEffect(() => { void obtenerDatosPrecio().then(setDatosPrecio).catch(() => undefined) }, [])
+  // Último costo real pagado (pedido o Compra libre), para llenar la ficha si no tiene costo.
+  const [costosCompra, setCostosCompra] = useState<Map<string, CostoCompra>>(new Map())
+  useEffect(() => { void costosDeCompras().then(setCostosCompra).catch(() => undefined) }, [])
   const [sucio, setSucio] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [confirmarBorrar, setConfirmarBorrar] = useState(false)
@@ -264,6 +267,14 @@ export function ProductoTiendaPage() {
             {costo > 0 && venta > 0 ? <><span>Ganancia por unidad <b className={margen >= 25 ? 'text-emerald-300' : 'text-amber-200'}>{usd(Math.round(ganancia * 100) / 100)}</b></span><span>Margen <b className={margen >= 25 ? 'text-emerald-300' : 'text-amber-200'}>{margen} %</b></span><span>{margen < 25 ? '⚠️ Margen bajo' : '✓ Buen margen'}</span></>
               : <span>Poné el costo para ver tu ganancia y el margen. También se llena solo al registrar el pago al proveedor.</span>}
           </div>
+          {(() => {
+            const ultima = costo > 0 ? null : costosCompra.get(String(d.codigo || '').trim().toUpperCase())
+            if (!ultima) return null
+            return <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-300/30 bg-amber-300/[.06] px-3 py-2.5 text-sm">
+              <span className="mr-auto text-amber-100">La ficha no tiene costo, pero tu última {ultima.fuente === 'pedido' ? 'compra en un pedido' : 'compra libre'} te costó <b>{usd(ultima.costo)}</b> por unidad.</span>
+              <button type="button" className="subtle-button min-h-9 px-3 text-xs" onClick={() => { setCostoTxt(String(ultima.costo)); setSucio(true) }}>Usar {usd(ultima.costo)} como costo</button>
+            </div>
+          })()}
           {(() => {
             const tipo = tipoDeTienda(d), sug = sugerirPrecios(costo, tipo, datosPrecio)
             if (!sug) return null
