@@ -5,6 +5,7 @@ import type { Inversion } from '../../types/domain'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { ETAPAS_COMPRA, etapaDeCompra, nombreEtapa, type EtapaCompra } from '../../utils/compraEtapa'
 import { ProductoImg } from '../ui/ProductoImg'
+import { FotosCalidadGaleria } from './FotosCalidadGaleria'
 import { abrirPostInstagramPorCodigo } from '../../utils/instagramPost'
 
 // Tarjeta de una compra libre (Compras libres). Ordenada en bloques: cabecera (foto, código,
@@ -135,6 +136,9 @@ export function CompraCard(p: Props) {
           </div>
         </div>
       </Seccion>
+
+      {/* Fotos de control de calidad a la vista (tocar una la abre en grande). */}
+      <FotosCalidadGaleria inversionId={item.id} cantidad={p.fotos} onGestionar={p.onFotos} />
 
       {/* En el celular las acciones van aquí arriba, sin tener que bajar. */}
       <div className="lg:hidden">{botones}</div>
