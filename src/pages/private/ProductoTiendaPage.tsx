@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '../../contexts/AuthContext'
 import {
-  actualizarCache, borrarProductoTienda, CATEGORIAS, codigosOcupados, conectadoCatalogo, costoDe, disponibilidad, guardarAnticipo, guardarCosto, ETIQUETAS, estadoDe, guardarProductoTienda, linkProducto,
+  actualizarCache, borrarProductoTienda, CATEGORIAS, codigosOcupados, conectadoCatalogo, costoDe, disponibilidad, guardarAnticipo, guardarCosto, guardarPrecioTracking, ETIQUETAS, estadoDe, guardarProductoTienda, linkProducto,
   listarProductosTienda, ordenarTallas, productosEnCache, SUBCATEGORIAS, sugerirCodigo, TALLAS_CALZADO, TALLAS_ROPA, TIPOS_ROPA,
   type DatosTienda, type EstadoTienda, type FotoTienda, type ProductoTienda,
 } from '../../services/productosTienda.service'
@@ -152,6 +152,8 @@ export function ProductoTiendaPage() {
       if (Math.abs(costo - costoBase) > 0.004) { try { await guardarCosto(datos, costo); setCostoBase(costo) } catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo guardar el costo.') } }
       // El anticipo fijo también va directo a la base del panel (la que crea el encargo), sin esperar la sincronización.
       if ((Number(datos.anticipo) || 0) !== (Number(previo?.datos.anticipo) || 0)) await guardarAnticipo(datos)
+      // El precio también pasa ya a Compras libres (las compras que siguen a la venta toman el precio nuevo).
+      try { await guardarPrecioTracking(datos) } catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo actualizar el precio en Compras libres.') }
       const prod: ProductoTienda = { codigo: datos.codigo, datos, origen: previo?.origen === 'original' ? 'editado' : previo?.origen ?? 'nuevo', activo: estado === 'activo', id: previo?.id ?? null, creado: previo?.creado ?? new Date().toISOString() }
       actualizarCache(prod, previo?.codigo)
       setTodos((l) => [prod, ...l.filter((x) => x.codigo.toUpperCase() !== (previo?.codigo ?? datos.codigo).toUpperCase())])

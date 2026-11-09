@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { Modal } from '../../components/ui/Modal'
 import { CuentaSelect, type DestinoPago } from '../../components/finanzas/CuentaSelect'
 import { subirImagenCatalogo } from '../../services/catalogoImagenes.service'
-import { actualizarInversion, cambiarEstadoInversion, eliminarInversion, listarInversiones, listarProductos, listarVentasStock, obtenerTipoCambio, abonarInversion, pagarInversion, registrarCompraLibre, separarCompraLibre, venderStockInmediato, type VentaStock } from '../../services/comercial.service'
+import { actualizarInversion, autoSincronizarCatalogo, cambiarEstadoInversion, eliminarInversion, listarInversiones, listarProductos, listarVentasStock, obtenerTipoCambio, abonarInversion, pagarInversion, registrarCompraLibre, separarCompraLibre, venderStockInmediato, type VentaStock } from '../../services/comercial.service'
 import type { Inversion, Producto } from '../../types/domain'
 import { enviarReciboStockCorreo, imprimirReciboStock } from '../../utils/reciboStock'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
@@ -114,6 +114,10 @@ export function InventarioPage() {
     void contarFotosInversiones().then(setFotosCount).catch(() => undefined)
   }
   useEffect(load, [])
+  // Precios: si se cambió un precio en la tienda (admin.html), la sincronización lo pasa a productos
+  // y la base lo copia a las compras que siguen a la venta. Al abrir Compras libres se sincroniza ya
+  // para no ver un precio viejo.
+  useEffect(() => { void autoSincronizarCatalogo(true).then((did) => { if (did) load() }) }, [])
   // Reimprime el recibo de un producto ya vendido, reconstruyendo cliente/monto de la venta registrada.
   const imprimirVendido = async (item: Inversion) => {
     const venta = ventas.find((v) => v.inversion_id === item.id)

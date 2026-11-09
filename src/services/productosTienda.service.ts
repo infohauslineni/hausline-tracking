@@ -159,6 +159,17 @@ export async function guardarCosto(d: DatosTienda, costo: number) {
   if (error) throw new Error(`No se pudo guardar el costo: ${error.message}`)
 }
 
+// Precio de venta → tabla productos del tracking, en el momento (sin esperar la sincronización).
+// La base copia ese precio a las Compras libres que siguen a la venta (trigger
+// productos_precio_a_compras), así la tienda y Compras libres no quedan con precios distintos.
+export async function guardarPrecioTracking(d: DatosTienda) {
+  if (!supabase || d.cotizar) return
+  const venta = enOferta(d) ? Number(d.precioOferta) : Number(d.precio) || 0
+  if (!(venta > 0)) return
+  const { error } = await supabase.from('productos').update({ precio_venta: venta }).eq('codigo', d.codigo.trim().toUpperCase())
+  if (error) throw new Error(`No se pudo actualizar el precio en Compras libres: ${error.message}`)
+}
+
 // Anticipo fijo para apartar → tabla productos del panel (la base lo usa al crear el encargo).
 // Si la columna todavía no existe (falta su SQL) no frena el guardado: lo lleva la sincronización.
 export async function guardarAnticipo(d: DatosTienda) {
