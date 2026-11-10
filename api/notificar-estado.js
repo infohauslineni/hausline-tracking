@@ -6,7 +6,7 @@ import { cerrarEmail, reservarEmail } from './_email-eventos.js'
 import { automatizaciones, historiaEntregaInmediata, pedirResenasAhora } from './_automatico.js'
 import { hacerRespaldo } from './_respaldo.js'
 import { enviarCorreoCuponCliente, enviarCorreoRedes } from './_correo-auto.js'
-import { leerLista, quitarDeLista, revisionCompleta } from './_rebotes.js'
+import { agregarALista, leerLista, quitarDeLista, revisionCompleta } from './_rebotes.js'
 import { resenaEstado, resenaPublica } from './_resena-publica.js'
 
 // La tarea de cada 15 min hace varias cosas (avisos, recordatorios, reporte): le damos margen.
@@ -340,6 +340,11 @@ async function correosNoFuncionanPanel(response, body, authorization) {
     let resultado = null
     if (accion === 'revisar') { const r = await revisionCompleta(); resultado = { nuevos: r.nuevos.length, revisadosImap: r.revisadosImap, correosRevisados: r.correosRevisados, errorImap: r.errorImap } }
     if (accion === 'quitar' && body.correo) await quitarDeLista(String(body.correo), admin)
+    if (accion === 'agregar') {
+      const correo = String(body.correo ?? '').trim().toLowerCase()
+      if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(correo)) return response.status(200).json({ ok: false, error: 'Escribí un correo válido.' })
+      await agregarALista([{ correo, motivo: 'bloqueado a mano desde el panel' }], {}, admin, { manual: true })
+    }
     const { lista, revisado_at } = await leerLista(admin)
     return response.status(200).json({ ok: true, lista, revisado_at, resultado })
   } catch (e) {

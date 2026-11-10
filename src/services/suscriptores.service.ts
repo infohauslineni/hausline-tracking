@@ -28,7 +28,7 @@ export async function campanaRedes(accion: 'estado' | 'prueba' | 'iniciar' | 'au
 
 // Correos que no funcionan (rebotaron o el dominio no existe): el sistema ya no les manda nada.
 export type ListaCorreosNoFuncionan = { lista: { correo: string; motivo: string; fecha: string }[]; revisado_at: string | null; resultado?: { nuevos: number; revisadosImap: number; correosRevisados: number; errorImap: string | null } | null }
-export async function correosNoFuncionan(accion: 'listar' | 'revisar' | 'quitar', correo?: string): Promise<ListaCorreosNoFuncionan> {
+export async function correosNoFuncionan(accion: 'listar' | 'revisar' | 'quitar' | 'agregar', correo?: string): Promise<ListaCorreosNoFuncionan> {
   const { data: sessionData } = await client().auth.getSession()
   const token = sessionData.session?.access_token
   if (!token) throw new Error('Sesión no disponible.')
