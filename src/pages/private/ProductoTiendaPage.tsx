@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronLeft, ChevronRight, Copy, Crop, ExternalLink, Camera, ImagePlus, LoaderCircle, Star, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Copy, ExternalLink, Camera, ImagePlus, LoaderCircle, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -15,6 +15,7 @@ import { abrirPostInstagram } from '../../utils/instagramPost'
 import { EstadoChip } from './TiendaProductosPage'
 import { ConectarTienda } from './VentaLibrePage'
 import { EncuadreFotoModal } from '../../components/tienda/EncuadreFotoModal'
+import { FotosOrdenables } from '../../components/tienda/FotosOrdenables'
 
 // FICHA DEL PRODUCTO (estilo Shopify). Columna principal: título, descripción, fotos, precio,
 // tallas y disponibilidad, tiempos. Columna lateral: estado, organización, etiquetas y la tarjeta
@@ -59,7 +60,6 @@ export function ProductoTiendaPage() {
   const [guardando, setGuardando] = useState(false)
   const [confirmarBorrar, setConfirmarBorrar] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
-  const arrastrando = useRef<number | null>(null)
 
   const cargarEn = (p: ProductoTienda | null) => {
     const datos = p ? { ...vacio(), ...p.datos } : vacio()
@@ -132,7 +132,6 @@ export function ProductoTiendaPage() {
     const nuevas = Array.from(files).filter((f) => f.type.startsWith('image/')).map((file) => ({ url: URL.createObjectURL(file), file }))
     setFotos((f) => [...f, ...nuevas]); setSucio(true)
   }
-  const moverFoto = (i: number, a: number) => { setFotos((f) => { if (a < 0 || a >= f.length) return f; const n = [...f]; const [x] = n.splice(i, 1); n.splice(a, 0, x); return n }); setSucio(true) }
   const quitarFoto = (i: number) => { setFotos((f) => f.filter((_, j) => j !== i)); setSucio(true) }
 
   // Tallas → campos que lee la tienda. Una talla en Nicaragua cuenta también como talla del producto;
@@ -216,26 +215,11 @@ export function ProductoTiendaPage() {
           <Campo label="Descripción"><textarea className="campo min-h-28" value={d.descripcion} onChange={(e) => cambiar('descripcion', e.target.value)} placeholder="Materiales, detalles, cómo le queda…" /></Campo>
         </Seccion>
 
-        <Seccion titulo="Fotos" ayuda="La primera es la principal. Arrastrá (o usá las flechas) para ordenarlas.">
-          <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4">
-            {fotos.map((ft, i) => <div key={ft.url} draggable onDragStart={() => { arrastrando.current = i }} onDragOver={(e) => e.preventDefault()} onDrop={() => { if (arrastrando.current !== null) moverFoto(arrastrando.current, i); arrastrando.current = null }}
-              className={`group relative overflow-hidden rounded-xl border border-line bg-white/[0.02] ${i === 0 ? 'col-span-2 row-span-2' : ''}`}>
-              <img src={resolverImagenCatalogo(ft.url)} alt="" className="aspect-square w-full object-cover" />
-              <div className="pointer-events-none absolute left-1.5 top-1.5 flex flex-wrap gap-1">
-                {i === 0 && <span className="inline-flex items-center gap-1 rounded-md bg-[#1a1a1a] px-1.5 py-0.5 text-[10px] font-semibold text-[#fff]"><Star size={10} fill="currentColor" /> Principal</span>}
-                {ft.file && <span className="rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-[#fff]">Nueva</span>}
-              </div>
-              <button type="button" aria-label="Encuadrar foto" title="Encuadrar / centrar" onClick={() => setEncuadrando(i)} className="absolute right-1.5 top-1.5 inline-flex h-8 items-center gap-1 rounded-lg bg-[#fff]/90 px-2 text-[11px] font-semibold text-[#1a1a1a]"><Crop size={14} />{i === 0 && <span className="hidden sm:inline">Encuadrar</span>}</button>
-              <div className="absolute inset-x-1.5 bottom-1.5 flex justify-between gap-1">
-                <button type="button" aria-label="Mover a la izquierda" disabled={i === 0} onClick={() => moverFoto(i, i - 1)} className="grid size-8 place-items-center rounded-lg bg-[#fff]/90 text-[#1a1a1a] disabled:opacity-30"><ChevronLeft size={16} /></button>
-                <button type="button" aria-label="Quitar foto" onClick={() => quitarFoto(i)} className="grid size-8 place-items-center rounded-lg bg-[#fff]/90 text-[#b42318]"><Trash2 size={15} /></button>
-                <button type="button" aria-label="Mover a la derecha" disabled={i === fotos.length - 1} onClick={() => moverFoto(i, i + 1)} className="grid size-8 place-items-center rounded-lg bg-[#fff]/90 text-[#1a1a1a] disabled:opacity-30"><ChevronRight size={16} /></button>
-              </div>
-            </div>)}
-            <button type="button" onClick={() => fileRef.current?.click()} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); agregarFotos(e.dataTransfer.files) }} className="grid aspect-square place-items-center rounded-xl border-2 border-dashed border-line p-2 text-center text-xs font-medium text-muted hover:border-accent hover:text-accent">
+        <Seccion titulo="Fotos" ayuda="La primera es la principal. Arrastrá las fotos para ordenarlas (en el teléfono: mantené apretada una foto y movela) o tocá la estrella para hacerla principal.">
+          <FotosOrdenables fotos={fotos} onOrden={(nuevas) => { setFotos(nuevas); setSucio(true) }} onQuitar={quitarFoto} onEncuadrar={(i) => setEncuadrando(i)}
+            extra={<button type="button" onClick={() => fileRef.current?.click()} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); agregarFotos(e.dataTransfer.files) }} className="grid aspect-square place-items-center rounded-xl border-2 border-dashed border-line p-2 text-center text-xs font-medium text-muted hover:border-accent hover:text-accent">
               <span><ImagePlus size={22} className="mx-auto mb-1" />Agregar fotos</span>
-            </button>
-          </div>
+            </button>} />
           <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { agregarFotos(e.target.files); e.target.value = '' }} />
           <EncuadreFotoModal src={encuadrando !== null && fotos[encuadrando] ? resolverImagenCatalogo(fotos[encuadrando].url) : null} onClose={() => setEncuadrando(null)}
             onListo={(file) => {
