@@ -26,6 +26,12 @@ type EstadoTalla = 'encargo' | 'ei'
 const usd = (n: number) => `$${Number.isInteger(n) ? n : n.toFixed(2)}`
 const vacio = (): DatosTienda => ({ codigo: '', nombre: '', marca: '', categoria: 'Hombre', subcategoria: 'Calzado', precio: 0, cotizar: false, precioOferta: 0, promocionHasta: '', descripcion: '', tallas: [], colores: [], imagen: '', imagenes: [], destacadoNuevo: true, entregaInmediata: false, tallasEntregaInmediata: [], coloresEntregaInmediata: [] })
 const num = (v: string) => (v.trim() === '' ? 0 : Number(v.replace(',', '.')) || 0)
+// Campo de dinero: guarda el texto mientras se escribe (si no, "170." se volvía 170 y no dejaba poner .99).
+function InputDinero({ valor, onValor, ...resto }: { valor: number | null | undefined; onValor: (n: number) => void } & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'>) {
+  const [texto, setTexto] = useState(valor ? String(valor) : '')
+  useEffect(() => { setTexto((t) => (num(t) === (valor || 0) ? t : valor ? String(valor) : '')) }, [valor])
+  return <input {...resto} inputMode="decimal" value={texto} onChange={(e) => { const v = e.target.value.replace(/[^0-9.,]/g, ''); setTexto(v); onValor(num(v)) }} />
+}
 
 export function ProductoTiendaPage() {
   const { codigo: param = '' } = useParams()
@@ -239,14 +245,14 @@ export function ProductoTiendaPage() {
         <Seccion titulo="Precio">
           <label className="mb-3 flex min-h-10 items-center gap-2 text-sm"><input type="checkbox" className="size-5" checked={d.cotizar} onChange={(e) => cambiar('cotizar', e.target.checked)} /> Precio a consultar (botón "Cotizar por WhatsApp")</label>
           <div className="grid gap-3 sm:grid-cols-3">
-            <Campo label="Precio (US$)"><input className="campo" inputMode="decimal" disabled={d.cotizar} value={d.precio || ''} onChange={(e) => cambiar('precio', num(e.target.value))} placeholder="0.00" /></Campo>
-            <Campo label="Precio de oferta"><input className="campo" inputMode="decimal" disabled={d.cotizar} value={d.precioOferta || ''} onChange={(e) => cambiar('precioOferta', num(e.target.value))} placeholder="Sin oferta" /></Campo>
+            <Campo label="Precio (US$)"><InputDinero className="campo" disabled={d.cotizar} valor={d.precio} onValor={(n) => cambiar('precio', n)} placeholder="0.00" /></Campo>
+            <Campo label="Precio de oferta"><InputDinero className="campo" disabled={d.cotizar} valor={d.precioOferta} onValor={(n) => cambiar('precioOferta', n)} placeholder="Sin oferta" /></Campo>
             <Campo label="Oferta hasta"><input className="campo" type="date" disabled={!oferta} value={String(d.promocionHasta || '').slice(0, 10)} onChange={(e) => cambiar('promocionHasta', e.target.value ? `${e.target.value}T23:59:59` : '')} /></Campo>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
-            <Campo label="Precio en Entrega inmediata" ayuda="Vacío = el mismo precio"><input className="campo" inputMode="decimal" value={d.precioEntregaInmediata || ''} onChange={(e) => cambiar('precioEntregaInmediata', num(e.target.value))} placeholder="Igual al precio" /></Campo>
+            <Campo label="Precio en Entrega inmediata" ayuda="Vacío = el mismo precio"><InputDinero className="campo" valor={d.precioEntregaInmediata} onValor={(n) => cambiar('precioEntregaInmediata', n)} placeholder="Igual al precio" /></Campo>
             <Campo label="Costo (proveedor)" ayuda="Lo que te cuesta · no lo ve el cliente"><input className="campo" inputMode="decimal" value={costoTxt} onChange={(e) => { setCostoTxt(e.target.value); setSucio(true) }} placeholder="0.00" /></Campo>
-            <Campo label="Apartar con (US$)" ayuda={`Opcional · vacío = abono del 50 %${venta > 0 ? ` (${usd(Math.round(venta * 50) / 100)})` : ''}`}><input className="campo" inputMode="decimal" disabled={d.cotizar} value={d.anticipo || ''} onChange={(e) => cambiar('anticipo', num(e.target.value) || null)} placeholder="50 %" /></Campo>
+            <Campo label="Apartar con (US$)" ayuda={`Opcional · vacío = abono del 50 %${venta > 0 ? ` (${usd(Math.round(venta * 50) / 100)})` : ''}`}><InputDinero className="campo" disabled={d.cotizar} valor={d.anticipo} onValor={(n) => cambiar('anticipo', n || null)} placeholder="50 %" /></Campo>
           </div>
           {Number(d.anticipo) > 0 && venta > 0 && <p className="-mt-1 mb-3 text-xs text-muted">En la tienda sale <b>"Apartar con {usd(Math.min(Number(d.anticipo), venta))}"</b> en vez de "Abono 50 %". El cliente paga el resto ({usd(Math.max(0, venta - Number(d.anticipo)))}) antes de la entrega.</p>}
           <div className="flex flex-wrap gap-x-5 gap-y-1 rounded-lg bg-white/[0.03] px-3 py-2.5 text-sm text-muted">
