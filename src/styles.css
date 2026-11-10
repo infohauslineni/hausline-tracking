@@ -381,3 +381,13 @@ textarea.campo { resize:vertical; line-height:1.5; }
 
 /* Pantalla Productos: con cambios sin guardar, la barra Guardar ocupa el lugar del menú de abajo */
 body.sin-nav-movil nav[aria-label="Navegación móvil"] { display:none; }
+
+/* Botón esperando al servidor: ruedita en el centro y no se puede volver a tocar (utils/botonesPanel.ts).
+   Si el botón ya trae su propia ruedita (.animate-spin) se deja la suya. */
+button[data-cargando],[role="button"][data-cargando]{ pointer-events:none; cursor:progress; }
+button[data-cargando]:not(:has(.animate-spin)){ -webkit-text-fill-color:transparent; }
+button[data-cargando]:not(:has(.animate-spin)) > *{ visibility:hidden; }
+button[data-cargando]:not(:has(.animate-spin)):not(.absolute):not(.fixed):not(.sticky){ position:relative; }
+button[data-cargando]:not(:has(.animate-spin))::after{ content:""; position:absolute; left:50%; top:50%; width:16px; height:16px; margin:-8px 0 0 -8px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:spin .7s linear infinite; }
+/* Respuesta visual al apretar cualquier botón. */
+button:not(:disabled):active{ filter:brightness(.88); }

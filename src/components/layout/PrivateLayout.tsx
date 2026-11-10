@@ -1,4 +1,4 @@
-import { ArrowUpRight, BarChart3, Bell, Bike, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, Moon, MoreHorizontal, PackagePlus, PackageSearch, Plus, Store, Megaphone, ReceiptText, RotateCcw, Settings, ShoppingBag, Sun, Truck, UserPlus, Users, Wallet, X } from 'lucide-react'
+import { ArrowUpRight, BarChart3, Bell, Bike, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, Moon, MoreHorizontal, PackagePlus, PackageSearch, Plus, Store, Megaphone, ReceiptText, RotateCcw, Settings, ShoppingBag, Sun, Truck, UserPlus, Users, Volume2, VolumeX, Wallet, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { RestaurarScroll } from './Navegacion'
@@ -7,6 +7,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { isSupabaseConfigured, supabase } from '../../lib/supabase'
 import { prefetchRoute, warmDashboard } from '../../utils/prefetchDashboard'
 import { playEncargoChime, primeEncargoAudio } from '../../utils/notify'
+import { guardarSonidoBotones, instalarBotonesPanel, sonidoBotonesActivo } from '../../utils/botonesPanel'
 import { calcularAlertas, contarUrgentes, type Alerta } from '../../utils/alertas'
 import { HauslineLogo } from '../ui/HauslineLogo'
 import { guardarModoPanel, modoPanelGuardado, type ModoPanel } from '../../utils/temaPanel'
@@ -135,6 +136,9 @@ export function PrivateLayout() {
   useEffect(() => { if (isSupabaseConfigured) void import('../../services/cuentas.service').then((m) => m.cargarCuentasPagoClientes()).catch(() => undefined) }, [])
   // Prepara el sonido de encargo SOLO en el panel admin (no en el sitio público de seguimiento).
   useEffect(() => { primeEncargoAudio() }, [])
+  // Sonido al tocar botones + ruedita mientras el botón espera al servidor (todo el panel).
+  useEffect(() => { instalarBotonesPanel() }, [])
+  const [sonidoBotones, setSonidoBotones] = useState(sonidoBotonesActivo)
   // Refresca los contadores y las alertas al cambiar de página (datos del caché de pedidos).
   useEffect(() => { if (!isSupabaseConfigured) return; let vivo = true; void calcularEstado().then((next) => { if (vivo) { setBadges(next.badges); setAlertas(next.alertas) } }).catch(() => undefined); return () => { vivo = false } }, [location.pathname])
   useEffect(() => { setBellOpen(false) }, [location.pathname])
@@ -251,6 +255,7 @@ export function PrivateLayout() {
                 <div className="p-1.5">
                   {esAdmin && <Link to="/configuracion" onClick={() => setCuentaOpen(false)} className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm hover:bg-white/[.05]"><Settings size={16} className="text-muted" /> Configuración</Link>}
                   <button type="button" onClick={() => guardarModoPanel(modo === 'claro' ? 'oscuro' : 'claro')} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm hover:bg-white/[.05]">{modo === 'claro' ? <Moon size={16} className="text-muted" /> : <Sun size={16} className="text-muted" />} {modo === 'claro' ? 'Modo oscuro' : 'Modo claro'}</button>
+                  <button type="button" onClick={() => { guardarSonidoBotones(!sonidoBotones); setSonidoBotones(!sonidoBotones) }} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm hover:bg-white/[.05]">{sonidoBotones ? <Volume2 size={16} className="text-muted" /> : <VolumeX size={16} className="text-muted" />} Sonido de botones: {sonidoBotones ? 'activado' : 'apagado'}</button>
                   <button type="button" onClick={() => { setCuentaOpen(false); void handleSignOut() }} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-red-300 hover:bg-red-400/10"><LogOut size={16} /> Cerrar sesión</button>
                 </div>
               </div>
