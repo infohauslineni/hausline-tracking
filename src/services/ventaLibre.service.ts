@@ -15,6 +15,29 @@ const BUCKET = 'catalogo'
 export const SITIO_TIENDA = 'https://hauslineshopni.es'
 
 let cliente: SupabaseClient | null = null
+// La base del catálogo entrega como mucho 1000 filas por pedido. Con miles de productos (los
+// borradores subidos de Yupoo) el panel veía solo los primeros 1000: se leen por páginas, en paralelo.
+export async function leerFilasCatalogo<T>(columnas: string, filtro?: (q: any) => any): Promise<T[]> { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const PAG = 1000
+  const base = () => { const q = catalogo().from('catalogo_web').select(columnas); return filtro ? filtro(q) : q }
+  const primero = await base().order('id', { ascending: true }).range(0, PAG - 1)
+  if (primero.error) throw new Error(primero.error.message)
+  const filas = [...((primero.data ?? []) as T[])]
+  if (filas.length < PAG) return filas
+  const { count, error } = await (filtro ? filtro(catalogo().from('catalogo_web').select('id', { count: 'exact', head: true })) : catalogo().from('catalogo_web').select('id', { count: 'exact', head: true }))
+  if (error) throw new Error(error.message)
+  const total = count ?? filas.length
+  const paginas = []
+  for (let desde = PAG; desde < total + PAG; desde += PAG) paginas.push(base().order('id', { ascending: true }).range(desde, desde + PAG - 1))
+  for (const r of await Promise.all(paginas)) {
+    if (r.error) throw new Error(r.error.message)
+    filas.push(...((r.data ?? []) as T[]))
+  }
+  // Por si alguien agregó filas entre medio: sin repetidos.
+  const vistos = new Set<unknown>()
+  return filas.filter((f) => { const id = (f as { id?: unknown }).id; if (vistos.has(id)) return false; vistos.add(id); return true })
+}
+
 export function catalogo() {
   if (!cliente) cliente = createClient(CATALOGO_URL, CATALOGO_KEY, { auth: { storageKey: 'hausline-catalogo-auth', persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } })
   return cliente
@@ -163,9 +186,8 @@ export async function datosTienda(codigo: string, inmediata = false): Promise<{ 
 // Reportes para comparar con lo que de verdad tarda y para corregirlo de un toque.
 export type PreparacionTienda = { id: string; codigo: string; marca: string; prepMin: number; prepMax: number }
 export async function leerPreparacionTienda(): Promise<PreparacionTienda[]> {
-  const { data, error } = await catalogo().from('catalogo_web').select('id, codigo, datos').eq('activo', true)
-  lanzar(error, 'No se pudo leer la tienda')
-  return ((data ?? []) as { id: string; codigo: string; datos: Record<string, unknown> | null }[]).map((r) => ({
+  const data = await leerFilasCatalogo<{ id: string; codigo: string; datos: Record<string, unknown> | null }>('id, codigo, datos', (q) => q.eq('activo', true)).catch((e) => { lanzar(e, 'No se pudo leer la tienda'); return [] })
+  return data.map((r) => ({
     id: r.id, codigo: String(r.codigo ?? '').trim().toUpperCase(), marca: String(r.datos?.marca ?? '').trim().toUpperCase(),
     prepMin: Math.round(Number(r.datos?.prepMin) || 0), prepMax: Math.round(Number(r.datos?.prepMax) || 0),
   }))

@@ -1,5 +1,5 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
-import { aJpeg, catalogo, SITIO_TIENDA } from './ventaLibre.service'
+import { aJpeg, catalogo, leerFilasCatalogo, SITIO_TIENDA } from './ventaLibre.service'
 
 // PRODUCTOS DE LA TIENDA (pantalla "Productos" del panel, reemplaza al admin.html viejo).
 // La tienda une DOS fuentes: el catálogo base de productos.js (código) y la tabla catalogo_web
@@ -98,7 +98,7 @@ export function actualizarCache(p: ProductoTienda | null, codigoViejo?: string) 
 export async function listarProductosTienda(): Promise<ProductoTienda[]> {
   const [resBase, resFilas] = await Promise.all([
     fetch('/api/catalogo?base=1', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : [])).catch(() => []) as Promise<Base[]>,
-    catalogo().from('catalogo_web').select('id, codigo, activo, datos, created_at'),
+    leerFilasCatalogo<Fila>('id, codigo, activo, datos, created_at').then((data) => ({ data, error: null }), (error: Error) => ({ data: null, error })),
   ])
   lanzar(resFilas.error, 'No se pudo leer el catálogo')
   const filas = (resFilas.data ?? []) as Fila[]
