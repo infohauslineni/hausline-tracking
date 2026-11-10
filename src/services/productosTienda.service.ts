@@ -293,21 +293,37 @@ export async function guardarProductoTienda(form: DatosTienda, fotos: FotoTienda
   return datos
 }
 
-// Activar / pasar a borrador / ocultar varios a la vez.
+// Un borrador que sale a la tienda por primera vez entra como "Nuevo" (fecha de hoy).
+const hoyISO = () => new Date().toISOString().slice(0, 10)
+// Sin precio (y sin "precio a consultar") no se puede publicar: saldría a $0 en la tienda.
+export const sinPrecio = (d: DatosTienda) => !d.cotizar && !(Number(d.precio) > 0)
+
+// Publicar / pasar a borrador / ocultar varios a la vez. Al publicar se saltan los que no tienen
+// precio; devuelve cuántos se cambiaron y cuántos se saltaron.
 export async function cambiarEstadoProductos(items: ProductoTienda[], estado: EstadoTienda) {
   if (vistaPrevia) throw new Error('Vista previa local: no se guarda nada.')
-  const filas = items.map((p) => ({ codigo: p.codigo.toUpperCase(), activo: estado === 'activo', datos: { ...p.datos, codigo: p.codigo.toUpperCase(), borrador: estado === 'borrador' } }))
-  if (!filas.length) return
-  const { error } = await catalogo().from('catalogo_web').upsert(filas, { onConflict: 'codigo' })
-  lanzar(error, 'No se pudo cambiar el estado')
+  const usar = estado === 'activo' ? items.filter((p) => !sinPrecio(p.datos)) : items
+  const filas = usar.map((p) => ({
+    codigo: p.codigo.toUpperCase(), activo: estado === 'activo',
+    datos: { ...p.datos, codigo: p.codigo.toUpperCase(), borrador: estado === 'borrador', ...(estado === 'activo' && p.datos.borrador === true ? { fecha: hoyISO() } : {}) },
+  }))
+  for (let i = 0; i < filas.length; i += 200) {
+    const { error } = await catalogo().from('catalogo_web').upsert(filas.slice(i, i + 200), { onConflict: 'codigo' })
+    lanzar(error, 'No se pudo cambiar el estado')
+  }
+  return { cambiados: filas.length, sinPrecio: items.length - usar.length }
 }
 
 // PRECIO EN GRUPO: el mismo precio (y, si se da, el mismo costo) a varios productos a la vez
 // (p. ej. todos los pares de un mismo estilo). No cambia el estado (borrador/activo/oculto).
-export async function ponerPrecioProductos(items: ProductoTienda[], precio: number, costo?: number | null) {
+// Con publicar=true, además quedan publicados en la tienda (los borradores entran como "Nuevo").
+export async function ponerPrecioProductos(items: ProductoTienda[], precio: number, costo?: number | null, publicar = false) {
   if (vistaPrevia) throw new Error('Vista previa local: no se guarda nada.')
   const valor = Math.max(0, Math.round(precio * 100) / 100)
-  const filas = items.map((p) => ({ codigo: p.codigo.toUpperCase(), activo: estadoDe(p) === 'activo', datos: { ...p.datos, codigo: p.codigo.toUpperCase(), precio: valor, cotizar: false } }))
+  const filas = items.map((p) => ({
+    codigo: p.codigo.toUpperCase(), activo: publicar || estadoDe(p) === 'activo',
+    datos: { ...p.datos, codigo: p.codigo.toUpperCase(), precio: valor, cotizar: false, ...(publicar ? { borrador: false, ...(p.datos.borrador === true ? { fecha: hoyISO() } : {}) } : {}) },
+  }))
   for (let i = 0; i < filas.length; i += 200) {
     const { error } = await catalogo().from('catalogo_web').upsert(filas.slice(i, i + 200), { onConflict: 'codigo' })
     lanzar(error, 'No se pudo poner el precio')

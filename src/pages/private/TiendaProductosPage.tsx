@@ -63,7 +63,7 @@ export function TiendaProductosPage() {
   const [borrando, setBorrando] = useState<string | null>(null)
   const [borrarSel, setBorrarSel] = useState(false)
   // Precio en grupo para los seleccionados.
-  const [precioGrupo, setPrecioGrupo] = useState<{ precio: string; costo: string } | null>(null)
+  const [precioGrupo, setPrecioGrupo] = useState<{ precio: string; costo: string; publicar: boolean } | null>(null)
   // Costos del panel (productos.precio_compra) por código: se muestran con el margen.
   const [costos, setCostos] = useState<Map<string, number>>(new Map())
   // Si la ficha no tiene costo, el último costo real pagado en un pedido o una Compra libre.
@@ -125,7 +125,12 @@ export function TiendaProductosPage() {
   const masivo = async (estado: EstadoTienda) => {
     const elegidos = items.filter((p) => sel.has(p.codigo))
     setTrabajando(true)
-    try { await cambiarEstadoProductos(elegidos, estado); toast.success(`${elegidos.length} ${elegidos.length === 1 ? 'producto' : 'productos'}: ${estado === 'activo' ? 'activados' : estado === 'oculto' ? 'ocultos' : 'en borrador'}.`); setSel(new Set()); cargar() }
+    try {
+      const r = await cambiarEstadoProductos(elegidos, estado)
+      if (r.cambiados) toast.success(`${r.cambiados} ${r.cambiados === 1 ? 'producto' : 'productos'}: ${estado === 'activo' ? 'publicados en la tienda' : estado === 'oculto' ? 'ocultos' : 'en borrador'}.`)
+      if (r.sinPrecio) toast.warning(`${r.sinPrecio} sin precio no se ${r.sinPrecio === 1 ? 'publicó' : 'publicaron'} (saldrían a $0). Poneles precio primero.`, { duration: 9000 })
+      setSel(new Set()); cargar()
+    }
     catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo cambiar.') } finally { setTrabajando(false) }
   }
 
@@ -135,19 +140,23 @@ export function TiendaProductosPage() {
     const elegidos = items.filter((p) => sel.has(p.codigo))
     setTrabajando(true)
     try {
-      const nuevos = await ponerPrecioProductos(elegidos, precio, costo)
+      const nuevos = await ponerPrecioProductos(elegidos, precio, costo, precioGrupo.publicar)
       const porCodigo = new Map(nuevos.map((d) => [d.codigo.toUpperCase(), d]))
       setItems((l) => l.map((p) => (porCodigo.has(p.codigo.toUpperCase()) ? { ...p, datos: porCodigo.get(p.codigo.toUpperCase())! } : p)))
-      toast.success(`${elegidos.length} ${elegidos.length === 1 ? 'producto' : 'productos'} con precio $${precio}${costo ? ` y costo $${costo}` : ''}.`)
+      toast.success(`${elegidos.length} ${elegidos.length === 1 ? 'producto' : 'productos'} con precio $${precio}${costo ? ` y costo $${costo}` : ''}${precioGrupo.publicar ? ', publicados en la tienda' : ''}.`)
       setPrecioGrupo(null); setSel(new Set())
-      if (costo) cargar()
+      if (costo || precioGrupo.publicar) cargar()
     } catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo poner el precio.') } finally { setTrabajando(false) }
   }
 
   // Acciones de una fila: ocultar/activar y eliminar.
   const unEstado = async (p: ProductoTienda, estado: EstadoTienda) => {
     setTrabajando(true)
-    try { await cambiarEstadoProductos([p], estado); toast.success(estado === 'activo' ? `${p.datos.nombre}: activo en la tienda.` : `${p.datos.nombre}: oculto.`); cargar() }
+    try {
+      const r = await cambiarEstadoProductos([p], estado)
+      if (r.sinPrecio) { toast.warning(`${p.datos.nombre}: ponele precio antes de publicarlo (saldría a $0).`); return }
+      toast.success(estado === 'activo' ? `${p.datos.nombre}: publicado en la tienda.` : `${p.datos.nombre}: oculto.`); cargar()
+    }
     catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo cambiar.') } finally { setTrabajando(false) }
   }
   const eliminar = async (p: ProductoTienda) => {
@@ -201,8 +210,8 @@ export function TiendaProductosPage() {
       {sel.size > 0 && <div className="sin-barra flex items-center gap-2 overflow-x-auto border-b border-line bg-white/[0.02] px-3 py-2">
         <b className="shrink-0 text-sm">{sel.size} {sel.size === 1 ? 'seleccionado' : 'seleccionados'}</b>
         <button type="button" className="primary-button min-h-10 shrink-0 px-3" onClick={() => setCarrito(items.filter((p) => sel.has(p.codigo)))}><ShoppingCart size={15} /> Carrito privado</button>
-        <button type="button" disabled={trabajando} className="subtle-button min-h-10 shrink-0 px-3" onClick={() => setPrecioGrupo({ precio: '', costo: '' })}>Poner precio</button>
-        <button type="button" disabled={trabajando} className="subtle-button min-h-10 shrink-0 px-3" onClick={() => void masivo('activo')}>Activar</button>
+        <button type="button" disabled={trabajando} className="subtle-button min-h-10 shrink-0 px-3" onClick={() => setPrecioGrupo({ precio: '', costo: '', publicar: true })}>Poner precio</button>
+        <button type="button" disabled={trabajando} className="subtle-button min-h-10 shrink-0 px-3" onClick={() => void masivo('activo')}>Publicar en la tienda</button>
         <button type="button" disabled={trabajando} className="subtle-button min-h-10 shrink-0 px-3" onClick={() => void masivo('oculto')}>Ocultar</button>
         <button type="button" disabled={trabajando} className="subtle-button min-h-10 shrink-0 px-3" onClick={() => void masivo('borrador')}>Pasar a borrador</button>
         <button type="button" disabled={trabajando} className="subtle-button min-h-10 shrink-0 px-3 text-[#b42318]" onClick={() => setBorrarSel(true)}>Eliminar</button>
@@ -217,12 +226,14 @@ export function TiendaProductosPage() {
       {precioGrupo && <div className="fixed inset-0 z-[60] grid place-items-center bg-black/70 p-4" onClick={() => { if (!trabajando) setPrecioGrupo(null) }}>
         <div className="w-full max-w-sm rounded-2xl border border-line bg-[#141414] p-5" onClick={(e) => e.stopPropagation()}>
           <h3 className="text-base font-semibold">Precio para {sel.size} {sel.size === 1 ? 'producto' : 'productos'}</h3>
-          <p className="mt-1 text-xs text-muted">Todos quedan con el mismo precio. No cambia si están en borrador, activos u ocultos.</p>
+          <p className="mt-1 text-xs text-muted">Todos quedan con el mismo precio.</p>
           <label className="mt-4 block text-xs font-medium">Precio de venta (US$)<input autoFocus inputMode="decimal" className="search-input mt-1 w-full" value={precioGrupo.precio} onChange={(e) => setPrecioGrupo({ ...precioGrupo, precio: e.target.value })} placeholder="Ej. 210" /></label>
           <label className="mt-3 block text-xs font-medium">Costo del proveedor (US$, opcional)<input inputMode="decimal" className="search-input mt-1 w-full" value={precioGrupo.costo} onChange={(e) => setPrecioGrupo({ ...precioGrupo, costo: e.target.value })} placeholder="Solo si querés cargarlo también" /></label>
+          <label className="mt-4 flex min-h-10 items-center gap-2 text-sm"><input type="checkbox" className="size-5" checked={precioGrupo.publicar} onChange={(e) => setPrecioGrupo({ ...precioGrupo, publicar: e.target.checked })} /> Publicar en la tienda al guardar</label>
+          <p className="text-[11px] text-muted">{precioGrupo.publicar ? 'Se ven en la tienda apenas guardás (los borradores salen como "Nuevo").' : 'Quedan como están (borrador, activos u ocultos); los publicás después.'}</p>
           <div className="mt-5 flex justify-end gap-2">
             <button type="button" className="subtle-button min-h-10 px-4" disabled={trabajando} onClick={() => setPrecioGrupo(null)}>Cancelar</button>
-            <button type="button" className="primary-button min-h-10 px-4" disabled={trabajando || !(Number(precioGrupo.precio.replace(',', '.')) > 0)} onClick={() => void aplicarPrecioGrupo()}>{trabajando ? 'Guardando…' : 'Aplicar a todos'}</button>
+            <button type="button" className="primary-button min-h-10 px-4" disabled={trabajando || !(Number(precioGrupo.precio.replace(',', '.')) > 0)} onClick={() => void aplicarPrecioGrupo()}>{trabajando ? 'Guardando…' : precioGrupo.publicar ? 'Guardar y publicar' : 'Aplicar a todos'}</button>
           </div>
         </div>
       </div>}
