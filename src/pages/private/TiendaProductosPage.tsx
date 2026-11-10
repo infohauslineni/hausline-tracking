@@ -1,4 +1,4 @@
-import { Calculator, Check, ExternalLink, Eye, EyeOff, ImageOff, Pencil, Plus, RefreshCw, Search, ShoppingCart, Trash2 } from 'lucide-react'
+import { Calculator, Check, ExternalLink, Eye, EyeOff, FileDown, ImageOff, Pencil, Plus, RefreshCw, Search, ShoppingCart, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -7,6 +7,7 @@ import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { borrarProductoTienda, cambiarEstadoProductos, conectadoCatalogo, costosTracking, disponibilidad, linkProducto, ordenarTallas, actualizarCache, enOferta, estadoDe, listarProductosTienda, productosEnCache, type EstadoTienda, type ProductoTienda } from '../../services/productosTienda.service'
 import { costosDeCompras, DATOS_PRECIO_DEFECTO, obtenerDatosPrecio, sugerirPrecios, tipoDeTienda, type CostoCompra, type DatosPrecio } from '../../services/preciosSugeridos.service'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
+import { abrirPdfCostosCalzado } from '../../utils/pdfCostosCalzado'
 import { CarritoPrivadoModal } from '../../components/tienda/CarritoPrivadoModal'
 import { PreciosSugeridosModal } from '../../components/tienda/PreciosSugeridosModal'
 import { ConectarTienda } from './VentaLibrePage'
@@ -151,6 +152,15 @@ export function TiendaProductosPage() {
     <Cabecera onRecargar={cargar} cargando={cargando} />
     <div className="mt-3 flex flex-wrap gap-2">
       <button type="button" className="subtle-button min-h-10 px-3" onClick={() => setCarrito([])}><ShoppingCart size={15} /> Carrito privado</button>
+      <button type="button" className="subtle-button min-h-10 px-3" onClick={() => {
+        // Respaldo antes del cambio de calzado: cada zapato con costo (ficha o última compra).
+        const filas = items.filter((p) => p.datos.subcategoria === 'Calzado' && costoDe(p) > 0).map((p) => {
+          const resp = respaldoDe(p)
+          return { codigo: p.codigo, nombre: p.datos.nombre, marca: String(p.datos.marca || ''), imagen: p.datos.imagen ? resolverImagenCatalogo(p.datos.imagen) : '', costo: costoDe(p), venta: ventaDe(p), fuente: resp ? resp.fuente : 'ficha' as const }
+        })
+        if (!filas.length) return void toast.info(cargando ? 'Esperá a que terminen de cargar los productos.' : 'No hay calzado con costo.')
+        if (!abrirPdfCostosCalzado(filas)) toast.error('El navegador bloqueó la ventana nueva. Permití las ventanas emergentes y probá otra vez.')
+      }}><FileDown size={15} /> PDF calzado con costo</button>
       <button type="button" className="subtle-button min-h-10 px-3" onClick={() => setAjustesPrecio(true)}><Calculator size={15} /> Precios sugeridos · tienda {datosPrecio.margenTienda} % · mayorista {datosPrecio.margenMayorista} %</button>
     </div>
     {carrito && <CarritoPrivadoModal iniciales={carrito} todos={items.filter((p) => estadoDe(p) !== 'borrador')} costos={costosParaCarrito} datosPrecio={datosPrecio} onClose={() => setCarrito(null)} />}
