@@ -18,20 +18,20 @@ let cliente: SupabaseClient | null = null
 // La base del catálogo entrega como mucho 1000 filas por pedido. Con miles de productos (los
 // borradores subidos de Yupoo) el panel veía solo los primeros 1000: se leen por páginas, en paralelo.
 export async function leerFilasCatalogo<T>(columnas: string, filtro?: (q: any) => any): Promise<T[]> { // eslint-disable-line @typescript-eslint/no-explicit-any
-  const PAG = 1000
-  const base = () => { const q = catalogo().from('catalogo_web').select(columnas); return filtro ? filtro(q) : q }
-  const primero = await base().order('id', { ascending: true }).range(0, PAG - 1)
-  if (primero.error) throw new Error(primero.error.message)
-  const filas = [...((primero.data ?? []) as T[])]
-  if (filas.length < PAG) return filas
-  const { count, error } = await (filtro ? filtro(catalogo().from('catalogo_web').select('id', { count: 'exact', head: true })) : catalogo().from('catalogo_web').select('id', { count: 'exact', head: true }))
-  if (error) throw new Error(error.message)
-  const total = count ?? filas.length
-  const paginas = []
-  for (let desde = PAG; desde < total + PAG; desde += PAG) paginas.push(base().order('id', { ascending: true }).range(desde, desde + PAG - 1))
-  for (const r of await Promise.all(paginas)) {
-    if (r.error) throw new Error(r.error.message)
-    filas.push(...((r.data ?? []) as T[]))
+  const PAG = 1000, EN_PARALELO = 3
+  const pagina = (desde: number) => { const q = catalogo().from('catalogo_web').select(columnas); return (filtro ? filtro(q) : q).order('id', { ascending: true }).range(desde, desde + PAG - 1) }
+  const filas: T[] = []
+  // Se piden de a 3 páginas a la vez hasta que una venga incompleta (no depende de contar filas).
+  for (let desde = 0; ; desde += PAG * EN_PARALELO) {
+    const res = await Promise.all(Array.from({ length: EN_PARALELO }, (_, k) => pagina(desde + k * PAG)))
+    let fin = false
+    for (const r of res) {
+      if (r.error) throw new Error(r.error.message)
+      const d = (r.data ?? []) as T[]
+      filas.push(...d)
+      if (d.length < PAG) { fin = true; break }
+    }
+    if (fin) break
   }
   // Por si alguien agregó filas entre medio: sin repetidos.
   const vistos = new Set<unknown>()
