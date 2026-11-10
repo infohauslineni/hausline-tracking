@@ -302,6 +302,20 @@ export async function cambiarEstadoProductos(items: ProductoTienda[], estado: Es
   lanzar(error, 'No se pudo cambiar el estado')
 }
 
+// PRECIO EN GRUPO: el mismo precio (y, si se da, el mismo costo) a varios productos a la vez
+// (p. ej. todos los pares de un mismo estilo). No cambia el estado (borrador/activo/oculto).
+export async function ponerPrecioProductos(items: ProductoTienda[], precio: number, costo?: number | null) {
+  if (vistaPrevia) throw new Error('Vista previa local: no se guarda nada.')
+  const valor = Math.max(0, Math.round(precio * 100) / 100)
+  const filas = items.map((p) => ({ codigo: p.codigo.toUpperCase(), activo: estadoDe(p) === 'activo', datos: { ...p.datos, codigo: p.codigo.toUpperCase(), precio: valor, cotizar: false } }))
+  for (let i = 0; i < filas.length; i += 200) {
+    const { error } = await catalogo().from('catalogo_web').upsert(filas.slice(i, i + 200), { onConflict: 'codigo' })
+    lanzar(error, 'No se pudo poner el precio')
+  }
+  if (costo != null && costo > 0) for (const p of items) await guardarCosto({ ...p.datos, precio: valor }, costo)
+  return filas.map((f) => f.datos as DatosTienda)
+}
+
 // Elimina un producto. Si se cargó desde el panel, se borra su fila. Si es de fábrica (productos.js,
 // no se puede sacar del código), queda una fila inactiva con datos.eliminado=true: la tienda no lo
 // muestra (activo=false) y esta lista tampoco.

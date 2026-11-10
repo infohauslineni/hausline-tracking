@@ -4,7 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '../../contexts/AuthContext'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
-import { borrarProductoTienda, cambiarEstadoProductos, conectadoCatalogo, costosTracking, disponibilidad, linkProducto, ordenarTallas, actualizarCache, enOferta, estadoDe, listarProductosTienda, productosEnCache, type EstadoTienda, type ProductoTienda } from '../../services/productosTienda.service'
+import { borrarProductoTienda, cambiarEstadoProductos, ponerPrecioProductos, conectadoCatalogo, costosTracking, disponibilidad, linkProducto, ordenarTallas, actualizarCache, enOferta, estadoDe, listarProductosTienda, productosEnCache, type EstadoTienda, type ProductoTienda } from '../../services/productosTienda.service'
 import { costosDeCompras, DATOS_PRECIO_DEFECTO, obtenerDatosPrecio, sugerirPrecios, tipoDeTienda, type CostoCompra, type DatosPrecio } from '../../services/preciosSugeridos.service'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { abrirPdfCostosCalzado } from '../../utils/pdfCostosCalzado'
@@ -62,6 +62,8 @@ export function TiendaProductosPage() {
   const [trabajando, setTrabajando] = useState(false)
   const [borrando, setBorrando] = useState<string | null>(null)
   const [borrarSel, setBorrarSel] = useState(false)
+  // Precio en grupo para los seleccionados.
+  const [precioGrupo, setPrecioGrupo] = useState<{ precio: string; costo: string } | null>(null)
   // Costos del panel (productos.precio_compra) por código: se muestran con el margen.
   const [costos, setCostos] = useState<Map<string, number>>(new Map())
   // Si la ficha no tiene costo, el último costo real pagado en un pedido o una Compra libre.
@@ -116,7 +118,8 @@ export function TiendaProductosPage() {
     return r
   }, [items, tab, q, marca, categoria, orden, costos])
   const visibles = filtrados.slice(0, pagina * POR_PAGINA)
-  const todosSel = visibles.length > 0 && visibles.every((p) => sel.has(p.codigo))
+  // "Elegir todos" toma TODOS los del filtro/búsqueda (no solo los de esta página).
+  const todosSel = filtrados.length > 0 && filtrados.every((p) => sel.has(p.codigo))
   const alternar = (c: string) => setSel((s) => { const n = new Set(s); if (n.has(c)) n.delete(c); else n.add(c); return n })
 
   const masivo = async (estado: EstadoTienda) => {
@@ -124,6 +127,21 @@ export function TiendaProductosPage() {
     setTrabajando(true)
     try { await cambiarEstadoProductos(elegidos, estado); toast.success(`${elegidos.length} ${elegidos.length === 1 ? 'producto' : 'productos'}: ${estado === 'activo' ? 'activados' : estado === 'oculto' ? 'ocultos' : 'en borrador'}.`); setSel(new Set()); cargar() }
     catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo cambiar.') } finally { setTrabajando(false) }
+  }
+
+  const aplicarPrecioGrupo = async () => {
+    if (!precioGrupo) return
+    const precio = Number(precioGrupo.precio.replace(',', '.')), costo = Number(precioGrupo.costo.replace(',', '.')) || null
+    const elegidos = items.filter((p) => sel.has(p.codigo))
+    setTrabajando(true)
+    try {
+      const nuevos = await ponerPrecioProductos(elegidos, precio, costo)
+      const porCodigo = new Map(nuevos.map((d) => [d.codigo.toUpperCase(), d]))
+      setItems((l) => l.map((p) => (porCodigo.has(p.codigo.toUpperCase()) ? { ...p, datos: porCodigo.get(p.codigo.toUpperCase())! } : p)))
+      toast.success(`${elegidos.length} ${elegidos.length === 1 ? 'producto' : 'productos'} con precio $${precio}${costo ? ` y costo $${costo}` : ''}.`)
+      setPrecioGrupo(null); setSel(new Set())
+      if (costo) cargar()
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo poner el precio.') } finally { setTrabajando(false) }
   }
 
   // Acciones de una fila: ocultar/activar y eliminar.
@@ -183,6 +201,7 @@ export function TiendaProductosPage() {
       {sel.size > 0 && <div className="sin-barra flex items-center gap-2 overflow-x-auto border-b border-line bg-white/[0.02] px-3 py-2">
         <b className="shrink-0 text-sm">{sel.size} {sel.size === 1 ? 'seleccionado' : 'seleccionados'}</b>
         <button type="button" className="primary-button min-h-10 shrink-0 px-3" onClick={() => setCarrito(items.filter((p) => sel.has(p.codigo)))}><ShoppingCart size={15} /> Carrito privado</button>
+        <button type="button" disabled={trabajando} className="subtle-button min-h-10 shrink-0 px-3" onClick={() => setPrecioGrupo({ precio: '', costo: '' })}>Poner precio</button>
         <button type="button" disabled={trabajando} className="subtle-button min-h-10 shrink-0 px-3" onClick={() => void masivo('activo')}>Activar</button>
         <button type="button" disabled={trabajando} className="subtle-button min-h-10 shrink-0 px-3" onClick={() => void masivo('oculto')}>Ocultar</button>
         <button type="button" disabled={trabajando} className="subtle-button min-h-10 shrink-0 px-3" onClick={() => void masivo('borrador')}>Pasar a borrador</button>
@@ -191,12 +210,29 @@ export function TiendaProductosPage() {
         <button type="button" className="subtle-button min-h-10 shrink-0 px-3" onClick={() => setSel(new Set())}>Quitar selección</button>
       </div>}
 
+      {filtrados.length > 0 && <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-xs lg:hidden">
+        <button type="button" className="subtle-button min-h-9 shrink-0 px-3 text-xs" onClick={() => setSel(todosSel ? new Set() : new Set(filtrados.map((p) => p.codigo)))}>{todosSel ? 'Quitar selección' : `Elegir todos (${filtrados.length})`}</button>
+        <span className="text-muted">Buscá un modelo (ej. "Super-Star") y elegí todos para ponerles el mismo precio.</span>
+      </div>}
+      {precioGrupo && <div className="fixed inset-0 z-[60] grid place-items-center bg-black/70 p-4" onClick={() => { if (!trabajando) setPrecioGrupo(null) }}>
+        <div className="w-full max-w-sm rounded-2xl border border-line bg-[#141414] p-5" onClick={(e) => e.stopPropagation()}>
+          <h3 className="text-base font-semibold">Precio para {sel.size} {sel.size === 1 ? 'producto' : 'productos'}</h3>
+          <p className="mt-1 text-xs text-muted">Todos quedan con el mismo precio. No cambia si están en borrador, activos u ocultos.</p>
+          <label className="mt-4 block text-xs font-medium">Precio de venta (US$)<input autoFocus inputMode="decimal" className="search-input mt-1 w-full" value={precioGrupo.precio} onChange={(e) => setPrecioGrupo({ ...precioGrupo, precio: e.target.value })} placeholder="Ej. 210" /></label>
+          <label className="mt-3 block text-xs font-medium">Costo del proveedor (US$, opcional)<input inputMode="decimal" className="search-input mt-1 w-full" value={precioGrupo.costo} onChange={(e) => setPrecioGrupo({ ...precioGrupo, costo: e.target.value })} placeholder="Solo si querés cargarlo también" /></label>
+          <div className="mt-5 flex justify-end gap-2">
+            <button type="button" className="subtle-button min-h-10 px-4" disabled={trabajando} onClick={() => setPrecioGrupo(null)}>Cancelar</button>
+            <button type="button" className="primary-button min-h-10 px-4" disabled={trabajando || !(Number(precioGrupo.precio.replace(',', '.')) > 0)} onClick={() => void aplicarPrecioGrupo()}>{trabajando ? 'Guardando…' : 'Aplicar a todos'}</button>
+          </div>
+        </div>
+      </div>}
+
       {cargando && !items.length ? <div className="space-y-2 p-3">{Array.from({ length: 6 }, (_, i) => <div key={i} className="h-16 animate-pulse rounded-lg bg-white/[0.04]" />)}</div>
         : !filtrados.length ? <p className="p-8 text-center text-sm text-muted">No hay productos con ese filtro.</p>
         : <>
           {/* Encabezado (solo computadora) */}
           <div className={`hidden ${COLS} items-center gap-3 border-b border-line bg-white/[0.02] px-3 py-2 text-xs font-medium text-muted lg:grid`}>
-            <button type="button" aria-label={todosSel ? 'Quitar todos' : 'Elegir todos'} onClick={() => setSel(todosSel ? new Set() : new Set(visibles.map((p) => p.codigo)))} className={`grid size-5 place-items-center rounded border ${todosSel ? 'border-accent bg-accent text-[#fff]' : 'border-line'}`}>{todosSel && <Check size={13} />}</button>
+            <button type="button" aria-label={todosSel ? 'Quitar todos' : 'Elegir todos'} onClick={() => setSel(todosSel ? new Set() : new Set(filtrados.map((p) => p.codigo)))} className={`grid size-5 place-items-center rounded border ${todosSel ? 'border-accent bg-accent text-[#fff]' : 'border-line'}`}>{todosSel && <Check size={13} />}</button>
             <span>Producto</span><span>Precio · ganancia</span><span>Mayorista</span><span>Estado</span><span>Tallas y disponibilidad</span><span>Categoría · marca</span><span className="text-right">Acciones</span>
           </div>
           <ul className="divide-y divide-line">
