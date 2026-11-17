@@ -60,7 +60,7 @@ export async function enviarCorreoRecompra({ correo, nombre, cupon, porcentaje, 
 export async function enviarCorreoRecordatorioResena({ correo, nombre, codigo }) {
   const url = `${baseTienda()}/resena/?c=${encodeURIComponent(codigo)}`
   const nota = `Esperamos que esté disfrutando su pedido <strong>${esc(codigo)}</strong>. ¿Nos regala un minuto para contarnos cómo le fue? Su reseña (y si desea, una foto) ayuda muchísimo a otros clientes a comprar con confianza.`
-  await transporteSmtp().sendMail({
+  return transporteSmtp().sendMail({
     from: remitente(), to: correo,
     subject: `¿Cómo le fue con su pedido ${codigo}? ★★★★★`,
     html: plantillaCorreo({ nombre, codigo, estado: null, estadoLabel: '¿Qué le pareció su compra?', nota, urlSeguimiento: url, esNuevo: false, factura: null, fotos: [], ctaTexto: 'Dejar mi reseña', ctaUrl: url, pedirResena: false }),

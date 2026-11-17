@@ -182,7 +182,8 @@ function PedirResenas() {
     setEnviando(true)
     try {
       const res = await pedirResenasAhora(); setR(res)
-      toast.success(res.enviados.length ? `Listo: se pidió reseña a ${res.enviados.length} ${res.enviados.length === 1 ? 'cliente' : 'clientes'}.` : 'No había clientes nuevos a quienes pedirles reseña.')
+      if (res.fallaron.length) toast.error(`No se pudo enviar a ${res.fallaron.length} ${res.fallaron.length === 1 ? 'cliente' : 'clientes'}. Mirá el detalle.`)
+      else toast.success(res.enviados.length ? `Listo: se pidió reseña a ${res.enviados.length} ${res.enviados.length === 1 ? 'cliente' : 'clientes'}.` : 'No había clientes nuevos a quienes pedirles reseña.')
     } catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudieron pedir las reseñas.') }
     finally { setEnviando(false) }
   }
@@ -195,7 +196,9 @@ function PedirResenas() {
       {r.yaPedidas.length > 0 && <p className="mt-1 text-xs text-muted">Ya se les había pedido antes: {linea(r.yaPedidas)}</p>}
       {r.yaTenian.length > 0 && <p className="mt-1 text-xs text-muted">Ya dejaron reseña: {linea(r.yaTenian)}</p>}
       {r.sinCorreo.length > 0 && <p className="mt-1 text-xs text-amber-200">Sin correo registrado: {linea(r.sinCorreo)}</p>}
-      <p className="mt-2 text-xs text-muted">Entregados hace 1 a 14 días.</p>
+      {r.bloqueados.length > 0 && <p className="mt-1 text-xs text-amber-200">Correo en "Correos que no funcionan" (no se envió): {r.bloqueados.map((x) => `${x.nombre || 'Cliente'} (${x.codigo}) · ${x.correo}`).join(', ')}</p>}
+      {r.fallaron.length > 0 && <p className="mt-1 text-xs text-red-300">No se pudo enviar (podés volver a intentar): {r.fallaron.map((x) => `${x.nombre || 'Cliente'} (${x.codigo}): ${x.error}`).join(' · ')}</p>}
+      <p className="mt-2 text-xs text-muted">Entregados en los últimos 30 días, también los de hoy.</p>
     </div>}
   </div>
 }
