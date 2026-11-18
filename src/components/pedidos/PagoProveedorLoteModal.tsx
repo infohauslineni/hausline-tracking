@@ -1,10 +1,11 @@
 import { Check, Search } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { isSupabaseConfigured, supabase } from '../../lib/supabase'
+import { isSupabaseConfigured } from '../../lib/supabase'
+import { ESTADOS_PEDIDO } from '../../constants/orders'
 import { aprenderCostoDeCodigo, esLineaEnvio, pagarProveedorLote, type LineaPagoLote } from '../../services/pedidos.service'
 import { actualizarInversion, listarInversiones, obtenerTipoCambio, pagarVariasCompras } from '../../services/comercial.service'
-import type { Inversion, Pedido, PedidoItem } from '../../types/domain'
+import type { EstadoPedido, Inversion, Pedido, PedidoItem } from '../../types/domain'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { porPagarInversion } from '../../utils/compraPago'
 import { repartir } from '../../utils/repartoCompra'
@@ -26,10 +27,22 @@ const usd = (n: number) => `$${n.toFixed(2)}`
 const costoCompra = (x: Inversion) => Number(x.costo_unitario) * Number(x.cantidad) + Number(x.gastos_adicionales)
 const hoy = () => new Date().toISOString().slice(0, 10)
 
+// QUÉ ENTRA EN LA LISTA: productos que todavía NO están ligados a ningún pago al proveedor,
+// tengan o no costo cargado. El costo no sirve para decidirlo (se copia del catálogo al crear
+// el pedido); lo que cuenta es el pago.
+// • Pedidos: todo pago al proveedor (al crear el pedido, en su ficha, al pasar a En preparación
+//   o en este lote) queda como un gasto "Proveedor" del pedido. Sin ese gasto, no está pagado.
+//   Los pedidos que salieron de una Compra libre se pagan por la compra (van en su sección).
+// • Estados: todos los activos antes de la entrega; "En preparación" solo con la casilla marcada.
+const ESTADOS_FUERA = new Set<EstadoPedido>(['entregado', 'cancelado'])
+const tienePagoProveedor = (p: Pedido) => (p.gastos ?? []).some((g) => /proveedor/i.test(g.categoria ?? '') && Number(g.monto) > 0)
+const etiquetaEstado = (e: EstadoPedido) => ESTADOS_PEDIDO.find((x) => x.value === e)?.label ?? e.replace(/_/g, ' ')
+const costoItem = (it: PedidoItem) => Number(it.precio_compra || 0)
+
 const nombreDe = (f: Fila) => f.tipo === 'pedido' ? f.item.producto : f.compra.producto
 const imagenDe = (f: Fila) => resolverImagenCatalogo(f.tipo === 'pedido' ? f.item.imagen : f.compra.imagen)
 const detalleDe = (f: Fila) => f.tipo === 'pedido'
-  ? `${f.pedido.codigo} · ${f.pedido.clientes?.nombre ?? 'Cliente'}${f.item.talla ? ` · Talla ${f.item.talla}` : ''}${Number(f.item.cantidad) > 1 ? ` · ${f.item.cantidad}×` : ''}${f.pedido.estado === 'en_preparacion' ? ' · En preparación' : ''}`
+  ? `${f.pedido.codigo} · ${f.pedido.clientes?.nombre ?? 'Cliente'}${f.item.talla ? ` · Talla ${f.item.talla}` : ''}${Number(f.item.cantidad) > 1 ? ` · ${f.item.cantidad}×` : ''}${f.pedido.estado !== 'pedido_confirmado' ? ` · ${etiquetaEstado(f.pedido.estado)}` : ''}${costoItem(f.item) > 0 ? '' : ' · sin costo, escribí el precio'}`
   : `Compra libre${f.compra.codigo ? ` · ${f.compra.codigo}` : ''}${f.compra.talla_color ? ` · ${f.compra.talla_color}` : ''}${Number(f.compra.cantidad) > 1 ? ` · ${f.compra.cantidad}×` : ''} · ${f.falta > 0.005 ? `debe ${usd(f.falta)}` : 'sin costo, escribí el precio'}`
 const textoBusqueda = (f: Fila) => (f.tipo === 'pedido'
   ? `${f.pedido.codigo} ${f.pedido.clientes?.nombre ?? ''} ${f.item.producto} ${f.item.codigo_producto ?? ''}`
@@ -47,11 +60,13 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
   const [tipoCambio, setTipoCambio] = useState(36.6)
   const [guardando, setGuardando] = useState(false)
   const [libres, setLibres] = useState<Inversion[]>([])
+  // Pedidos que salieron de una Compra libre: su pago al proveedor va por la compra.
+  const [pedidosDeCompra, setPedidosDeCompra] = useState<Set<string>>(new Set())
 
   const filasPedidos = useMemo<Fila[]>(() => pedidos
-    .filter((p) => p.estado === 'pedido_confirmado' || (verPreparacion && p.estado === 'en_preparacion'))
+    .filter((p) => !ESTADOS_FUERA.has(p.estado) && (p.estado !== 'en_preparacion' || verPreparacion) && !tienePagoProveedor(p) && !pedidosDeCompra.has(p.id))
     .sort((a, b) => String(a.fecha_pedido).localeCompare(String(b.fecha_pedido)))
-    .flatMap((p) => (p.pedido_items ?? []).filter((it) => it.id && !esLineaEnvio(it)).map((it) => ({ tipo: 'pedido' as const, clave: it.id!, itemId: it.id!, pedido: p, item: it }))), [pedidos, verPreparacion])
+    .flatMap((p) => (p.pedido_items ?? []).filter((it) => it.id && !esLineaEnvio(it)).map((it) => ({ tipo: 'pedido' as const, clave: it.id!, itemId: it.id!, pedido: p, item: it }))), [pedidos, verPreparacion, pedidosDeCompra])
   // Compras libres marcadas "Por pagar" (el mismo criterio que la tarjeta en Compras libres), las
   // más viejas primero. Entran aunque el saldo dé $0 (p. ej. registrada sin costo): ahí se escribe el precio.
   const filasLibres = useMemo<Fila[]>(() => libres
@@ -59,16 +74,14 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
     .sort((a, b) => a.compra.fecha.localeCompare(b.compra.fecha)), [libres])
   const filas = useMemo(() => [...filasPedidos, ...filasLibres], [filasPedidos, filasLibres])
 
-  // Al abrir: limpia y propone el precio de cada producto (el que ya tenía, o el del catálogo).
-  // En las compras libres el precio propuesto es lo que falta pagar.
+  // Al abrir: limpia todo y carga las Compras libres por pagar. En las compras libres el precio
+  // propuesto es lo que falta pagar (si no tienen costo, queda vacío para escribirlo).
   useEffect(() => {
     if (!open) return
-    setElegidos(new Set()); setTotal(''); setBusqueda(''); setMetodo('PayPal'); setDestino({ cuentaId: null, montoCuenta: 0 }); setPasar(true); setLibres([])
+    setElegidos(new Set()); setTotal(''); setBusqueda(''); setMetodo('PayPal'); setDestino({ cuentaId: null, montoCuenta: 0 }); setPasar(true); setLibres([]); setPrecios({})
     if (isSupabaseConfigured) void obtenerTipoCambio().then((t) => { if (t) setTipoCambio(t) }).catch(() => undefined)
-    const base: Record<string, string> = {}
-    for (const f of filasPedidos) if (f.tipo === 'pedido' && Number(f.item.precio_compra || 0) > 0) base[f.clave] = String(r2(Number(f.item.precio_compra) * Number(f.item.cantidad || 1)))
-    setPrecios(base)
     if (isSupabaseConfigured) void listarInversiones().then((lista) => {
+      setPedidosDeCompra(new Set(lista.flatMap((c) => (c.pedido_id ? [c.pedido_id] : []))))
       const deben = lista.filter((c) => c.pagado === false && c.estado !== 'descartado')
       setLibres(deben)
       setPrecios((act) => {
@@ -77,23 +90,14 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
         return sig
       })
     }).catch(() => toast.error('No se pudieron cargar las Compras libres por pagar.'))
-    const codigos = [...new Set(filasPedidos.flatMap((f) => f.tipo === 'pedido' && !base[f.clave] ? [(f.item.codigo_producto ?? '').trim().toUpperCase()] : []).filter(Boolean))]
-    if (!codigos.length || !supabase) return
-    void supabase.from('productos').select('codigo, precio_compra').in('codigo', codigos).then(({ data }) => {
-      const mapa = new Map((data ?? []).map((p: { codigo: string | null; precio_compra: number | null }) => [(p.codigo ?? '').trim().toUpperCase(), Number(p.precio_compra || 0)]))
-      setPrecios((act) => {
-        const sig = { ...act }
-        for (const f of filasPedidos) { if (f.tipo !== 'pedido') continue; const c = mapa.get((f.item.codigo_producto ?? '').trim().toUpperCase()); if (!sig[f.clave] && c && c > 0) sig[f.clave] = String(r2(c * Number(f.item.cantidad || 1))) }
-        return sig
-      })
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
-
   const term = busqueda.trim().toLowerCase()
   const visibles = term ? filas.filter((f) => textoBusqueda(f).includes(term)) : filas
   const seleccion = filas.filter((f) => elegidos.has(f.clave))
-  const precioDe = (f: Fila) => Math.max(0, Number(String(precios[f.clave] ?? '').replace(',', '.')) || 0)
+  // Precio de cada producto: lo escrito; si todavía no se tocó, el costo de proveedor que ya
+  // tiene (como antes). Con costo 0 o sin costo queda VACÍO para escribirlo a mano.
+  const valorPrecio = (f: Fila) => (f.clave in precios ? precios[f.clave] : f.tipo === 'pedido' && costoItem(f.item) > 0 ? String(r2(costoItem(f.item) * Number(f.item.cantidad || 1))) : '')
+  const precioDe = (f: Fila) => Math.max(0, Number(String(valorPrecio(f)).replace(',', '.')) || 0)
   const suma = r2(seleccion.reduce((s, f) => s + precioDe(f), 0))
   const totalUsd = Math.max(0, Number(total.replace(',', '.')) || 0)
   const comision = r2(totalUsd - suma)
@@ -159,7 +163,7 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
         <label className="flex items-center gap-2 text-xs text-muted"><input type="checkbox" checked={verPreparacion} onChange={(e) => setVerPreparacion(e.target.checked)} /> Ver también los que están En preparación</label>
       </div>
 
-      {filas.length === 0 ? <p className="rounded-xl border border-line p-4 text-sm text-muted">No hay pedidos en Orden confirmada ni Compras libres por pagar al proveedor.</p> : <div className="rounded-xl border border-line">
+      {filas.length === 0 ? <p className="rounded-xl border border-line p-4 text-sm text-muted">No hay productos sin pago al proveedor: ni pedidos activos{verPreparacion ? '' : ' (sin contar los En preparación)'} ni Compras libres por pagar.</p> : <div className="rounded-xl border border-line">
         <button type="button" className="flex w-full items-center gap-2 border-b border-line px-3 py-2.5 text-left text-xs font-semibold text-muted" onClick={alternarTodos}><span className={`grid size-5 place-items-center rounded border ${todos ? 'border-accent bg-accent text-black' : 'border-line'}`}>{todos && <Check size={13} />}</span>{todos ? 'Quitar todos' : `Elegir todos (${visibles.length})`}</button>
         <div className="max-h-[46vh] divide-y divide-line overflow-y-auto">
           {visibles.map((f, i) => {
@@ -176,7 +180,7 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
                   <span className="min-w-0"><strong className="block truncate text-sm">{nombreDe(f)}</strong><span className="block truncate text-xs text-muted">{detalleDe(f)}</span></span>
                 </button>
                 <div className="flex w-full items-center justify-end gap-3 pl-8 sm:w-auto sm:pl-0">
-                  <label className="flex items-center gap-1.5 text-xs text-muted">Precio <input inputMode="decimal" className="simple-input w-24 text-right" placeholder="0.00" value={precios[f.clave] ?? ''} onChange={(e) => { setPrecios((p) => ({ ...p, [f.clave]: e.target.value })); if (!on) alternar(f.clave) }} /></label>
+                  <label className="flex items-center gap-1.5 text-xs text-muted">Precio <input inputMode="decimal" className="simple-input w-24 text-right" placeholder="0.00" value={valorPrecio(f)} onChange={(e) => { setPrecios((p) => ({ ...p, [f.clave]: e.target.value })); if (!on) alternar(f.clave) }} /></label>
                   <span className="w-24 text-right text-xs">{on && costo != null && totalUsd > 0 ? <><span className="block text-[10px] uppercase tracking-wide text-muted">Costo real</span><b className="font-mono text-sm">{usd(costo)}</b></> : null}</span>
                 </div>
               </div>
