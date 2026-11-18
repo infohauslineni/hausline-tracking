@@ -152,7 +152,7 @@ function RendimientoVentas({ pedidos }: { pedidos: Pedido[] }) {
   return <article className="panel-card">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div><h2 className="flex items-center gap-2 text-[.95rem] font-semibold"><TrendingUp size={17} className="text-accent" /> Rendimiento de ventas</h2><p className="mt-1 text-[.7rem] text-muted">Evolución de las ventas registradas</p></div>
-      <div className="flex gap-1 rounded-xl border border-line bg-white/[.02] p-1">{RANGOS.map((r) => <button key={r.id} type="button" onClick={() => setRango(r.id)} className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${rango === r.id ? 'bg-accent text-black' : 'text-muted hover:text-white'}`}>{r.label}</button>)}</div>
+      <div className="flex gap-1 rounded-xl border border-line bg-white/[.02] p-1">{RANGOS.map((r) => <button key={r.id} type="button" onClick={() => setRango(r.id)} className={`min-h-9 rounded-lg px-3 text-[11px] font-semibold transition ${rango === r.id ? 'bg-accent text-black' : 'text-muted hover:text-white'}`}>{r.label}</button>)}</div>
     </div>
     <div className="mt-5 grid grid-cols-3 gap-3">
       <Stat label="Ventas" value={`USD ${money(ventas)}`} strong />

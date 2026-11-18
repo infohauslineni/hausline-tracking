@@ -91,7 +91,7 @@ export function ContenidoPage() {
 
     <div className="mt-6 grid gap-3 sm:grid-cols-[1fr_240px]">
       <div className="relative"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" size={18} /><input className="search-input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Idea, pedido o cliente" /></div>
-      <select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}>
+      <select className="simple-input min-h-10" value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}>
         <option value="todos">Todos los estados</option>
         <option value="pendiente_grabacion">Pendiente de grabación</option>
         <option value="grabado">Grabado</option>

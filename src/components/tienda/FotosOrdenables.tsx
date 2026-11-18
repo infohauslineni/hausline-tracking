@@ -50,7 +50,7 @@ function Foto({ foto, principal, onPrincipal, onQuitar, onEncuadrar }: { foto: F
       {foto.file && <span className="rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-[#fff]">Nueva</span>}
     </div>
     <div className="absolute inset-x-1.5 bottom-1.5 flex justify-between gap-1">
-      {principal ? <span /> : <button type="button" onPointerDown={boton} onTouchStart={boton} onClick={onPrincipal} title="Hacer principal" aria-label="Hacer principal" className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#fff]/90 px-2 text-[11px] font-semibold text-[#1a1a1a]"><Star size={13} /></button>}
+      {principal ? <span /> : <button type="button" onPointerDown={boton} onTouchStart={boton} onClick={onPrincipal} title="Hacer principal" aria-label="Hacer principal" className="inline-flex h-8 min-w-8 items-center justify-center gap-1 rounded-lg bg-[#fff]/90 px-2.5 text-[11px] font-semibold text-[#1a1a1a]"><Star size={13} /></button>}
       <span className="flex gap-1">
         <button type="button" onPointerDown={boton} onTouchStart={boton} onClick={onEncuadrar} title="Encuadrar / centrar" aria-label="Encuadrar foto" className="grid size-8 place-items-center rounded-lg bg-[#fff]/90 text-[#1a1a1a]"><Crop size={14} /></button>
         <button type="button" onPointerDown={boton} onTouchStart={boton} onClick={onQuitar} title="Quitar foto" aria-label="Quitar foto" className="grid size-8 place-items-center rounded-lg bg-[#fff]/90 text-[#b42318]"><Trash2 size={15} /></button>

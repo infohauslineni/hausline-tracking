@@ -11,7 +11,7 @@ export function Volver({ destino, etiqueta = 'Volver' }: { destino: string; etiq
     const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0
     if (idx > 0) navigate(-1); else navigate(destino)
   }
-  return <button type="button" onClick={volver} className="mb-5 inline-flex items-center gap-2 text-xs text-muted transition hover:text-white"><ArrowLeft size={16} /> {etiqueta}</button>
+  return <button type="button" onClick={volver} className="-ml-2 mb-3 inline-flex min-h-10 items-center gap-2 rounded-lg px-2 text-xs text-muted transition hover:text-white"><ArrowLeft size={16} /> {etiqueta}</button>
 }
 
 // Recuerda en qué punto de cada pantalla estabas. Al VOLVER (atrás del navegador o el botón

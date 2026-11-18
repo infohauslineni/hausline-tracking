@@ -174,7 +174,7 @@ export function SaludClientesPage() {
       {/* Encabezado */}
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <Link to="/configuracion" className="eyebrow inline-flex items-center gap-1 hover:underline">← Configuración</Link>
+          <Link to="/configuracion" className="eyebrow inline-flex min-h-9 items-center gap-1 hover:underline">← Configuración</Link>
           <h1 className="page-title">Salud de clientes</h1>
           <p className="page-subtitle max-w-2xl">Errores que ven los clientes en la tienda, el checkout, Mi cuenta y el seguimiento — anotados solos, aunque nadie te lo diga.</p>
         </div>

@@ -4,7 +4,6 @@ import { ProtectedRoute } from './components/auth/ProtectedRoute'
 import { AdminRoute } from './components/auth/AdminRoute'
 import { PrivateLayout } from './components/layout/PrivateLayout'
 import { CookieBanner } from './components/ui/CookieBanner'
-import { LoginPage } from './pages/public/LoginPage'
 import { urlSeguimientoCliente } from './utils/seguimientoUrl'
 
 const ClientesPage = lazy(() => import('./pages/private/ClientesPage').then((module) => ({ default: module.ClientesPage })))
@@ -35,6 +34,8 @@ const SaludClientesPage = lazy(() => import('./pages/private/SaludClientesPage')
 const VentaLibrePage = lazy(() => import('./pages/private/VentaLibrePage').then((module) => ({ default: module.VentaLibrePage })))
 const PromocionesPage = lazy(() => import('./pages/private/PromocionesPage').then((module) => ({ default: module.PromocionesPage })))
 const PrivacidadPage = lazy(() => import('./pages/public/PrivacidadPage').then((module) => ({ default: module.PrivacidadPage })))
+// El login se carga aparte: con la sesión abierta el panel no baja sus librerías de formularios.
+const LoginPage = lazy(() => import('./pages/public/LoginPage').then((module) => ({ default: module.LoginPage })))
 const TerminosPage = lazy(() => import('./pages/public/TerminosPage').then((module) => ({ default: module.TerminosPage })))
 
 export function App() {

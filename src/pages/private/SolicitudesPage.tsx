@@ -404,7 +404,7 @@ function SolicitudCard({ s, busy, onConfirm, onDiscard, enCamino, inmediata }: {
 
     <div className="mt-4 flex flex-wrap items-center gap-2">
       <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200"><AlertCircle size={12} /> Verificá la transferencia antes de confirmar</span>
-      <a href={whatsappUrl(s.cliente_whatsapp, mensaje)} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1.5 text-[11px] font-semibold hover:underline ${urgente ? 'text-red-300' : 'text-[#62eaa0]'}`}><MessageCircle size={13} /> {urgente ? 'Avisar que vence' : 'Recordar por WhatsApp'}</a>
+      <a href={whatsappUrl(s.cliente_whatsapp, mensaje)} target="_blank" rel="noopener noreferrer" className={`inline-flex min-h-9 items-center gap-1.5 rounded-lg px-1 text-[11px] font-semibold hover:underline ${urgente ? 'text-red-300' : 'text-[#62eaa0]'}`}><MessageCircle size={13} /> {urgente ? 'Avisar que vence' : 'Recordar por WhatsApp'}</a>
       <ComprobanteChip ruta={s.comprobante_url} />
       <div className="ml-auto flex gap-2">
         {esAdmin ? <>
@@ -466,7 +466,7 @@ function GrupoCard({ grupo, busy, onConfirm, onDiscard, onDiscardAll }: { grupo:
 
     <div className="mt-4 flex flex-wrap items-center gap-2">
       <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200"><AlertCircle size={12} /> Verificá la transferencia antes de confirmar</span>
-      <a href={whatsappUrl(c.cliente_whatsapp, mensaje)} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1.5 text-[11px] font-semibold hover:underline ${urgente ? 'text-red-300' : 'text-[#62eaa0]'}`}><MessageCircle size={13} /> Recordar por WhatsApp</a>
+      <a href={whatsappUrl(c.cliente_whatsapp, mensaje)} target="_blank" rel="noopener noreferrer" className={`inline-flex min-h-9 items-center gap-1.5 rounded-lg px-1 text-[11px] font-semibold hover:underline ${urgente ? 'text-red-300' : 'text-[#62eaa0]'}`}><MessageCircle size={13} /> Recordar por WhatsApp</a>
       <ComprobanteChip ruta={grupo.find((s) => s.comprobante_url)?.comprobante_url} />
       <div className="ml-auto flex gap-2">
         {esAdmin
