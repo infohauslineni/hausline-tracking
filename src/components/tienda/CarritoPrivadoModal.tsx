@@ -12,6 +12,7 @@ import { crearCarritoPanel, linkPagoEncargo } from '../../services/solicitudes.s
 import type { Cliente } from '../../types/domain'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { normalizarTelefonoNicaragua, whatsappUrl } from '../../utils/whatsapp'
+import { leerDatosCliente } from '../../utils/datosCliente'
 
 // CARRITO PRIVADO: para el cliente que compra varios productos. Se eligen los productos, a cada
 // uno se le pone el precio de tienda, el mayorista o uno especial (se pueden mezclar), y se crea
@@ -52,6 +53,15 @@ export function CarritoPrivadoModal({ iniciales, todos, costos, datosPrecio, onC
   const [cliente, setCliente] = useState<Cliente | null>(null)
   const [buscaCliente, setBuscaCliente] = useState('')
   const [nuevo, setNuevo] = useState({ nombre: '', whatsapp: '', correo: '' })
+  // Pegar la respuesta del cliente (al mensaje de "Pedir datos") llena nombre, WhatsApp y correo;
+  // si ese WhatsApp ya es de un cliente guardado, lo elige directamente.
+  const pegarDatosCliente = (texto: string) => {
+    const d = leerDatosCliente(texto)
+    const dig = String(d.whatsapp ?? '').replace(/\D/g, '').slice(-8)
+    const ya = dig.length === 8 ? clientes.find((c) => String(c.whatsapp ?? '').replace(/\D/g, '').endsWith(dig)) : null
+    if (ya) { setCliente(ya); toast.success(`Ese WhatsApp ya es de ${ya.nombre}: lo elegí.`); return }
+    setNuevo((n) => ({ nombre: d.nombre ?? n.nombre, whatsapp: d.whatsapp ?? n.whatsapp, correo: d.correo ?? n.correo }))
+  }
   const [pago, setPago] = useState<'50' | 'total'>('50')
   const [tc, setTc] = useState(37)
   const [creando, setCreando] = useState(false)
@@ -278,7 +288,8 @@ export function CarritoPrivadoModal({ iniciales, todos, costos, datosPrecio, onC
           {clientesFiltrados.length > 0 && <ul className="mt-1.5 divide-y divide-line/60 rounded-xl border border-line">
             {clientesFiltrados.map((c) => <li key={c.id}><button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-white/[.04]" onClick={() => { setCliente(c); setBuscaCliente('') }}><span className="min-w-0 flex-1 truncate">{c.nombre}</span><span className="font-mono text-xs text-muted">{c.whatsapp}</span></button></li>)}
           </ul>}
-          <p className="mt-3 text-[11px] text-muted">¿Es nuevo? Escribí sus datos:</p>
+          <p className="mt-3 text-[11px] text-muted">¿Es nuevo? Pegá su respuesta o escribí sus datos:</p>
+          <textarea rows={2} className="simple-input mt-1.5 text-[13px] leading-5" placeholder="Pegá aquí lo que le respondió el cliente (nombre, WhatsApp, correo…)" onChange={(e) => pegarDatosCliente(e.target.value)} />
           <div className="mt-1.5 grid gap-2 sm:grid-cols-3">
             <input className="simple-input" placeholder="Nombre" value={nuevo.nombre} onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} />
             <input className="simple-input" placeholder="WhatsApp" inputMode="tel" value={nuevo.whatsapp} onChange={(e) => setNuevo({ ...nuevo, whatsapp: e.target.value })} />

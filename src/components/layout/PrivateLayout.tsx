@@ -1,6 +1,6 @@
-import { ArrowUpRight, BarChart3, Bell, Bike, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Menu, Moon, MoreHorizontal, PackagePlus, PackageSearch, Plus, Store, Megaphone, ReceiptText, RotateCcw, Settings, ShoppingBag, Sun, Truck, UserPlus, Users, Volume2, VolumeX, Wallet, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { ArrowUpRight, BarChart3, Bell, Bike, Boxes, CircleGauge, CreditCard, HandCoins, Inbox, LogOut, Megaphone, Menu, MessageSquareText, Moon, MoreHorizontal, PackagePlus, Plus, ReceiptText, RotateCcw, Settings, ShoppingBag, ShoppingCart, Store, Sun, Truck, UserPlus, Users, Volume2, VolumeX, Wallet, X } from 'lucide-react'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { RestaurarScroll } from './Navegacion'
 import { toast } from 'sonner'
 import { useAuth } from '../../contexts/AuthContext'
@@ -13,6 +13,9 @@ import { HauslineLogo } from '../ui/HauslineLogo'
 import { guardarModoPanel, modoPanelGuardado, type ModoPanel } from '../../utils/temaPanel'
 import { limpiarBusquedasFueraDe } from '../../hooks/useEstadoVista'
 import { BuscadorGlobal } from './BuscadorGlobal'
+// Se cargan solo al tocarlos (no pesan en la carga del panel).
+const CarritoPrivadoRapido = lazy(() => import('../tienda/CarritoPrivadoRapido').then((m) => ({ default: m.CarritoPrivadoRapido })))
+const PedirDatosModal = lazy(() => import('../clientes/PedirDatosModal').then((m) => ({ default: m.PedirDatosModal })))
 
 type Badges = Record<string, number>
 // Contadores de "requiere atención" del menú + alertas para la campana. Se calculan de
@@ -105,17 +108,28 @@ const RUTAS_OPERADOR = new Set(['/pedidos', '/solicitudes', '/logistica', '/entr
 const mobileLinks = [operaciones[0], operaciones[1], operaciones[3]]
 // Barra inferior en móvil (operador): Pedidos · Encargos · Logística · Más (sin botón "+").
 const mobileLinksOperador = [operaciones[1], operaciones[2], logistica[0]]
-// Accesos rápidos del botón central "+" en móvil.
-const quickActions: NavItem[] = [
-  { to: '/pedidos/nuevo', label: 'Nuevo pedido', icon: PackagePlus },
-  { to: '/pagos', label: 'Registrar pago', icon: CreditCard },
-  { to: '/clientes', label: 'Nuevo cliente', icon: UserPlus },
-  { to: '/gastos', label: 'Registrar gasto', icon: ReceiptText },
+// Accesos rápidos: botón central "+" en el teléfono y botón "Crear" arriba en la computadora.
+// Lo que más se usa va primero. Algunos abren una pantalla (to) y otros una ventana (accion).
+type AccionRapida = { label: string; detalle: string; icon: typeof CircleGauge; to?: string; accion?: 'carrito' | 'datos' }
+const quickActions: AccionRapida[] = [
+  { to: '/pedidos/nuevo?cliente=nuevo', label: 'Orden cliente nuevo', detalle: 'Crea el cliente y la orden', icon: UserPlus },
+  { to: '/pedidos/nuevo', label: 'Nueva orden', detalle: 'Cliente que ya existe', icon: PackagePlus },
+  { accion: 'carrito', label: 'Carrito privado', detalle: 'Precios especiales + link', icon: ShoppingCart },
+  { accion: 'datos', label: 'Pedir datos', detalle: 'Mensaje para confirmar', icon: MessageSquareText },
+  { to: '/pagos', label: 'Registrar pago', detalle: 'Abono o saldo', icon: CreditCard },
+  { to: '/gastos', label: 'Registrar gasto', detalle: 'Salida de dinero', icon: ReceiptText },
 ]
 
 export function PrivateLayout() {
   const [open, setOpen] = useState(false)
   const [fabOpen, setFabOpen] = useState(false)
+  const [rapido, setRapido] = useState<'carrito' | 'datos' | null>(null)
+  const navegar = useNavigate()
+  const accionRapida = (a: AccionRapida) => {
+    setFabOpen(false)
+    if (a.accion) setRapido(a.accion)
+    else if (a.to) navegar(a.to)
+  }
   const [badges, setBadges] = useState<Badges>({})
   const [alertas, setAlertas] = useState<Alerta[]>([])
   const [bellOpen, setBellOpen] = useState(false)
@@ -229,6 +243,7 @@ export function PrivateLayout() {
         </Link>
         <div className="mx-auto flex min-w-0 flex-1 justify-center"><BuscadorGlobal esAdmin={esAdmin} pantallas={visibleGroups.flatMap((g) => g.items.map(({ to, label }) => ({ to, label })))} /></div>
         <div className="flex shrink-0 items-center gap-1">
+          {esAdmin && <button type="button" className="primary-button mr-1 hidden! min-h-9 px-3 text-sm lg:inline-flex!" onClick={() => setFabOpen(true)} title="Crear orden, carrito privado, pedir datos…"><Plus size={16} /> Crear</button>}
           <button type="button" className="topbar-icon hidden! sm:grid!" onClick={() => guardarModoPanel(modo === 'claro' ? 'oscuro' : 'claro')} title={modo === 'claro' ? 'Modo oscuro' : 'Modo claro'} aria-label="Cambiar modo claro u oscuro">{modo === 'claro' ? <Moon size={17} /> : <Sun size={17} />}</button>
           <div className="relative">
             <button type="button" className="topbar-icon" onClick={() => setBellOpen((v) => !v)} title="Alertas" aria-label="Alertas"><Bell size={18} />{contarUrgentes(alertas) > 0 && <span className="absolute right-0.5 top-0.5 grid min-w-[16px] place-items-center rounded-full px-1 text-[9px] font-bold leading-4" style={{ background: '#e51c00', color: '#fff' }}>{contarUrgentes(alertas)}</span>}</button>
@@ -287,17 +302,24 @@ export function PrivateLayout() {
       <div className="pt-14 lg:pl-[240px]">
         <main className="mx-auto max-w-[1400px] p-4 pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))] sm:p-6 sm:pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))] lg:px-8 lg:pb-10"><RestaurarScroll /><Outlet /></main>
       </div>
-      {/* Hoja de accesos rápidos del botón central "+" (solo móvil, solo admin: todas las
-          acciones rápidas mueven dinero). */}
+      {/* Accesos rápidos (solo admin: mueven dinero). En el teléfono sale abajo, sobre el botón "+";
+          en la computadora, arriba a la derecha (botón "Crear"). Botones grandes, fáciles de tocar. */}
       {esAdmin && fabOpen && <>
-        <button aria-label="Cerrar" className="fixed inset-0 z-40 bg-black/70 lg:hidden" onClick={() => setFabOpen(false)} />
-        <div className="reveal-up fixed inset-x-3 bottom-24 z-50 rounded-2xl border border-line bg-panel p-3 shadow-2xl lg:hidden">
+        <button aria-label="Cerrar" className="fixed inset-0 z-40 bg-black/70" onClick={() => setFabOpen(false)} />
+        <div className="reveal-up fixed inset-x-3 bottom-24 z-50 rounded-2xl border border-line bg-panel p-3 shadow-2xl lg:inset-x-auto lg:bottom-auto lg:right-6 lg:top-16 lg:w-[440px]" role="dialog" aria-label="Crear rápido">
           <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Crear rápido</p>
           <div className="grid grid-cols-2 gap-2">
-            {quickActions.map(({ to, label, icon: Icon }) => <Link key={label} to={to} onClick={() => setFabOpen(false)} className="flex items-center gap-3 rounded-xl border border-line bg-white/[0.02] px-3 py-3 text-sm font-semibold transition hover:border-accent/50 hover:bg-accent/[0.04]"><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-accent/10 text-accent"><Icon size={18} /></span>{label}</Link>)}
+            {quickActions.map((a) => <button key={a.label} type="button" onClick={() => accionRapida(a)} className="flex min-h-16 items-center gap-2.5 rounded-xl border border-line bg-white/[0.02] px-3 py-3 text-left transition hover:border-accent/50 hover:bg-accent/[0.04] active:scale-[.98]">
+              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-accent/10 text-accent"><a.icon size={18} /></span>
+              <span className="min-w-0"><b className="block text-[13.5px] leading-tight">{a.label}</b><span className="mt-0.5 block text-[11px] leading-tight text-muted">{a.detalle}</span></span>
+            </button>)}
           </div>
         </div>
       </>}
+      {rapido && <Suspense fallback={null}>
+        {rapido === 'carrito' && <CarritoPrivadoRapido onClose={() => setRapido(null)} />}
+        {rapido === 'datos' && <PedirDatosModal onClose={() => setRapido(null)} />}
+      </Suspense>}
       {esAdmin ? (
         <nav className="fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] z-30 grid grid-cols-5 items-center rounded-2xl border border-line bg-panel/95 p-1.5 shadow-2xl backdrop-blur-xl lg:hidden" aria-label="Navegación móvil">
           <MobileTab to={mobileLinks[0].to} label={mobileLinks[0].label} Icon={mobileLinks[0].icon} badge={badges[mobileLinks[0].to]} />
