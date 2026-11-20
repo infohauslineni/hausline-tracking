@@ -2,6 +2,7 @@ import { Bookmark, Camera, ChevronDown, ExternalLink, Eye, EyeOff, Link2, Packag
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { Inversion } from '../../types/domain'
+import type { EstadoEnTienda } from '../../services/productosTienda.service'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { ETAPAS_COMPRA, etapaDeCompra, nombreEtapa, type EtapaCompra } from '../../utils/compraEtapa'
 import { ProductoImg } from '../ui/ProductoImg'
@@ -34,6 +35,8 @@ type Props = {
   gastosAsociados: number
   enEI: boolean
   enCaminoPublicado: boolean
+  /** Por qué no sale en "Llega pronto" (si se sabe). */
+  estadoTienda?: EstadoEnTienda
   fotos: number
   quitandoEI: boolean
   imprimiendo: boolean
@@ -186,7 +189,7 @@ export function CompraCard(p: Props) {
           const visible = item.mostrar_tienda !== false
           return <button type="button" role="switch" aria-checked={visible} disabled={!codigo} onClick={() => p.onMostrarTienda?.(!visible)} className="flex w-full items-center gap-3 rounded-lg py-1 text-left disabled:opacity-60">
             <span className="min-w-0 flex-1"><span className="block text-[13px] font-medium">{visible ? 'Se muestra en la tienda' : 'No se muestra en la tienda'}</span>
-              <span className="block text-[11.5px] text-muted">{!codigo ? 'Sin código: no puede salir en la tienda' : !visible ? 'Solo la ves vos en el panel.' : p.enCaminoPublicado ? 'Sale como “Llega pronto · Apártelo ya”' : 'Publicándose en la tienda…'}</span></span>
+              <span className="block text-[11.5px] text-muted">{!codigo ? 'Sin código: no puede salir en la tienda' : !visible ? 'Solo la ves vos en el panel.' : p.enCaminoPublicado ? 'Sale como “Llega pronto · Apártelo ya”' : motivoNoSale(p.estadoTienda, codigo)}</span></span>
             <span className={`relative h-6 w-11 shrink-0 rounded-full transition ${visible ? 'bg-accent' : 'bg-white/15'}`}><span className="absolute top-0.5 size-5 rounded-full shadow transition-all" style={{ left: visible ? 22 : 2, background: '#fff' }} /></span>
           </button>
         })()}
@@ -233,7 +236,15 @@ export function CompraCard(p: Props) {
 // números y "Ver detalles" (abre la ficha completa con todas las acciones).
 // `seleccionado`/`onSeleccionar`: casilla para elegir varias (pagar juntas, repartir envío).
 // `lote`: cuántas compras se registraron juntas (compra en conjunto); tocarlo elige todo el lote.
-export function CompraFila({ item, costo, enEI, enCaminoPublicado, fotos, onDetalles, seleccionado, onSeleccionar, lote, onLote }: { item: Inversion; costo: number; enEI: boolean; enCaminoPublicado: boolean; fotos: number; onDetalles: () => void; seleccionado?: boolean; onSeleccionar?: () => void; lote?: number; onLote?: () => void }) {
+// Qué decirle al dueño cuando una compra "en camino" todavía no sale en la tienda.
+function motivoNoSale(estado: EstadoEnTienda | undefined, codigo: string) {
+  if (estado === 'borrador') return `${codigo} está en borrador en Productos: ponele precio y publicalo para que salga.`
+  if (estado === 'oculto') return `${codigo} está oculto en Productos: activalo para que salga.`
+  if (estado === 'no_existe') return `El código ${codigo} no está en la tienda: revisá el código.`
+  return 'Publicándose en la tienda…'
+}
+
+export function CompraFila({ item, costo, enEI, enCaminoPublicado, fotos, onDetalles, seleccionado, onSeleccionar, lote, onLote }: { item: Inversion; costo: number; enEI: boolean; enCaminoPublicado: boolean; estadoTienda?: EstadoEnTienda; fotos: number; onDetalles: () => void; seleccionado?: boolean; onSeleccionar?: () => void; lote?: number; onLote?: () => void }) {
   const unidades = Number(item.cantidad) || 1
   const venta = Number(item.precio_venta_estimado) * unidades
   const ganancia = venta - costo

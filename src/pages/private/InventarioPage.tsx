@@ -1,5 +1,5 @@
 import { Boxes, CircleDollarSign, Smartphone, Zap, ImagePlus, Layers, PackageCheck, Plus, Printer, Scissors, Search, ShoppingBag, TrendingUp, Truck, Wallet, X } from 'lucide-react'
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -23,6 +23,7 @@ import { ProductoImg } from '../../components/ui/ProductoImg'
 import { esEtapaCompra, etapaDeCompra, estadoPedidoDesdeEtapa } from '../../utils/compraEtapa'
 import { CompraLoteModal } from '../../components/inventario/CompraLoteModal'
 import { buscarEnTienda, useCatalogoTienda } from '../../hooks/useCatalogoTienda'
+import { prepararLlegaPronto, republicarCompras, type EstadoEnTienda } from '../../services/productosTienda.service'
 import { PagarVariasModal, RepartirEnvioModal } from '../../components/inventario/VariasComprasModals'
 import { pagadoInversion, porPagarInversion, tallasDeTexto } from '../../utils/compraPago'
 import { loteDe } from '../../utils/repartoCompra'
@@ -95,10 +96,29 @@ export function InventarioPage() {
     finally { setArmandoHistoria(false) }
   }
   const [enCaminoTienda, setEnCaminoTienda] = useState<Set<string>>(new Set())
+  const [eiCargado, setEiCargado] = useState(false)
+  // Por qué una compra en camino no sale en "Llega pronto" (borrador, oculto, código que no existe).
+  const [estadoTienda, setEstadoTienda] = useState<Record<string, EstadoEnTienda>>({})
   // Colores de cada producto de la tienda (para elegir cuáles hay en Entrega inmediata).
   const [coloresTienda, setColoresTienda] = useState<Record<string, string[]>>({})
-  const cargarEI = () => { void fetch('/api/catalogo', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : [])).then((c: ProductoEI[]) => { const lista = Array.isArray(c) ? c : []; setEi(lista.filter((p) => p.entrega_inmediata)); setEnCaminoTienda(new Set(lista.filter((p) => p.en_camino).map((p) => p.codigo.toUpperCase()))); setColoresTienda(Object.fromEntries(lista.map((p) => [p.codigo.toUpperCase(), p.colores ?? []]))) }).catch(() => setEi([])) }
+  const cargarEI = () => { void fetch('/api/catalogo', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : [])).then((c: ProductoEI[]) => { const lista = Array.isArray(c) ? c : []; setEi(lista.filter((p) => p.entrega_inmediata)); setEnCaminoTienda(new Set(lista.filter((p) => p.en_camino).map((p) => p.codigo.toUpperCase()))); setEiCargado(true); setColoresTienda(Object.fromEntries(lista.map((p) => [p.codigo.toUpperCase(), p.colores ?? []]))) }).catch(() => setEi([])) }
   useEffect(cargarEI, [])
+  // Compras "en camino" que deberían salir en la tienda y no salen: se deja el producto listo
+  // (si es de los originales de la tienda se le crea su fila) y se vuelven a mandar. Una vez por código.
+  const intentados = useRef(new Set<string>())
+  useEffect(() => {
+    if (!eiCargado) return
+    const pend = items.filter((i) => i.estado === 'en_transito' && i.mostrar_tienda !== false && (i.codigo ?? '').trim()
+      && !enCaminoTienda.has((i.codigo ?? '').trim().toUpperCase()) && !intentados.current.has((i.codigo ?? '').trim().toUpperCase()))
+    if (!pend.length) return
+    const cods = [...new Set(pend.map((i) => (i.codigo ?? '').trim().toUpperCase()))]
+    cods.forEach((c) => intentados.current.add(c))
+    void prepararLlegaPronto(cods).then(async (r) => {
+      setEstadoTienda((e) => ({ ...e, ...r }))
+      const ids = pend.filter((i) => ['ok', 'creado'].includes(r[(i.codigo ?? '').trim().toUpperCase()] ?? '')).map((i) => i.id)
+      if (ids.length) { await republicarCompras(ids); setTimeout(cargarEI, 4000) }
+    }).catch(() => undefined)
+  }, [items, enCaminoTienda, eiCargado])
   const [poniendoEI, setPoniendoEI] = useState<Inversion | null>(null)
   const [quitandoEI, setQuitandoEI] = useState<string | null>(null)
   const quitarEI = async (codigo: string, nombre: string) => {
@@ -250,7 +270,7 @@ export function InventarioPage() {
         const cod = (item.codigo ?? '').trim().toUpperCase()
         const lote = loteDe(item.notas)
         return <CompraFila key={item.id} item={item} costo={totalCost(item)} fotos={fotosCount[item.id] ?? 0}
-          enEI={!!cod && (ei ?? []).some((p) => p.codigo.toUpperCase() === cod)} enCaminoPublicado={!!cod && enCaminoTienda.has(cod)}
+          enEI={!!cod && (ei ?? []).some((p) => p.codigo.toUpperCase() === cod)} enCaminoPublicado={!!cod && enCaminoTienda.has(cod)} estadoTienda={cod ? estadoTienda[cod] : undefined}
           seleccionado={seleccion.has(item.id)} onSeleccionar={() => alternar(item.id)}
           lote={lote ? lotes.get(lote) : undefined} onLote={lote ? () => elegirLote(lote) : undefined}
           onDetalles={() => setDetalleId(item.id)} />
@@ -272,7 +292,7 @@ export function InventarioPage() {
       return <Modal open ancho="amplio" onClose={() => setDetalleId(null)} title="Detalles de la compra" description={`${item.codigo ? `${item.codigo} · ` : ''}comprada el ${new Date(item.fecha + 'T12:00:00').toLocaleDateString('es-NI', { day: 'numeric', month: 'short', year: 'numeric' })}`}>
         {Number(item.cantidad) > 1 && activo(item.estado) && <div className="mb-3 flex flex-col gap-2 rounded-xl border border-amber-300/30 bg-amber-300/[.06] p-3 text-xs sm:flex-row sm:items-center sm:justify-between"><span className="text-amber-100">Esta compra tiene <b>{item.cantidad} pares</b> en un solo registro: si vendés o apartás uno, se marcan todos. Separala para manejar cada par aparte.</span><button className="subtle-button shrink-0" onClick={() => void separar(item)}><Scissors size={14} /> Separar por talla</button></div>}
         <CompraCard enModal item={item} costo={totalCost(item)} pendiente={porPagarInversion(item, totalCost(item) - linkedExpenses(item))} gastosAsociados={linkedExpenses(item)}
-          enEI={!!cod && (ei ?? []).some((p) => p.codigo.toUpperCase() === cod)} enCaminoPublicado={!!cod && enCaminoTienda.has(cod)}
+          enEI={!!cod && (ei ?? []).some((p) => p.codigo.toUpperCase() === cod)} enCaminoPublicado={!!cod && enCaminoTienda.has(cod)} estadoTienda={cod ? estadoTienda[cod] : undefined}
           fotos={fotosCount[item.id] ?? 0} quitandoEI={quitandoEI === (item.codigo ?? '').trim()} imprimiendo={printingId === item.id}
           onEstado={(estado) => void updateStatus(item, estado)} onVer={luego(() => setPreview(item))} onEditar={luego(() => { setEditing(item); setOpen(true) })}
           onEliminar={luego(() => void remove(item))} onPagar={luego(() => setPaying(item))} onFotos={luego(() => setFotosDe(item))} onEntregaInmediata={luego(() => setPoniendoEI(item))}
@@ -489,11 +509,11 @@ function ProductModal({ open, item, inicial, products, onClose, onSaved }: { ope
   const total = Number(form.costo_unitario) * Number(form.cantidad) + Number(form.gastos_adicionales)
   const updateNumber = (field: 'cantidad' | 'costo_unitario' | 'gastos_adicionales' | 'precio_venta_estimado', value: string) => setForm({ ...form, [field]: value })
   // Foto automática de la web: primero por producto elegido en el desplegable, si no, por el código escrito.
-  const catalogImagen = useMemo(() => {
+  const catalogImagen = (() => {
     const codigo = form.codigo.trim().toLowerCase()
     const match = products.find((product) => product.id === form.producto_id) ?? (codigo ? products.find((product) => product.codigo?.trim().toLowerCase() === codigo) : undefined)
     return match?.imagen ?? buscarEnTienda(tienda, form.codigo)?.imagen ?? null
-  }, [products, form.producto_id, form.codigo, tienda])
+  })()
   const usaCatalogo = !file && !item?.imagen && Boolean(catalogImagen)
   const previewSrc = file ? null : (item?.imagen ?? catalogImagen)
 

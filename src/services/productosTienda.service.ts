@@ -348,3 +348,48 @@ export async function borrarProductoTienda(p: ProductoTienda) {
   const { error } = await catalogo().from('catalogo_web').upsert({ codigo, activo: false, datos: { ...p.datos, codigo, borrador: false, eliminado: true } }, { onConflict: 'codigo' })
   lanzar(error, 'No se pudo eliminar')
 }
+
+// ── "LLEGA PRONTO" (Compras libres en camino) ─────────────────────────────────────────────────
+// La compra en camino se marca en la tienda sobre la fila del producto en catalogo_web
+// (sync_en_camino, proyecto del catálogo). Si el producto es de los ORIGINALES de la tienda
+// (productos.js) y nunca se editó en el panel, no tiene fila y la compra no sale ("sin fila en
+// el catálogo"). Acá se le crea la fila con TODOS sus datos (igual que al editarlo en Productos).
+// Devuelve por código: ok (ya tiene fila y se ve), creado, no_existe, borrador u oculto.
+export type EstadoEnTienda = 'ok' | 'creado' | 'no_existe' | 'borrador' | 'oculto'
+let baseCruda: Base[] | null = null
+async function catalogoBase(): Promise<Base[]> {
+  if (baseCruda) return baseCruda
+  const r = await fetch('/api/catalogo?base=1', { cache: 'no-store' })
+  const j = r.ok ? await r.json() : []
+  baseCruda = Array.isArray(j) ? j as Base[] : []
+  return baseCruda
+}
+export async function prepararLlegaPronto(codigos: string[]): Promise<Record<string, EstadoEnTienda>> {
+  if (vistaPrevia) return {}
+  const cods = [...new Set(codigos.map((c) => c.trim().toUpperCase()).filter(Boolean))]
+  const res: Record<string, EstadoEnTienda> = {}
+  if (!cods.length) return res
+  const { data, error } = await catalogo().from('catalogo_web').select('codigo, activo, datos').in('codigo', cods)
+  if (error) throw new Error(error.message)
+  const filas = new Map(((data ?? []) as Fila[]).map((f) => [String(f.codigo).trim().toUpperCase(), f]))
+  const base = await catalogoBase().catch(() => [] as Base[])
+  const nuevas: { codigo: string; activo: boolean; datos: DatosTienda }[] = []
+  for (const c of cods) {
+    const f = filas.get(c)
+    if (f) { res[c] = f.datos?.borrador === true ? 'borrador' : f.activo === false || f.datos?.eliminado === true ? 'oculto' : 'ok'; continue }
+    const p = base.find((b) => String(b.codigo).trim().toUpperCase() === c)
+    if (!p) { res[c] = 'no_existe'; continue }
+    nuevas.push({ codigo: String(p.codigo).trim(), activo: true, datos: { ...(p as unknown as DatosTienda), ...datosDeBase(p), codigo: String(p.codigo).trim(), borrador: false } })
+    res[c] = 'creado'
+  }
+  if (nuevas.length) {
+    const { error: e2 } = await catalogo().from('catalogo_web').upsert(nuevas, { onConflict: 'codigo' })
+    if (e2) throw new Error(e2.message)
+  }
+  return res
+}
+// Vuelve a mandar las compras a la tienda (el disparador corre al tocar mostrar_tienda).
+export async function republicarCompras(ids: string[]) {
+  if (!ids.length || !supabase) return
+  await supabase.from('inversiones').update({ mostrar_tienda: true }).in('id', ids).eq('estado', 'en_transito').eq('mostrar_tienda', true)
+}
