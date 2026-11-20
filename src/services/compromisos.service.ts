@@ -6,6 +6,7 @@ import { listarGastosFijos } from './gastosFijos.service'
 import { dineroLibre, listarMinimos, type LibreCuenta } from './minimosCuentas.service'
 import { esLineaEnvio, listarPedidos } from './pedidos.service'
 import { listarReembolsos } from './reembolsos.service'
+import { listarSaldosProveedor } from './saldoProveedor.service'
 
 // ¿CUÁNTO PUEDO INVERTIR? El dinero libre de verdad (saldo de las cuentas por encima de su mínimo)
 // menos todo lo que YA está comprometido y va a salir: pedidos que falta comprarle al proveedor,
@@ -32,10 +33,10 @@ const EN_CAMINO = ['etiqueta_creada', 'despachado', 'transito_internacional', 'r
 const tieneGasto = (p: Pedido, patron: RegExp) => (p.gastos ?? []).some((g) => patron.test(String(g.categoria ?? '')) && Number(g.monto || 0) > 0)
 
 export async function obtenerResumenInversion(): Promise<ResumenInversion> {
-  const [pedidos, productos, inversiones, reembolsos, cuentas, minimos, tipoCambio, fijos] = await Promise.all([
+  const [pedidos, productos, inversiones, reembolsos, cuentas, minimos, tipoCambio, fijos, saldosProv] = await Promise.all([
     listarPedidos().catch(() => [] as Pedido[]), listarProductos().catch(() => []), listarInversiones().catch(() => []),
     listarReembolsos().catch(() => []), listarCuentas().catch(() => []), listarMinimos().catch(() => ({})),
-    obtenerTipoCambio().catch(() => 37), listarGastosFijos().catch(() => []),
+    obtenerTipoCambio().catch(() => 37), listarGastosFijos().catch(() => []), listarSaldosProveedor().catch(() => []),
   ])
   const tc = tipoCambio > 0 ? tipoCambio : 37
   const libre = dineroLibre(cuentas, minimos, tc)
@@ -58,6 +59,13 @@ export async function obtenerResumenInversion(): Promise<ResumenInversion> {
     }
     if (falta && costo <= 0) { sinCosto.push(p.codigo); continue }
     proveedor.push({ etiqueta: `${p.codigo}${p.clientes?.nombre ? ` · ${p.clientes.nombre}` : ''}${falta ? ' (falta el costo de un producto)' : ''}`, monto: r2(costo), pedidoId: p.id })
+  }
+
+  // 1b. Pedidos con un adelanto al proveedor: lo que falta pagarle cuando el paquete esté listo.
+  for (const s of saldosProv) {
+    const p = pedidos.find((x) => x.id === s.pedidoId)
+    if (!p || p.estado === 'cancelado' || p.activo === false) continue
+    proveedor.push({ etiqueta: `${p.codigo}${p.clientes?.nombre ? ` · ${p.clientes.nombre}` : ''} · saldo (ya diste un adelanto)`, monto: s.saldo, pedidoId: p.id })
   }
 
   // 2. Envíos internacionales por pagar: pedidos que todavía no lo tienen. Se estima con el promedio
@@ -85,7 +93,7 @@ export async function obtenerResumenInversion(): Promise<ResumenInversion> {
 
   const suma = (l: LineaCompromiso[]) => r2(l.reduce((s, x) => s + x.monto, 0))
   const compromisos: Compromiso[] = [
-    { clave: 'proveedor', titulo: 'Por comprarle al proveedor', ayuda: 'Pedidos confirmados sin pago al proveedor (costo del catálogo).', monto: suma(proveedor), aprox: false, lineas: proveedor },
+    { clave: 'proveedor', titulo: 'Por comprarle al proveedor', ayuda: 'Pedidos confirmados sin pago al proveedor (costo del catálogo) y saldos de los que tienen un adelanto.', monto: suma(proveedor), aprox: false, lineas: proveedor },
     { clave: 'envios', titulo: 'Envíos internacionales por pagar', ayuda: `Pedidos sin envío registrado · aprox. US$ ${envioPromedio.toFixed(2)} cada uno (tu promedio).`, monto: suma(enviosLineas), aprox: true, lineas: enviosLineas },
     { clave: 'compras', titulo: 'Compras libres por pagar', ayuda: 'Stock que todavía le debés al proveedor.', monto: suma(compras), aprox: false, lineas: compras },
     { clave: 'devoluciones', titulo: 'Devoluciones pendientes', ayuda: 'Solicitudes de cancelación: si las aprobás, sale lo que pagó el cliente.', monto: suma(devoluciones), aprox: false, lineas: devoluciones },

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { Modal } from '../ui/Modal'
 import { CuentaSelect, type DestinoPago } from '../finanzas/CuentaSelect'
-import { obtenerTipoCambio, registrarCompraLibre, registrarEnvioCompras } from '../../services/comercial.service'
+import { abonarInversion, obtenerTipoCambio, registrarCompraLibre, registrarEnvioCompras } from '../../services/comercial.service'
 import type { Inversion, Producto } from '../../types/domain'
 import { tallasDeTexto } from '../../utils/compraPago'
 import { SelectorTallas } from './SelectorTallas'
@@ -17,7 +17,7 @@ import { MODOS_REPARTO, TIPOS_PRODUCTO, nuevoLote, repartir, tipoDeProducto, typ
 // El costo repartido NO se guarda en el catálogo: cambia de una compra a otra.
 
 type Linea = { key: string; codigo: string; producto_id: string; producto: string; marca: string; tallas: string; cantidad: string; tipo: TipoProducto; lb: string; precioLista: string; precioVenta: string; imagen: string | null }
-type Pago = 'ahora' | 'antes' | 'pendiente'
+type Pago = 'ahora' | 'antes' | 'pendiente' | 'parte'
 type Donde = 'en_inventario' | 'en_preparacion' | 'en_transito'
 
 const nuevaLinea = (): Linea => ({ key: Math.random().toString(36).slice(2), codigo: '', producto_id: '', producto: '', marca: '', tallas: '', cantidad: '1', tipo: 'zapatos', lb: String(TIPOS_PRODUCTO.zapatos.lb), precioLista: '', precioVenta: '', imagen: null })
@@ -38,6 +38,8 @@ export function CompraLoteModal({ open, products, onClose, onSaved, loteExistent
   const [metodo, setMetodo] = useState('PayPal')
   const [lineas, setLineas] = useState<Linea[]>([nuevaLinea()])
   const [total, setTotal] = useState('')
+  // "Pagué una parte": el adelanto que se mandó ahora (el resto queda por pagar).
+  const [adelanto, setAdelanto] = useState('')
   const [modoCosto, setModoCosto] = useState<ModoReparto>('igual')
   const [calc, setCalc] = useState(false)
   const [subtotal, setSubtotal] = useState('')
@@ -61,7 +63,7 @@ export function CompraLoteModal({ open, products, onClose, onSaved, loteExistent
 
   useEffect(() => {
     if (!open) return
-    setFecha(hoy()); setMetodo('PayPal'); setLineas([nuevaLinea()]); setTotal(''); setModoCosto('igual'); setCalc(false); setSubtotal(''); setEnvio(''); setModoEnvio('peso'); setPago(loteExistente?.porPagar ? 'pendiente' : 'ahora'); setDonde('en_preparacion')
+    setFecha(hoy()); setMetodo('PayPal'); setLineas([nuevaLinea()]); setTotal(''); setModoCosto('igual'); setCalc(false); setSubtotal(''); setEnvio(''); setModoEnvio('peso'); setPago(loteExistente?.porPagar ? 'pendiente' : 'ahora'); setAdelanto(''); setDonde('en_preparacion')
     setDestino({ cuentaId: null, montoCuenta: 0 }); setDestinoEnvio({ cuentaId: null, montoCuenta: 0 })
     void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined)
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -110,13 +112,16 @@ export function CompraLoteModal({ open, products, onClose, onSaved, loteExistent
     const faltan = lineas.filter((l) => !l.producto.trim() || !(Number(l.precioVenta) > 0))
     if (faltan.length) return toast.error('A cada producto ponele nombre (o código) y precio de venta.')
     if (totalNum <= 0) return toast.error('Escribí cuánto pagaste en total (con la comisión).')
-    if (pago === 'ahora' && !destino.cuentaId && !window.confirm('No elegiste de qué cuenta salió el pago. ¿Registrarla sin descontar de ninguna cuenta?')) return
+    const adelantoNum = Math.round((Number(adelanto) || 0) * 100) / 100
+    if (pago === 'parte' && !(adelantoNum > 0 && adelantoNum < totalNum)) return toast.error('Escribí cuánto pagaste ahora: más de 0 y menos que el total.')
+    if ((pago === 'ahora' || pago === 'parte') && !destino.cuentaId && !window.confirm('No elegiste de qué cuenta salió el pago. ¿Registrarla sin descontar de ninguna cuenta?')) return
     setSaving(true)
     try {
       const lote = loteExistente?.id ?? nuevoLote()
+      const pagadoTxt = pago === 'parte' ? `adelanto US$ ${adelantoNum.toFixed(2)} de US$ ${totalNum.toFixed(2)}` : pago === 'pendiente' ? `por pagar US$ ${totalNum.toFixed(2)}` : `pagado US$ ${totalNum.toFixed(2)}`
       const nota = loteExistente
-        ? `[LOTE:${lote}] Agregado a la compra en conjunto · ${unidades.length} ${unidades.length === 1 ? 'unidad' : 'unidades'} · pagado US$ ${totalNum.toFixed(2)}`
-        : `[LOTE:${lote}] Compra en conjunto · ${unidades.length} ${unidades.length === 1 ? 'unidad' : 'unidades'} · pagado US$ ${totalNum.toFixed(2)}`
+        ? `[LOTE:${lote}] Agregado a la compra en conjunto · ${unidades.length} ${unidades.length === 1 ? 'unidad' : 'unidades'} · ${pagadoTxt}`
+        : `[LOTE:${lote}] Compra en conjunto · ${unidades.length} ${unidades.length === 1 ? 'unidad' : 'unidades'} · ${pagadoTxt}`
       const estado: Inversion['estado'] = donde === 'en_inventario' ? 'en_inventario' : 'en_transito'
       const inputs = unidades.map((u, i) => ({
         fecha, producto_id: u.linea.producto_id || null, codigo: u.linea.codigo.trim() || null, producto: u.linea.producto.trim(), marca: u.linea.marca.trim() || null,
@@ -124,7 +129,21 @@ export function CompraLoteModal({ open, products, onClose, onSaved, loteExistent
         estado, notas: nota, imagen: u.linea.imagen, tracking: null, transportista: null, url_tracking: null, estado_tracking: null, pedido_id: null,
         ...(estado === 'en_transito' ? { etapa: donde === 'en_preparacion' ? 'en_preparacion' : 'transito_internacional' } : {}),
       }))
-      const creadas = await registrarCompraLibre(inputs, { modo: pago, metodo, destino })
+      let creadas = await registrarCompraLibre(inputs, { modo: pago === 'parte' ? 'pendiente' : pago, metodo, destino })
+      if (pago === 'parte') {
+        // El adelanto se reparte entre todas las unidades según su costo: cada una queda "por pagar" con su abono.
+        const enCuenta = Number(destino.montoCuenta || adelantoNum)
+        let ac = 0, acCuenta = 0
+        const conAbono: Inversion[] = []
+        for (const [i, c] of creadas.entries()) {
+          const ultimo = i === creadas.length - 1
+          const parte = ultimo ? Math.round((adelantoNum - ac) * 100) / 100 : Math.round(adelantoNum * (costos[i] / totalNum) * 100) / 100
+          const parteCuenta = ultimo ? Math.round((enCuenta - acCuenta) * 100) / 100 : Math.round(enCuenta * (parte / adelantoNum) * 100) / 100
+          ac += parte; acCuenta += parteCuenta
+          conAbono.push(parte > 0.004 ? await abonarInversion(c, parte, { fecha, metodo }, destino.cuentaId ? { cuentaId: destino.cuentaId, montoCuenta: parteCuenta } : undefined) : c)
+        }
+        creadas = conAbono
+      }
       if (envioNum > 0) {
         await registrarEnvioCompras(creadas.map((item, i) => ({ item, monto: envios[i] })), { fecha, metodo: 'Transferencia' }, destinoEnvio)
         // El envío queda ligado a cada compra: se refleja en su costo (y en su ganancia).
@@ -171,7 +190,7 @@ export function CompraLoteModal({ open, products, onClose, onSaved, loteExistent
       <section className="rounded-2xl border border-line bg-white/[.015] p-4">
         <h3 className="text-sm font-semibold">2 · ¿Cuánto pagaste en total?</h3>
         <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-          <label className="form-field"><span>Total pagado, ya con la comisión (US$)</span><input type="number" min="0" step=".01" value={total} onChange={(e) => setTotal(e.target.value)} placeholder="Ej. 322.25" /></label>
+          <label className="form-field"><span>{pago === 'parte' || pago === 'pendiente' ? 'Total de la compra, ya con la comisión (US$)' : 'Total pagado, ya con la comisión (US$)'}</span><input type="number" min="0" step=".01" value={total} onChange={(e) => setTotal(e.target.value)} placeholder="Ej. 322.25" /></label>
           <button type="button" className="subtle-button h-[42px]" onClick={() => setCalc((v) => !v)}><Calculator size={15} /> Calcular con comisión</button>
         </div>
         {calc && <div className="mt-3 grid gap-3 rounded-xl border border-line bg-white/[.02] p-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
@@ -180,8 +199,13 @@ export function CompraLoteModal({ open, products, onClose, onSaved, loteExistent
           <button type="button" className="primary-button min-h-[42px]! px-4" disabled={!calculado} onClick={() => { setTotal(String(calculado)); setCalc(false) }}>Usar {usd(calculado)}</button>
         </div>}
         <div className="mt-3 grid gap-2 sm:grid-cols-2">{(['igual', 'precio'] as ModoReparto[]).map((m) => <button type="button" key={m} className={opcion(modoCosto === m)} onClick={() => setModoCosto(m)}><strong className="block text-sm">{MODOS_REPARTO[m].titulo}</strong>{m === 'igual' ? `${usd(unidades.length ? totalNum / unidades.length : 0)} cada unidad` : 'El más caro carga más del total y la comisión'}</button>)}</div>
-        <div className="mt-4 grid gap-2 sm:grid-cols-3">{([['ahora', 'Pagado ahora', 'Sale de una cuenta'], ['antes', 'Ya estaba pagado', 'No se descuenta otra vez'], ['pendiente', 'Por pagar', 'Lo pagás después']] as [Pago, string, string][]).map(([v, t, a]) => <button type="button" key={v} className={opcion(pago === v)} onClick={() => setPago(v)}><strong className="block text-sm">{t}</strong>{a}</button>)}</div>
-        {pago === 'ahora' && <div className="mt-3"><CuentaSelect proposito="comprar" montoUsd={totalNum} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" /></div>}
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{([['ahora', 'Pagado ahora', 'Sale de una cuenta'], ['parte', 'Pagué una parte', 'Adelanto: el resto después'], ['antes', 'Ya estaba pagado', 'No se descuenta otra vez'], ['pendiente', 'Por pagar', 'Lo pagás después']] as [Pago, string, string][]).map(([v, t, a]) => <button type="button" key={v} className={opcion(pago === v)} onClick={() => setPago(v)}><strong className="block text-sm">{t}</strong>{a}</button>)}</div>
+        {pago === 'parte' && <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+          <label className="form-field"><span>¿Cuánto mandaste ahora? (US$)</span><input type="number" min="0" step=".01" value={adelanto} onChange={(e) => setAdelanto(e.target.value)} placeholder={totalNum > 0 ? `Ej. ${(totalNum / 2).toFixed(2)}` : 'Ej. 160'} /></label>
+          {totalNum > 0 && <button type="button" className="subtle-button min-h-[42px]!" onClick={() => setAdelanto((totalNum / 2).toFixed(2))}>50 % = {usd(totalNum / 2)}</button>}
+          {Number(adelanto) > 0 && totalNum > 0 && <p className="text-xs text-muted sm:col-span-2">Queda debiendo <b className="text-amber-300">{usd(Math.max(0, totalNum - Number(adelanto)))}</b>: lo pagás cuando esté listo con <b className="text-white">Pagar juntas</b> o en <b className="text-white">Pedidos → Pagar al proveedor</b>.</p>}
+        </div>}
+        {(pago === 'ahora' || pago === 'parte') && <div className="mt-3"><CuentaSelect proposito="comprar" montoUsd={pago === 'parte' ? Number(adelanto) || 0 : totalNum} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" /></div>}
         <p className="mt-2 text-[11px] leading-4 text-muted">¿Lo pagaste junto con pedidos de clientes? Elegí <b className="text-white">Por pagar</b> y después registrá ese pago en <b className="text-white">Pedidos → Pagar al proveedor</b>: ahí elegís los pedidos y estas compras, escribís el total y se reparte todo.</p>
       </section>
 
