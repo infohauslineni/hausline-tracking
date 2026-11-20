@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { ESTADOS_PEDIDO } from '../../constants/orders'
 import { aprenderCostoDeCodigo, esLineaEnvio, pagarProveedorLote, type LineaPagoLote } from '../../services/pedidos.service'
-import { abonarInversion, actualizarInversion, listarInversiones, obtenerTipoCambio, pagarVariasCompras } from '../../services/comercial.service'
+import { abonarInversion, actualizarInversion, listarInversiones, obtenerTipoCambio, pagarVariasCompras, sumarAlCostoCompra } from '../../services/comercial.service'
 import { listarSaldosProveedor, marcarAdelantoPedido, pagarSaldoProveedor, type SaldoProveedor } from '../../services/saldoProveedor.service'
 import type { EstadoPedido, Inversion, Pedido, PedidoItem } from '../../types/domain'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
@@ -151,7 +151,7 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
     // Cada pedido y cada compra libre se registra por separado: si uno falla, los demás quedan
     // pagados y el que falló sigue en la lista con el motivo (no se pierde todo el pago).
     const hechas = new Set<string>()
-    const fallas: string[] = []
+    const fallas: { quien: string; motivo: string }[] = []
     try {
       const dePedidos = seleccion.flatMap((f) => f.tipo === 'pedido' ? [f] : [])
       const deLibres = seleccion.flatMap((f) => f.tipo === 'libre' ? [f] : [])
@@ -176,7 +176,7 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
             if (parcial && falta > 0.005) await marcarAdelantoPedido(pedidoId, falta)
           }
           fs.forEach((f) => hechas.add(f.clave)); pedidosPagados++
-        } catch (e) { fallas.push(`${pedido?.codigo ?? 'Pedido'}: ${mensajeError(e)}`) }
+        } catch (e) { fallas.push({ quien: pedido?.codigo ?? 'Pedido', motivo: mensajeError(e) }) }
       }
 
       // 2) Saldos de pedidos que ya tenían un adelanto.
@@ -185,7 +185,7 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
         try {
           if (isSupabaseConfigured) await pagarSaldoProveedor(f.saldo.gastoId, { pago: ahoraDe(f), comision: r2((enviadoDe.get(f.clave) ?? 0) - ahoraDe(f)), cuentaId: destino.cuentaId, montoCuenta: cuentaDe.get(f.clave) ?? 0, metodo })
           hechas.add(f.clave)
-        } catch (e) { fallas.push(`Saldo ${f.pedido.codigo}: ${mensajeError(e)}`) }
+        } catch (e) { fallas.push({ quien: `Saldo ${f.pedido.codigo}`, motivo: mensajeError(e) }) }
       }
 
       // 3) Compras libres: la comisión (y la diferencia con lo que debía) sube su costo; se paga
@@ -205,14 +205,14 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
             const extra = r2((costoDe.get(f.clave) ?? debia) - debia)
             if (!parcial) await pagarVariasCompras([compra], [extra], { fecha: hoy(), metodo }, { cuentaId: destino.cuentaId, montoCuenta: cuentaDe.get(f.clave) ?? 0 })
             else {
-              const actual = Math.abs(extra) > 0.004 ? await actualizarInversion(compra.id, { gastos_adicionales: r2(Number(compra.gastos_adicionales || 0) + extra) }) : compra
+              const actual = await sumarAlCostoCompra(compra, extra)
               await abonarInversion(actual, enviadoDe.get(f.clave) ?? 0, { fecha: hoy(), metodo }, { cuentaId: destino.cuentaId, montoCuenta: cuentaDe.get(f.clave) ?? 0 })
             }
             // Costo del producto en el catálogo: se pone si no tiene; si tiene, solo sube cuando este pago salió más caro.
             await aprenderCostoDeCodigo(compra.codigo, r2((costoDe.get(f.clave) ?? 0) / Math.max(1, Number(compra.cantidad) || 1)))
           }
           hechas.add(f.clave)
-        } catch (e) { fallas.push(`${f.compra.producto}${f.compra.talla_color ? ` (${f.compra.talla_color})` : ''}: ${mensajeError(e)}`) }
+        } catch (e) { fallas.push({ quien: `${f.compra.producto}${f.compra.talla_color ? ` (${f.compra.talla_color})` : ''}`, motivo: mensajeError(e) }) }
       }
 
       const nLibres = deLibres.filter((f) => hechas.has(f.clave)).length
@@ -233,7 +233,10 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
         setElegidos((s) => { const n = new Set(s); hechas.forEach((c) => n.delete(c)); return n })
         setLibres((l) => l.filter((c) => !hechas.has(`libre:${c.id}`))); setSaldos((l) => l.filter((x) => !hechas.has(`saldo:${x.gastoId}`)))
         setTotal('')
-        toast.error(`${hechas.size ? `Se registró: ${partesTexto}. ` : ''}No se pudo pagar: ${fallas.join(' · ')}`, { duration: 20000 })
+        // Mismo motivo una sola vez, con todos los que fallaron por él.
+        const porMotivo = new Map<string, string[]>()
+        for (const x of fallas) porMotivo.set(x.motivo, [...(porMotivo.get(x.motivo) ?? []), x.quien])
+        toast.error(`${hechas.size ? `Se registró: ${partesTexto}. ` : ''}No se pudo pagar ${fallas.length}: ${[...porMotivo].map(([m, q]) => `${q.join(', ')} → ${m}`).join(' · ')}`, { duration: 20000 })
       }
     } catch (error) { toast.error(`No se pudo registrar el pago: ${mensajeError(error)}`, { duration: 20000 }) }
     finally { setGuardando(false) }

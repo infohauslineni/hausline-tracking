@@ -382,12 +382,25 @@ export async function registrarEnvioCompras(partes: { item: Inversion; monto: nu
 // PAGAR VARIAS compras de una vez (p. ej. todo lo que está por pagar) con UN pago que ya trae la
 // comisión de PayPal. `extras[i]` es la parte de la comisión que le toca a cada compra: se suma a
 // su costo (otros gastos) y después se paga lo que le falta.
+// Ajusta el costo de una compra en `extra` (comisión o diferencia con lo que se pagó de verdad).
+// Si es positivo va a otros gastos. Si es negativo (se pagó MENOS de lo registrado, p. ej. la
+// compra ya traía la comisión en su costo) baja primero otros gastos y después el costo por
+// unidad: otros gastos no puede quedar negativo (regla de la base de datos).
+export async function sumarAlCostoCompra(item: Inversion, extra: number) {
+  const r2 = (n: number) => Math.round(n * 100) / 100
+  const e = r2(extra || 0)
+  if (Math.abs(e) <= 0.004) return item
+  let ga = r2(Number(item.gastos_adicionales || 0) + e)
+  let cu = Number(item.costo_unitario || 0)
+  if (ga < 0) { const cant = Math.max(1, Number(item.cantidad) || 1); cu = Math.max(0, r2((cu * cant + ga) / cant)); ga = 0 }
+  return actualizarInversion(item.id, { gastos_adicionales: ga, costo_unitario: cu })
+}
 export async function pagarVariasCompras(items: Inversion[], extras: number[], opts: { fecha: string; metodo: string }, destino?: DestinoCuenta) {
   const faltas: number[] = []
   const conComision: Inversion[] = []
   for (const [i, item] of items.entries()) {
     const extra = Math.round((extras[i] || 0) * 100) / 100
-    const actual = Math.abs(extra) > 0.004 ? await actualizarInversion(item.id, { gastos_adicionales: Math.round((Number(item.gastos_adicionales || 0) + extra) * 100) / 100 }) : item
+    const actual = await sumarAlCostoCompra(item, extra)
     const costo = Number(actual.costo_unitario) * Number(actual.cantidad) + Number(actual.gastos_adicionales)
     const abonado = (actual.movimientos_cuenta ?? []).filter((m) => m.tipo === 'inversion').reduce((s, m) => s + Number(m.monto || 0), 0)
     faltas.push(Math.max(0, Math.round((costo - abonado) * 100) / 100))
