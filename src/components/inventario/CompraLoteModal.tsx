@@ -6,6 +6,7 @@ import { CuentaSelect, type DestinoPago } from '../finanzas/CuentaSelect'
 import { obtenerTipoCambio, registrarCompraLibre, registrarEnvioCompras } from '../../services/comercial.service'
 import type { Inversion, Producto } from '../../types/domain'
 import { tallasDeTexto } from '../../utils/compraPago'
+import { SelectorTallas } from './SelectorTallas'
 import { buscarEnTienda, useCatalogoTienda } from '../../hooks/useCatalogoTienda'
 import { MODOS_REPARTO, TIPOS_PRODUCTO, nuevoLote, repartir, tipoDeProducto, type ModoReparto, type TipoProducto } from '../../utils/repartoCompra'
 
@@ -153,9 +154,9 @@ export function CompraLoteModal({ open, products, onClose, onSaved, loteExistent
             const r = resumen[idx]
             return <div key={l.key} className="grid gap-2 p-3 sm:grid-cols-12 sm:items-end">
               <label className="form-field sm:col-span-2"><span>Código</span><input list="lote-codigos" value={l.codigo} onChange={(e) => aplicarCodigo(l.key, e.target.value)} placeholder="HS123" /></label>
-              <label className="form-field sm:col-span-3"><span>Producto</span><input value={l.producto} onChange={(e) => cambiar(l.key, { producto: e.target.value })} placeholder="Nombre" /></label>
-              <label className="form-field sm:col-span-2"><span>Tallas (una por par)</span><input value={l.tallas} onChange={(e) => cambiar(l.key, { tallas: e.target.value })} placeholder="39, 40, 41" /></label>
-              <label className="form-field sm:col-span-1"><span>Cant.</span><input type="number" min="1" value={tallasDeTexto(l.tallas).length > 1 ? String(tallasDeTexto(l.tallas).length) : l.cantidad} disabled={tallasDeTexto(l.tallas).length > 1} onChange={(e) => cambiar(l.key, { cantidad: e.target.value })} /></label>
+              <label className="form-field sm:col-span-5"><span>Producto</span><input value={l.producto} onChange={(e) => cambiar(l.key, { producto: e.target.value })} placeholder="Nombre" /></label>
+              <SelectorTallas className="sm:order-last sm:col-span-12" valor={l.tallas} tipo={l.tipo} onChange={(tallas) => cambiar(l.key, { tallas })} />
+              <label className="form-field sm:col-span-1"><span>Cant.</span><input type="number" min="1" value={tallasDeTexto(l.tallas).length ? String(tallasDeTexto(l.tallas).length) : l.cantidad} disabled={tallasDeTexto(l.tallas).length > 0} onChange={(e) => cambiar(l.key, { cantidad: e.target.value })} /></label>
               <label className="form-field sm:col-span-2"><span>Tipo · peso (lb)</span><div className="flex gap-1"><select className="min-w-0 flex-1 px-2!" value={l.tipo} onChange={(e) => { const tipo = e.target.value as TipoProducto; cambiar(l.key, { tipo, lb: String(TIPOS_PRODUCTO[tipo].lb) }) }}>{(Object.keys(TIPOS_PRODUCTO) as TipoProducto[]).map((t) => <option key={t} value={t}>{TIPOS_PRODUCTO[t].label}</option>)}</select><input className="w-16! shrink-0 px-2!" type="number" min="0" step=".1" value={l.lb} onChange={(e) => cambiar(l.key, { lb: e.target.value })} aria-label="Peso en libras" /></div></label>
               <label className="form-field sm:col-span-1"><span>Venta c/u</span><input type="number" min="0" step=".01" value={l.precioVenta} onChange={(e) => cambiar(l.key, { precioVenta: e.target.value })} placeholder="$" /></label>
               <div className="flex items-end justify-end sm:col-span-1"><button type="button" className="table-action table-action-danger" disabled={lineas.length === 1} onClick={() => setLineas((ls) => ls.filter((x) => x.key !== l.key))} aria-label="Quitar producto"><Trash2 size={15} /></button></div>
