@@ -63,6 +63,9 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
   const [elegidos, setElegidos] = useState<Set<string>>(new Set())
   const [precios, setPrecios] = useState<Record<string, string>>({})
   const [total, setTotal] = useState('')
+  // Lo que cobró el proveedor en total (p. ej. 470): se reparte entre los productos y se le suma la comisión.
+  const [cobro, setCobro] = useState('')
+  const [comPct, setComPct] = useState('5')
   const [metodo, setMetodo] = useState('PayPal')
   const [destino, setDestino] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
   const [pasar, setPasar] = useState(true)
@@ -91,7 +94,7 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
   // propuesto es lo que falta pagar (si no tienen costo, queda vacío para escribirlo).
   useEffect(() => {
     if (!open) return
-    setElegidos(new Set()); setTotal(''); setBusqueda(''); setMetodo('PayPal'); setDestino({ cuentaId: null, montoCuenta: 0 }); setPasar(true); setLibres([]); setPrecios({}); setSaldos([]); setPct('100')
+    setElegidos(new Set()); setTotal(''); setCobro(''); setComPct('5'); setBusqueda(''); setMetodo('PayPal'); setDestino({ cuentaId: null, montoCuenta: 0 }); setPasar(true); setLibres([]); setPrecios({}); setSaldos([]); setPct('100')
     if (isSupabaseConfigured) void listarSaldosProveedor().then((lista) => {
       setSaldos(lista)
       setPrecios((act) => { const sig = { ...act }; for (const s of lista) if (!sig[`saldo:${s.gastoId}`]) sig[`saldo:${s.gastoId}`] = String(s.saldo); return sig })
@@ -114,7 +117,22 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
   // Precio de cada producto: lo escrito; si todavía no se tocó, el costo de proveedor que ya
   // tiene (como antes). Con costo 0 o sin costo queda VACÍO para escribirlo a mano.
   const valorPrecio = (f: Fila) => (f.clave in precios ? precios[f.clave] : f.tipo === 'pedido' && costoItem(f.item) > 0 ? String(r2(costoItem(f.item) * Number(f.item.cantidad || 1))) : '')
-  const precioDe = (f: Fila) => Math.max(0, Number(String(valorPrecio(f)).replace(',', '.')) || 0)
+  const precioEscrito = (f: Fila) => Math.max(0, Number(String(valorPrecio(f)).replace(',', '.')) || 0)
+  // Con el total del proveedor escrito, a cada producto le toca una parte según su precio (los que no
+  // tienen precio cuentan como el promedio de los demás; si ninguno tiene, partes iguales).
+  const cobroNum = Math.max(0, Number(cobro.replace(',', '.')) || 0)
+  const comNum = Math.max(0, Number(comPct.replace(',', '.')) || 0)
+  const repartoCobro = (() => {
+    if (!(cobroNum > 0) || !seleccion.length) return null
+    const pesos = seleccion.map(precioEscrito)
+    const con = pesos.filter((x) => x > 0)
+    const prom = con.length ? con.reduce((a, b) => a + b, 0) / con.length : 1
+    const partes = repartir(cobroNum, pesos.map((x) => (x > 0 ? x : prom)))
+    return new Map(seleccion.map((f, i) => [f.clave, partes[i] ?? 0]))
+  })()
+  const precioDe = (f: Fila) => repartoCobro?.has(f.clave) ? repartoCobro.get(f.clave)! : precioEscrito(f)
+  // Total a mandar sugerido: lo cobrado × lo que se paga ahora × (1 + comisión).
+  const totalSugerido = (pctTexto: string) => { const p = Math.min(100, Math.max(1, Number(pctTexto.replace(',', '.')) || 100)) / 100; return cobroNum > 0 ? r2(cobroNum * p * (1 + comNum / 100)).toFixed(2) : '' }
   const suma = r2(seleccion.reduce((s, f) => s + precioDe(f), 0))
   // Pago en partes: de cada producto se paga ahora ese % de su precio; lo demás queda debiendo.
   const pctNum = Math.min(100, Math.max(1, Number(pct.replace(',', '.')) || 100)) / 100
@@ -273,7 +291,7 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
                   <span className="min-w-0"><strong className="block truncate text-sm">{nombreDe(f)}</strong><span className="block truncate text-xs text-muted">{detalleDe(f)}</span></span>
                 </button>
                 <div className="flex w-full items-center justify-end gap-3 pl-8 sm:w-auto sm:pl-0">
-                  <label className="flex items-center gap-1.5 text-xs text-muted">Precio <input inputMode="decimal" className="simple-input w-24 text-right" placeholder="0.00" value={valorPrecio(f)} onChange={(e) => { setPrecios((p) => ({ ...p, [f.clave]: e.target.value })); if (!on) alternar(f.clave) }} /></label>
+                  <label className="flex items-center gap-1.5 text-xs text-muted">Precio <input inputMode="decimal" className="simple-input w-24 text-right" placeholder="0.00" value={on && repartoCobro ? precioDe(f).toFixed(2) : valorPrecio(f)} readOnly={on && !!repartoCobro} title={on && repartoCobro ? 'Parte del total del proveedor' : undefined} onChange={(e) => { setPrecios((p) => ({ ...p, [f.clave]: e.target.value })); if (!on) alternar(f.clave) }} /></label>
                   <span className="w-24 text-right text-xs">{on && parcial ? <><span className="block text-[10px] uppercase tracking-wide text-muted">Ahora</span><b className="font-mono text-sm">{usd(totalUsd > 0 && enviadoFila != null ? enviadoFila : ahoraDe(f))}</b><span className="block text-[10px] text-amber-300">queda {usd(quedaDe(f))}</span></> : on && costo != null && totalUsd > 0 ? <><span className="block text-[10px] uppercase tracking-wide text-muted">Costo real</span><b className="font-mono text-sm">{usd(costo)}</b></> : null}</span>
                 </div>
               </div>
@@ -283,11 +301,21 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
       </div>}
 
       <div className="rounded-xl border border-line bg-white/[0.02] p-4">
+        <p className="text-sm font-semibold">¿Cuánto te cobró el proveedor?</p>
+        <p className="mt-0.5 text-xs text-muted">Escribí el total que te pasó (lo que le debés, sin comisión): se reparte entre los productos elegidos según su precio y se le suma la comisión. Si lo dejás vacío, se usa el precio de cada uno.</p>
+        <div className="mt-2 grid grid-cols-[1fr_96px] gap-2">
+          <label className="form-field"><span>Total del proveedor (US$)</span><input inputMode="decimal" placeholder={suma > 0 ? suma.toFixed(2) : 'Ej. 470'} value={cobro} onChange={(e) => { const v = e.target.value.replace(/[^\d.,]/g, ''); setCobro(v); const n = Number(v.replace(',', '.')) || 0; setTotal(n > 0 ? r2(n * pctNum * (1 + comNum / 100)).toFixed(2) : '') }} /></label>
+          <label className="form-field"><span>Comisión %</span><input inputMode="decimal" value={comPct} onChange={(e) => { const v = e.target.value.replace(/[^\d.,]/g, ''); setComPct(v); const c = Number(v.replace(',', '.')) || 0; if (cobroNum > 0) setTotal(r2(cobroNum * pctNum * (1 + c / 100)).toFixed(2)) }} /></label>
+        </div>
+        {cobroNum > 0 && <p className="mt-2 text-xs">{seleccion.length ? <>Se reparte entre {seleccion.length} {seleccion.length === 1 ? 'producto' : 'productos'}{parcial ? <> · pagás ahora <b>{usd(r2(cobroNum * pctNum))}</b> + comisión</> : ''} → mandás <b className="text-emerald-400">{usd(r2(cobroNum * pctNum * (1 + comNum / 100)))}</b></> : <span className="text-amber-300">Elegí arriba los productos de este cobro.</span>}</p>}
+      </div>
+
+      <div className="rounded-xl border border-line bg-white/[0.02] p-4">
         <p className="text-sm font-semibold">¿Pagás completo o quedás debiendo?</p>
         <p className="mt-0.5 text-xs text-muted">Si el proveedor pide un adelanto y el resto cuando el paquete esté listo. Lo que falta queda anotado en cada producto.</p>
         <div className="mt-2 grid grid-cols-3 gap-2">
-          {([['100', 'Completo'], ['50', '50 %']] as [string, string][]).map(([v, t]) => <button type="button" key={v} className={`rounded-xl border px-3 py-2.5 text-sm font-semibold transition ${pct === v ? 'border-accent bg-accent/10 text-white' : 'border-line text-muted'}`} onClick={() => { setPct(v); setTotal('') }}>{t}</button>)}
-          <label className={`flex items-center gap-1 rounded-xl border px-3 text-sm ${pct !== '100' && pct !== '50' ? 'border-accent bg-accent/10' : 'border-line'}`}><input inputMode="decimal" aria-label="Otro porcentaje" className="w-full min-w-0 bg-transparent py-2.5 text-center font-semibold outline-none" placeholder="Otro" value={pct === '100' || pct === '50' ? '' : pct} onChange={(e) => { setPct(e.target.value.replace(/[^\d.,]/g, '') || '100'); setTotal('') }} /><span className="text-muted">%</span></label>
+          {([['100', 'Completo'], ['50', '50 %']] as [string, string][]).map(([v, t]) => <button type="button" key={v} className={`rounded-xl border px-3 py-2.5 text-sm font-semibold transition ${pct === v ? 'border-accent bg-accent/15 text-white ring-2 ring-accent' : 'border-line bg-transparent text-muted'}`} aria-pressed={pct === v} onClick={() => { setPct(v); setTotal(totalSugerido(v)) }}>{pct === v ? '✓ ' : ''}{t}</button>)}
+          <label className={`flex items-center gap-1 rounded-xl border px-3 text-sm ${pct !== '100' && pct !== '50' ? 'border-accent bg-accent/15 ring-2 ring-accent' : 'border-line'}`}><input inputMode="decimal" aria-label="Otro porcentaje" className="w-full min-w-0 bg-transparent py-2.5 text-center font-semibold outline-none" placeholder="Otro" value={pct === '100' || pct === '50' ? '' : pct} onChange={(e) => { const v = e.target.value.replace(/[^\d.,]/g, '') || '100'; setPct(v); setTotal(totalSugerido(v)) }} /><span className="text-muted">%</span></label>
         </div>
       </div>
 
@@ -300,8 +328,8 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
           {totalUsd > 0 && sumaAhora > 0 && <p className="flex justify-between"><span className="text-muted">Comisión repartida</span><b className={`font-mono ${comision < 0 ? 'text-red-400' : ''}`}>{usd(comision)} ({((totalUsd / sumaAhora - 1) * 100).toFixed(1)} %)</b></p>}
         </div>
         <div className="space-y-2">
-          <label className="form-field"><span>{parcial ? 'Lo que mandás AHORA por PayPal (con la comisión)' : 'Total que mandás por PayPal (con la comisión)'}</span><input inputMode="decimal" placeholder={sumaAhora > 0 ? r2(sumaAhora * 1.05).toFixed(2) : '0.00'} value={total} onChange={(e) => setTotal(e.target.value)} /></label>
-          {sumaAhora > 0 && <button type="button" className="text-xs font-semibold text-accent hover:underline" onClick={() => setTotal(r2(sumaAhora * 1.05).toFixed(2))}>Usar {usd(r2(sumaAhora * 1.05))} ({parcial ? `${Math.round(pctNum * 100)} % del precio` : 'precio'} + 5 % de PayPal)</button>}
+          <label className="form-field"><span>{parcial ? 'Lo que mandás AHORA por PayPal (con la comisión)' : 'Total que mandás por PayPal (con la comisión)'}</span><input inputMode="decimal" placeholder={sumaAhora > 0 ? r2(sumaAhora * (1 + comNum / 100)).toFixed(2) : '0.00'} value={total} onChange={(e) => setTotal(e.target.value)} /></label>
+          {sumaAhora > 0 && <button type="button" className="text-xs font-semibold text-accent hover:underline" onClick={() => setTotal(r2(sumaAhora * (1 + comNum / 100)).toFixed(2))}>Usar {usd(r2(sumaAhora * (1 + comNum / 100)))} ({parcial ? `${Math.round(pctNum * 100)} % del precio` : 'precio'} + {comNum} % de comisión)</button>}
         </div>
       </div>
 
