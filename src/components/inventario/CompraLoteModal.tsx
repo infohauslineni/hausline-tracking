@@ -32,7 +32,7 @@ const unidadesDe = (l: Linea) => { const t = tallasDeTexto(l.tallas); return { n
 // loteExistente: "Agregar al lote" (más tallas u otro modelo a una compra en conjunto ya
 // registrada). Las unidades nuevas llevan el mismo lote y su propio pago (lo que se pagó por lo
 // nuevo); lo ya registrado no se toca.
-export function CompraLoteModal({ open, products, onClose, onSaved, loteExistente }: { open: boolean; products: Producto[]; onClose: () => void; onSaved: (items: Inversion[]) => void; loteExistente?: { id: string; unidades: number } | null }) {
+export function CompraLoteModal({ open, products, onClose, onSaved, loteExistente }: { open: boolean; products: Producto[]; onClose: () => void; onSaved: (items: Inversion[]) => void; loteExistente?: { id: string; unidades: number; porPagar?: boolean } | null }) {
   const [fecha, setFecha] = useState(hoy())
   const [metodo, setMetodo] = useState('PayPal')
   const [lineas, setLineas] = useState<Linea[]>([nuevaLinea()])
@@ -60,10 +60,10 @@ export function CompraLoteModal({ open, products, onClose, onSaved, loteExistent
 
   useEffect(() => {
     if (!open) return
-    setFecha(hoy()); setMetodo('PayPal'); setLineas([nuevaLinea()]); setTotal(''); setModoCosto('igual'); setCalc(false); setSubtotal(''); setEnvio(''); setModoEnvio('peso'); setPago('ahora'); setDonde('en_preparacion')
+    setFecha(hoy()); setMetodo('PayPal'); setLineas([nuevaLinea()]); setTotal(''); setModoCosto('igual'); setCalc(false); setSubtotal(''); setEnvio(''); setModoEnvio('peso'); setPago(loteExistente?.porPagar ? 'pendiente' : 'ahora'); setDonde('en_preparacion')
     setDestino({ cuentaId: null, montoCuenta: 0 }); setDestinoEnvio({ cuentaId: null, montoCuenta: 0 })
     void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined)
-  }, [open])
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const cambiar = (key: string, cambios: Partial<Linea>) => setLineas((ls) => ls.map((l) => (l.key === key ? { ...l, ...cambios } : l)))
   // Al escribir el código se completa con el catálogo (nombre, marca, precio de venta, foto y tipo).

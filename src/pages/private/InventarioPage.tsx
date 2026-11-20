@@ -174,8 +174,8 @@ export function InventarioPage() {
   }, [items, search, filter])
   const seleccionadas = useMemo(() => items.filter((i) => seleccion.has(i.id)), [items, seleccion])
   // Lote de la selección (si todas las seleccionadas son de la misma compra en conjunto).
-  const loteSeleccion = (() => { const ls = new Set(seleccionadas.map((i) => loteDe(i.notas))); const l = ls.size === 1 ? [...ls][0] : null; return l ? { id: l, unidades: lotes.get(l) ?? seleccionadas.length } : null })()
-  const [loteAgregar, setLoteAgregar] = useState<{ id: string; unidades: number } | null>(null)
+  const loteSeleccion = (() => { const ls = new Set(seleccionadas.map((i) => loteDe(i.notas))); const l = ls.size === 1 ? [...ls][0] : null; return l ? { id: l, unidades: lotes.get(l) ?? seleccionadas.length, porPagar: items.some((c) => loteDe(c.notas) === l && porPagar(c)) } : null })()
+  const [loteAgregar, setLoteAgregar] = useState<{ id: string; unidades: number; porPagar?: boolean } | null>(null)
   const [borrandoVarias, setBorrandoVarias] = useState(false)
   // Eliminar varias: las que están ligadas a un pedido de cliente no se tocan (se borran desde el pedido).
   const eliminarVarias = async () => {
