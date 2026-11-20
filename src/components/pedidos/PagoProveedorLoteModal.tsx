@@ -12,6 +12,7 @@ import { pagadoInversion, porPagarInversion } from '../../utils/compraPago'
 import { repartir } from '../../utils/repartoCompra'
 import { CuentaSelect, type DestinoPago } from '../finanzas/CuentaSelect'
 import { Modal } from '../ui/Modal'
+import { mensajeError } from '../../utils/mensajeError'
 
 // PAGAR AL PROVEEDOR VARIOS PRODUCTOS DE UNA VEZ (un solo envío por PayPal). Se eligen los
 // productos, se pone el precio de cada uno y cuánto se manda en total; la comisión se reparte
@@ -142,71 +143,94 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
     if (totalUsd < sumaAhora) return toast.error(parcial ? `El total que mandás es menor que el ${Math.round(pctNum * 100)} % de los productos. Revisá los precios.` : 'El total que mandás es menor que la suma de los productos. Revisá los precios.')
     if (!destino.cuentaId) return toast.error('Elegí de qué cuenta sale el pago.')
     setGuardando(true)
+    // Cada pedido y cada compra libre se registra por separado: si uno falla, los demás quedan
+    // pagados y el que falló sigue en la lista con el motivo (no se pierde todo el pago).
+    const hechas = new Set<string>()
+    const fallas: string[] = []
     try {
       const dePedidos = seleccion.flatMap((f) => f.tipo === 'pedido' ? [f] : [])
       const deLibres = seleccion.flatMap((f) => f.tipo === 'libre' ? [f] : [])
       const deSaldos = seleccion.flatMap((f) => f.tipo === 'saldo' ? [f] : [])
-      // Lo que sale de la cuenta (puede estar en C$) se reparte entre pedidos, saldos y compras libres según lo que se manda por cada uno.
-      const usdPedidos = r2(dePedidos.reduce((s, f) => s + (costoDe.get(f.clave) ?? 0), 0))
-      const enviado = (fs: Fila[]) => r2(fs.reduce((s, f) => s + (enviadoDe.get(f.clave) ?? 0), 0))
-      const cuentaPedidos = deLibres.length || deSaldos.length ? r2(destino.montoCuenta * (enviado(dePedidos) / totalUsd)) : destino.montoCuenta
-      const cuentaSaldos = deLibres.length ? r2(destino.montoCuenta * (enviado(deSaldos) / totalUsd)) : r2(destino.montoCuenta - cuentaPedidos)
-      const cuentaLibres = r2(destino.montoCuenta - cuentaPedidos - cuentaSaldos)
-      // Parte de la cuenta de cada fila de un grupo (la última se lleva el redondeo).
-      const repartoCuenta = (fs: Fila[], monto: number) => { const tot = enviado(fs); let ac = 0; return fs.map((f, i) => { const v = i === fs.length - 1 ? r2(monto - ac) : r2(tot > 0 ? monto * (enviadoDe.get(f.clave) ?? 0) / tot : 0); ac = r2(ac + v); return v }) }
-      let codigos: string[] = []
-      if (isSupabaseConfigured && dePedidos.length) {
-        const lineas: LineaPagoLote[] = dePedidos.map((f) => ({ itemId: f.itemId, pedidoId: f.pedido.id, cantidad: Number(f.item.cantidad || 1), costoTotal: costoDe.get(f.clave) ?? 0 }))
-        codigos = await pagarProveedorLote(lineas, pedidos, { cuentaId: destino.cuentaId, montoCuentaTotal: cuentaPedidos, totalUsd: usdPedidos, metodo, pasarAPreparacion: pasar })
-        // Pago en partes: a cada pedido le queda anotado lo que falta de sus productos.
-        if (parcial) {
-          const faltaPedido = new Map<string, number>()
-          for (const f of dePedidos) faltaPedido.set(f.pedido.id, r2((faltaPedido.get(f.pedido.id) ?? 0) + quedaDe(f)))
-          for (const [pedidoId, saldo] of faltaPedido) if (saldo > 0.005) await marcarAdelantoPedido(pedidoId, saldo)
-        }
-      }
-      if (isSupabaseConfigured && deSaldos.length) {
-        const cuentas = repartoCuenta(deSaldos, cuentaSaldos)
-        for (const [i, f] of deSaldos.entries()) {
-          if (f.tipo !== 'saldo') continue
-          await pagarSaldoProveedor(f.saldo.gastoId, { pago: ahoraDe(f), comision: r2((enviadoDe.get(f.clave) ?? 0) - ahoraDe(f)), cuentaId: destino.cuentaId, montoCuenta: cuentas[i], metodo })
-        }
-      }
-      if (isSupabaseConfigured && deLibres.length) {
-        // Compra registrada sin costo: el precio que se escribió pasa a ser su costo (no "otros gastos").
-        const compras: Inversion[] = []
-        const debia: number[] = []
-        for (const f of deLibres) {
-          if (Number(f.compra.costo_unitario || 0) <= 0 && f.falta <= 0.005) {
-            const cant = Math.max(1, Number(f.compra.cantidad) || 1)
-            compras.push(await actualizarInversion(f.compra.id, { costo_unitario: r2(precioDe(f) / cant) }))
-            debia.push(r2(r2(precioDe(f) / cant) * cant))
-          } else { compras.push(f.compra); debia.push(f.falta) }
-        }
-        // A cada compra se le suma en gastos adicionales la diferencia entre su costo real y lo que debía (la comisión).
-        const extras = deLibres.map((f, i) => r2((costoDe.get(f.clave) ?? debia[i]) - debia[i]))
-        if (!parcial) await pagarVariasCompras(compras, extras, { fecha: hoy(), metodo }, { cuentaId: destino.cuentaId, montoCuenta: cuentaLibres })
-        else {
-          // Adelanto: la comisión de lo mandado sube su costo y lo mandado queda como abono; sigue "por pagar" con lo que falta.
-          const cuentas = repartoCuenta(deLibres, cuentaLibres)
-          for (const [i, f] of deLibres.entries()) {
-            const actual = Math.abs(extras[i]) > 0.004 ? await actualizarInversion(compras[i].id, { gastos_adicionales: r2(Number(compras[i].gastos_adicionales || 0) + extras[i]) }) : compras[i]
-            await abonarInversion(actual, enviadoDe.get(f.clave) ?? 0, { fecha: hoy(), metodo }, { cuentaId: destino.cuentaId, montoCuenta: cuentas[i] })
+      // Lo que sale de la cuenta (puede estar en C$) se reparte entre todos según lo que se manda por cada uno.
+      const cuentaDe = new Map<string, number>()
+      { let ac = 0; seleccion.forEach((f, i) => { const v = i === seleccion.length - 1 ? r2(destino.montoCuenta - ac) : r2(destino.montoCuenta * (enviadoDe.get(f.clave) ?? 0) / totalUsd); ac = r2(ac + v); cuentaDe.set(f.clave, v) }) }
+      const suma = (fs: Fila[], m: Map<string, number>) => r2(fs.reduce((s, f) => s + (m.get(f.clave) ?? 0), 0))
+      let pedidosPagados = 0
+
+      // 1) Pedidos (los productos de un mismo pedido van juntos).
+      const grupos = new Map<string, Fila[]>()
+      for (const f of dePedidos) if (f.tipo === 'pedido') grupos.set(f.pedido.id, [...(grupos.get(f.pedido.id) ?? []), f])
+      for (const [pedidoId, fs] of grupos) {
+        const pedido = fs[0].tipo === 'pedido' ? fs[0].pedido : null
+        try {
+          if (isSupabaseConfigured) {
+            const lineas: LineaPagoLote[] = fs.flatMap((f) => f.tipo === 'pedido' ? [{ itemId: f.itemId, pedidoId, cantidad: Number(f.item.cantidad || 1), costoTotal: costoDe.get(f.clave) ?? 0 }] : [])
+            await pagarProveedorLote(lineas, pedidos, { cuentaId: destino.cuentaId, montoCuentaTotal: suma(fs, cuentaDe), totalUsd: suma(fs, costoDe), metodo, pasarAPreparacion: pasar })
+            // Pago en partes: al pedido le queda anotado lo que falta de sus productos.
+            const falta = r2(fs.reduce((s, f) => s + quedaDe(f), 0))
+            if (parcial && falta > 0.005) await marcarAdelantoPedido(pedidoId, falta)
           }
-        }
-        // Costo del producto en el catálogo: se pone si no tiene; si tiene, solo sube cuando este pago salió más caro.
-        for (const f of deLibres) await aprenderCostoDeCodigo(f.compra.codigo, r2((costoDe.get(f.clave) ?? 0) / Math.max(1, Number(f.compra.cantidad) || 1)))
+          fs.forEach((f) => hechas.add(f.clave)); pedidosPagados++
+        } catch (e) { fallas.push(`${pedido?.codigo ?? 'Pedido'}: ${mensajeError(e)}`) }
       }
+
+      // 2) Saldos de pedidos que ya tenían un adelanto.
+      for (const f of deSaldos) {
+        if (f.tipo !== 'saldo') continue
+        try {
+          if (isSupabaseConfigured) await pagarSaldoProveedor(f.saldo.gastoId, { pago: ahoraDe(f), comision: r2((enviadoDe.get(f.clave) ?? 0) - ahoraDe(f)), cuentaId: destino.cuentaId, montoCuenta: cuentaDe.get(f.clave) ?? 0, metodo })
+          hechas.add(f.clave)
+        } catch (e) { fallas.push(`Saldo ${f.pedido.codigo}: ${mensajeError(e)}`) }
+      }
+
+      // 3) Compras libres: la comisión (y la diferencia con lo que debía) sube su costo; se paga
+      //    todo o, si es un adelanto, lo mandado queda como abono y sigue "por pagar" con lo que falta.
+      for (const f of deLibres) {
+        if (f.tipo !== 'libre') continue
+        try {
+          if (isSupabaseConfigured) {
+            let compra = f.compra
+            let debia = f.falta
+            // Compra registrada sin costo: el precio que se escribió pasa a ser su costo (no "otros gastos").
+            if (Number(compra.costo_unitario || 0) <= 0 && f.falta <= 0.005) {
+              const cant = Math.max(1, Number(compra.cantidad) || 1)
+              compra = await actualizarInversion(compra.id, { costo_unitario: r2(precioDe(f) / cant) })
+              debia = r2(r2(precioDe(f) / cant) * cant)
+            }
+            const extra = r2((costoDe.get(f.clave) ?? debia) - debia)
+            if (!parcial) await pagarVariasCompras([compra], [extra], { fecha: hoy(), metodo }, { cuentaId: destino.cuentaId, montoCuenta: cuentaDe.get(f.clave) ?? 0 })
+            else {
+              const actual = Math.abs(extra) > 0.004 ? await actualizarInversion(compra.id, { gastos_adicionales: r2(Number(compra.gastos_adicionales || 0) + extra) }) : compra
+              await abonarInversion(actual, enviadoDe.get(f.clave) ?? 0, { fecha: hoy(), metodo }, { cuentaId: destino.cuentaId, montoCuenta: cuentaDe.get(f.clave) ?? 0 })
+            }
+            // Costo del producto en el catálogo: se pone si no tiene; si tiene, solo sube cuando este pago salió más caro.
+            await aprenderCostoDeCodigo(compra.codigo, r2((costoDe.get(f.clave) ?? 0) / Math.max(1, Number(compra.cantidad) || 1)))
+          }
+          hechas.add(f.clave)
+        } catch (e) { fallas.push(`${f.compra.producto}${f.compra.talla_color ? ` (${f.compra.talla_color})` : ''}: ${mensajeError(e)}`) }
+      }
+
+      const nLibres = deLibres.filter((f) => hechas.has(f.clave)).length
+      const nSaldos = deSaldos.filter((f) => hechas.has(f.clave)).length
       const partesTexto = [
-        dePedidos.length ? `${dePedidos.length} ${dePedidos.length === 1 ? 'producto' : 'productos'} en ${codigos.length || new Set(dePedidos.map((f) => f.pedido.id)).size} ${codigos.length === 1 ? 'pedido' : 'pedidos'}` : '',
-        deSaldos.length ? `${deSaldos.length} ${deSaldos.length === 1 ? 'saldo' : 'saldos'} de pedidos` : '',
-        deLibres.length ? `${deLibres.length} ${deLibres.length === 1 ? 'compra libre' : 'compras libres'}` : '',
+        pedidosPagados ? `${pedidosPagados} ${pedidosPagados === 1 ? 'pedido' : 'pedidos'}` : '',
+        nSaldos ? `${nSaldos} ${nSaldos === 1 ? 'saldo' : 'saldos'} de pedidos` : '',
+        nLibres ? `${nLibres} ${nLibres === 1 ? 'compra libre' : 'compras libres'}` : '',
       ].filter(Boolean).join(' y ')
-      toast.success(parcial
-        ? `Adelanto registrado (${Math.round(pctNum * 100)} %): ${partesTexto}. Queda debiendo ${usd(sumaQueda)} al proveedor; lo pagás desde aquí cuando esté listo.`
-        : `Pago registrado: ${partesTexto}. Cada uno ya tiene su costo con la comisión.`)
-      onPagado(); onClose()
-    } catch (error) { toast.error(error instanceof Error ? error.message : 'No se pudo registrar el pago.') }
+      if (hechas.size) onPagado()
+      if (!fallas.length) {
+        toast.success(parcial
+          ? `Adelanto registrado (${Math.round(pctNum * 100)} %): ${partesTexto}. Queda debiendo ${usd(sumaQueda)} al proveedor; lo pagás desde aquí cuando esté listo.`
+          : `Pago completo registrado: ${partesTexto}. Cada uno ya tiene su costo con la comisión.`)
+        onClose()
+      } else {
+        // Lo que sí se pagó sale de la selección; lo que falló queda elegido para reintentar.
+        setElegidos((s) => { const n = new Set(s); hechas.forEach((c) => n.delete(c)); return n })
+        setLibres((l) => l.filter((c) => !hechas.has(`libre:${c.id}`))); setSaldos((l) => l.filter((x) => !hechas.has(`saldo:${x.gastoId}`)))
+        setTotal('')
+        toast.error(`${hechas.size ? `Se registró: ${partesTexto}. ` : ''}No se pudo pagar: ${fallas.join(' · ')}`, { duration: 20000 })
+      }
+    } catch (error) { toast.error(`No se pudo registrar el pago: ${mensajeError(error)}`, { duration: 20000 }) }
     finally { setGuardando(false) }
   }
 
@@ -247,10 +271,10 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
       </div>}
 
       <div className="rounded-xl border border-line bg-white/[0.02] p-4">
-        <p className="text-sm font-semibold">¿Cuánto le pagás ahora?</p>
+        <p className="text-sm font-semibold">¿Pagás completo o quedás debiendo?</p>
         <p className="mt-0.5 text-xs text-muted">Si el proveedor pide un adelanto y el resto cuando el paquete esté listo. Lo que falta queda anotado en cada producto.</p>
         <div className="mt-2 grid grid-cols-3 gap-2">
-          {([['100', 'Todo'], ['50', '50 %']] as [string, string][]).map(([v, t]) => <button type="button" key={v} className={`rounded-xl border px-3 py-2.5 text-sm font-semibold transition ${pct === v ? 'border-accent bg-accent/10 text-white' : 'border-line text-muted'}`} onClick={() => { setPct(v); setTotal('') }}>{t}</button>)}
+          {([['100', 'Completo'], ['50', '50 %']] as [string, string][]).map(([v, t]) => <button type="button" key={v} className={`rounded-xl border px-3 py-2.5 text-sm font-semibold transition ${pct === v ? 'border-accent bg-accent/10 text-white' : 'border-line text-muted'}`} onClick={() => { setPct(v); setTotal('') }}>{t}</button>)}
           <label className={`flex items-center gap-1 rounded-xl border px-3 text-sm ${pct !== '100' && pct !== '50' ? 'border-accent bg-accent/10' : 'border-line'}`}><input inputMode="decimal" aria-label="Otro porcentaje" className="w-full min-w-0 bg-transparent py-2.5 text-center font-semibold outline-none" placeholder="Otro" value={pct === '100' || pct === '50' ? '' : pct} onChange={(e) => { setPct(e.target.value.replace(/[^\d.,]/g, '') || '100'); setTotal('') }} /><span className="text-muted">%</span></label>
         </div>
       </div>
