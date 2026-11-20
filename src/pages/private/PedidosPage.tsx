@@ -28,7 +28,8 @@ export function PedidosPage() {
   // Lista de compra: pedidos confirmados que todavía no se le han pedido al proveedor.
   const [listaOpen, setListaOpen] = useState(false)
   // Pagar al proveedor varios productos juntos (comisión de PayPal repartida por precio).
-  const [pagoOpen, setPagoOpen] = useState(false)
+  // Desde Compras libres ("Pagar con pedidos") se llega con ?pagar=proveedor: abre la ventana directo.
+  const [pagoOpen, setPagoOpen] = useState(() => new URLSearchParams(window.location.search).get('pagar') === 'proveedor')
   const [envioOpen, setEnvioOpen] = useState(false)
   const porPedir = pedidos.filter((p) => p.estado === 'pedido_confirmado' && !yaEnListaProveedor(p)).length
   useEffect(() => { if (isSupabaseConfigured) void listarPedidos(setPedidos).then(setPedidos).catch(() => toast.error('No se pudieron cargar los pedidos.')).finally(() => setLoading(false)) }, [])

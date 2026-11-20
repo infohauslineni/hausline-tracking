@@ -29,7 +29,10 @@ const leerComision = () => { try { return localStorage.getItem(COMISION_KEY) ?? 
 // Unidades de una línea: una por talla escrita (39, 40, 41) o la cantidad, lo que sea mayor.
 const unidadesDe = (l: Linea) => { const t = tallasDeTexto(l.tallas); return { n: Math.max(1, t.length || Number(l.cantidad) || 1), tallas: t } }
 
-export function CompraLoteModal({ open, products, onClose, onSaved }: { open: boolean; products: Producto[]; onClose: () => void; onSaved: (items: Inversion[]) => void }) {
+// loteExistente: "Agregar al lote" (más tallas u otro modelo a una compra en conjunto ya
+// registrada). Las unidades nuevas llevan el mismo lote y su propio pago (lo que se pagó por lo
+// nuevo); lo ya registrado no se toca.
+export function CompraLoteModal({ open, products, onClose, onSaved, loteExistente }: { open: boolean; products: Producto[]; onClose: () => void; onSaved: (items: Inversion[]) => void; loteExistente?: { id: string; unidades: number } | null }) {
   const [fecha, setFecha] = useState(hoy())
   const [metodo, setMetodo] = useState('PayPal')
   const [lineas, setLineas] = useState<Linea[]>([nuevaLinea()])
@@ -109,8 +112,10 @@ export function CompraLoteModal({ open, products, onClose, onSaved }: { open: bo
     if (pago === 'ahora' && !destino.cuentaId && !window.confirm('No elegiste de qué cuenta salió el pago. ¿Registrarla sin descontar de ninguna cuenta?')) return
     setSaving(true)
     try {
-      const lote = nuevoLote()
-      const nota = `[LOTE:${lote}] Compra en conjunto · ${unidades.length} ${unidades.length === 1 ? 'unidad' : 'unidades'} · pagado US$ ${totalNum.toFixed(2)}`
+      const lote = loteExistente?.id ?? nuevoLote()
+      const nota = loteExistente
+        ? `[LOTE:${lote}] Agregado a la compra en conjunto · ${unidades.length} ${unidades.length === 1 ? 'unidad' : 'unidades'} · pagado US$ ${totalNum.toFixed(2)}`
+        : `[LOTE:${lote}] Compra en conjunto · ${unidades.length} ${unidades.length === 1 ? 'unidad' : 'unidades'} · pagado US$ ${totalNum.toFixed(2)}`
       const estado: Inversion['estado'] = donde === 'en_inventario' ? 'en_inventario' : 'en_transito'
       const inputs = unidades.map((u, i) => ({
         fecha, producto_id: u.linea.producto_id || null, codigo: u.linea.codigo.trim() || null, producto: u.linea.producto.trim(), marca: u.linea.marca.trim() || null,
@@ -131,7 +136,7 @@ export function CompraLoteModal({ open, products, onClose, onSaved }: { open: bo
   }
 
   const opcion = (activo: boolean) => `rounded-xl border px-3 py-2 text-left text-xs transition ${activo ? 'border-accent bg-accent/[.1] text-white' : 'border-line text-muted hover:border-white/25 hover:text-white'}`
-  return <Modal open={open} onClose={onClose} ancho="amplio" title="Compra en conjunto" description="Varios productos en un solo pago: escribí el total que pagaste y el panel reparte el costo, la comisión y el envío entre todos.">
+  return <Modal open={open} onClose={onClose} ancho="amplio" title={loteExistente ? `Agregar al lote (ya tiene ${loteExistente.unidades} ${loteExistente.unidades === 1 ? 'unidad' : 'unidades'})` : 'Compra en conjunto'} description={loteExistente ? 'Sumale más tallas u otro modelo. Escribí lo que pagaste por lo NUEVO: se reparte entre las unidades nuevas y lo que ya estaba registrado queda igual.' : 'Varios productos en un solo pago: escribí el total que pagaste y el panel reparte el costo, la comisión y el envío entre todos.'}>
     <form className="space-y-5" onSubmit={(event) => void submit(event)}>
       <div className="grid gap-3 sm:grid-cols-[1fr_1fr_1.6fr]">
         <label className="form-field"><span>Fecha de compra</span><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></label>
@@ -176,6 +181,7 @@ export function CompraLoteModal({ open, products, onClose, onSaved }: { open: bo
         <div className="mt-3 grid gap-2 sm:grid-cols-2">{(['igual', 'precio'] as ModoReparto[]).map((m) => <button type="button" key={m} className={opcion(modoCosto === m)} onClick={() => setModoCosto(m)}><strong className="block text-sm">{MODOS_REPARTO[m].titulo}</strong>{m === 'igual' ? `${usd(unidades.length ? totalNum / unidades.length : 0)} cada unidad` : 'El más caro carga más del total y la comisión'}</button>)}</div>
         <div className="mt-4 grid gap-2 sm:grid-cols-3">{([['ahora', 'Pagado ahora', 'Sale de una cuenta'], ['antes', 'Ya estaba pagado', 'No se descuenta otra vez'], ['pendiente', 'Por pagar', 'Lo pagás después']] as [Pago, string, string][]).map(([v, t, a]) => <button type="button" key={v} className={opcion(pago === v)} onClick={() => setPago(v)}><strong className="block text-sm">{t}</strong>{a}</button>)}</div>
         {pago === 'ahora' && <div className="mt-3"><CuentaSelect proposito="comprar" montoUsd={totalNum} tipoCambio={tipoCambio} value={destino} onChange={setDestino} modo="resta" /></div>}
+        <p className="mt-2 text-[11px] leading-4 text-muted">¿Lo pagaste junto con pedidos de clientes? Elegí <b className="text-white">Por pagar</b> y después registrá ese pago en <b className="text-white">Pedidos → Pagar al proveedor</b>: ahí elegís los pedidos y estas compras, escribís el total y se reparte todo.</p>
       </section>
 
       {/* 3 · Envío */}

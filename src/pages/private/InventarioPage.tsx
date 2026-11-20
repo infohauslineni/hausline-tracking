@@ -1,4 +1,4 @@
-import { Boxes, CircleDollarSign, Smartphone, Zap, ImagePlus, Layers, PackageCheck, Plus, Printer, Scissors, Search, ShoppingBag, TrendingUp, Truck, Wallet, X } from 'lucide-react'
+import { Boxes, CircleDollarSign, ImagePlus, Layers, PackageCheck, Plus, Printer, Scissors, Search, ShoppingBag, Smartphone, Trash2, TrendingUp, Truck, Wallet, X, Zap } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
 import { useNavigate } from 'react-router-dom'
@@ -173,6 +173,24 @@ export function InventarioPage() {
       .sort((a, b) => statusOrder[a.estado] - statusOrder[b.estado] || b.fecha.localeCompare(a.fecha) || (loteDe(a.notas) ?? '').localeCompare(loteDe(b.notas) ?? ''))
   }, [items, search, filter])
   const seleccionadas = useMemo(() => items.filter((i) => seleccion.has(i.id)), [items, seleccion])
+  // Lote de la selección (si todas las seleccionadas son de la misma compra en conjunto).
+  const loteSeleccion = (() => { const ls = new Set(seleccionadas.map((i) => loteDe(i.notas))); const l = ls.size === 1 ? [...ls][0] : null; return l ? { id: l, unidades: lotes.get(l) ?? seleccionadas.length } : null })()
+  const [loteAgregar, setLoteAgregar] = useState<{ id: string; unidades: number } | null>(null)
+  const [borrandoVarias, setBorrandoVarias] = useState(false)
+  // Eliminar varias: las que están ligadas a un pedido de cliente no se tocan (se borran desde el pedido).
+  const eliminarVarias = async () => {
+    const ligadas = seleccionadas.filter((i) => i.pedido_id)
+    const borrar = seleccionadas.filter((i) => !i.pedido_id)
+    if (!borrar.length) { toast.error('Las seleccionadas están ligadas a pedidos de clientes: no se borran desde aquí.'); return }
+    const pagadas = borrar.filter((i) => !porPagar(i)).length
+    if (!window.confirm(`¿Eliminar ${borrar.length} ${borrar.length === 1 ? 'compra' : 'compras'} de Compras libres?${pagadas ? ` Lo que ya estaba pagado (${pagadas}) vuelve a Mi cuenta.` : ''}${ligadas.length ? ` (${ligadas.length} ligada${ligadas.length === 1 ? '' : 's'} a pedidos no se tocan.)` : ''} No se puede deshacer.`)) return
+    setBorrandoVarias(true)
+    const ok: string[] = []
+    for (const i of borrar) { try { await eliminarInversion(i.id); ok.push(i.id) } catch { /* sigue con las demás */ } }
+    setItems((all) => all.filter((c) => !ok.includes(c.id))); setSeleccion(new Set()); setBorrandoVarias(false)
+    if (ok.length === borrar.length) toast.success(`${ok.length} ${ok.length === 1 ? 'compra eliminada' : 'compras eliminadas'}.`)
+    else toast.error(`Se eliminaron ${ok.length} de ${borrar.length}. Probá de nuevo con las que quedaron.`)
+  }
   const elegirLote = (lote: string) => setSeleccion(new Set(items.filter((i) => loteDe(i.notas) === lote && i.estado !== 'descartado').map((i) => i.id)))
   const detalle = detalleId ? items.find((i) => i.id === detalleId) ?? null : null
   // Mostrar / ocultar en la tienda sin tocar el estado (la base de datos avisa al catálogo sola).
@@ -281,6 +299,9 @@ export function InventarioPage() {
       <span className="mr-auto px-1 text-sm"><b>{seleccion.size}</b> {seleccion.size === 1 ? 'seleccionada' : 'seleccionadas'} <span className="text-xs text-muted">· costo {usdTxt(seleccionadas.reduce((s, i) => s + totalCost(i), 0))}</span></span>
       <button className="subtle-button" onClick={() => setEnviando(seleccionadas)}><Truck size={15} /> Repartir envío</button>
       <button className="subtle-button text-amber-100!" disabled={!seleccionadas.some((i) => porPagar(i))} onClick={() => setPagandoVarias(seleccionadas.filter((i) => porPagar(i)))}><Wallet size={15} /> Pagar juntas</button>
+      {seleccionadas.some((i) => porPagar(i)) && <button className="subtle-button" title="Pagar estas compras junto con pedidos de clientes en un solo pago" onClick={() => navigate('/pedidos?pagar=proveedor')}><Wallet size={15} /> Pagar con pedidos</button>}
+      {loteSeleccion && <button className="subtle-button" onClick={() => { setLoteAgregar(loteSeleccion); setLoteOpen(true) }}><Plus size={15} /> Agregar al lote</button>}
+      <button className="subtle-button text-[#e5484d]!" disabled={borrandoVarias} onClick={() => void eliminarVarias()}><Trash2 size={15} /> {borrandoVarias ? 'Eliminando…' : 'Eliminar'}</button>
       <button className="icon-button" onClick={() => setSeleccion(new Set())} aria-label="Quitar selección"><X size={16} /></button>
     </div>}
     {detalle && !preview && !fotosDe && !fichaDe && !linkDe && !poniendoEI && !selling && !paying && !open && (() => {
@@ -303,7 +324,7 @@ export function InventarioPage() {
     {!items.length && <div className="mt-6 rounded-2xl border border-dashed border-line p-10 text-center text-sm text-muted">Todavía no hay compras libres. Registrá lo que compraste por tu cuenta para vender, esté pagado o no.</div>}
     {items.length > 0 && !visible.length && <div className="mt-6 rounded-2xl border border-dashed border-line p-10 text-center text-sm text-muted">Ningún producto coincide con esta búsqueda.</div>}
     <ProductModal open={open} item={editing} inicial={inicial} products={products} onClose={() => { setOpen(false); setEditing(null); setInicial(null) }} onSaved={(guardadas) => { setItems((all) => editing ? all.map((current) => guardadas.find((g) => g.id === current.id) ?? current) : [...guardadas, ...all]); setOpen(false); setEditing(null); setInicial(null) }} />
-    <CompraLoteModal open={loteOpen} products={products} onClose={() => setLoteOpen(false)} onSaved={(creadas) => { setItems((all) => [...creadas, ...all]); setLoteOpen(false); setFilter('activos'); load() }} />
+    <CompraLoteModal open={loteOpen} products={products} loteExistente={loteAgregar} onClose={() => { setLoteOpen(false); setLoteAgregar(null) }} onSaved={(creadas) => { setItems((all) => [...creadas, ...all]); setLoteOpen(false); setLoteAgregar(null); setSeleccion(new Set()); setFilter('activos'); load() }} />
     <RepartirEnvioModal items={enviando} onClose={() => setEnviando(null)} onListo={() => { setEnviando(null); setSeleccion(new Set()); load() }} />
     <PagarVariasModal items={pagandoVarias} onClose={() => setPagandoVarias(null)} onPagadas={(pagadas) => { setItems((all) => all.map((c) => pagadas.find((p) => p.id === c.id) ?? c)); setPagandoVarias(null); setSeleccion(new Set()) }} />
     <SellModal item={selling} onClose={() => setSelling(null)} onSold={(item) => { setItems((all) => all.map((current) => current.id === item.id ? item : current)); setSelling(null); void listarVentasStock().then(setVentas).catch(() => undefined) }} />
