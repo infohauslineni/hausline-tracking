@@ -131,6 +131,11 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
   const costoDe = new Map(seleccion.map((f) => [f.clave, r2((enviadoDe.get(f.clave) ?? 0) + quedaDe(f))]))
   const sinPrecio = seleccion.filter((f) => precioDe(f) <= 0)
   const hayPedidos = seleccion.some((f) => f.tipo === 'pedido')
+  // Lo que ya le debés al proveedor: saldos de pedidos con adelanto + compras libres por pagar.
+  const deudaSaldos = r2(saldos.reduce((s, x) => s + x.saldo, 0))
+  const deudaLibres = r2(filasLibres.reduce((s, f) => s + (f.tipo === 'libre' ? f.falta : 0), 0))
+  const deuda = r2(deudaSaldos + deudaLibres)
+  const pagoTotalAhora = totalUsd > 0 ? totalUsd : sumaAhora
 
   const alternar = (clave: string) => setElegidos((s) => { const n = new Set(s); if (n.has(clave)) n.delete(clave); else n.add(clave); return n })
   const todos = visibles.length > 0 && visibles.every((f) => elegidos.has(f.clave))
@@ -236,6 +241,10 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
 
   return <Modal open={open} onClose={onClose} ancho="amplio" title="Pagar al proveedor" description="Elegí los productos que vas a pagar juntos (de pedidos y de Compras libres por pagar), poné el precio de cada uno y cuánto mandás en total por PayPal. Si el proveedor pide un adelanto, elegí cuánto pagás ahora (50 %, por ejemplo) y el resto queda pendiente.">
     <div className="space-y-4">
+      {deuda > 0.005 && <div className="rounded-xl border border-amber-400/40 bg-amber-400/[0.07] p-3">
+        <p className="flex items-baseline justify-between gap-2 text-sm"><span className="font-semibold">Le debés al proveedor</span><b className="font-mono text-base text-amber-300">{usd(deuda)}</b></p>
+        <p className="mt-0.5 text-xs text-muted">{[deudaSaldos > 0.005 ? `${usd(deudaSaldos)} de pedidos con adelanto (${saldos.length})` : '', deudaLibres > 0.005 ? `${usd(deudaLibres)} de compras libres por pagar (${filasLibres.length})` : ''].filter(Boolean).join(' · ')}. Están abajo en la lista: elegilos para pagarlos.</p>
+      </div>}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <label className="relative flex-1"><Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" /><input className="search-input w-full pl-9" placeholder="Buscar pedido, cliente o producto" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} /></label>
         <label className="flex items-center gap-2 text-xs text-muted"><input type="checkbox" checked={verPreparacion} onChange={(e) => setVerPreparacion(e.target.checked)} /> Ver también los que están En preparación</label>
@@ -283,8 +292,8 @@ export function PagoProveedorLoteModal({ open, pedidos, onClose, onPagado }: { o
         <div className="space-y-1 text-sm">
           <p className="flex justify-between"><span className="text-muted">Productos elegidos</span><b>{seleccion.length}</b></p>
           <p className="flex justify-between"><span className="text-muted">Suma de los precios</span><b className="font-mono">{usd(suma)}</b></p>
-          {parcial && <p className="flex justify-between"><span className="text-muted">Pagás ahora ({Math.round(pctNum * 100)} %)</span><b className="font-mono">{usd(sumaAhora)}</b></p>}
-          {parcial && <p className="flex justify-between"><span className="text-muted">Queda debiendo</span><b className="font-mono text-amber-300">{usd(sumaQueda)}</b></p>}
+          {seleccion.length > 0 && <p className="flex justify-between"><span className="text-muted">Pagás ahora{parcial ? ` (${Math.round(pctNum * 100)} %)` : ''}{totalUsd > 0 ? ', con comisión' : ''}</span><b className="font-mono text-emerald-400">{usd(pagoTotalAhora)}</b></p>}
+          {seleccion.length > 0 && <p className="flex justify-between"><span className="text-muted">Te queda debiendo de esto</span><b className={`font-mono ${sumaQueda > 0.005 ? 'text-amber-300' : 'text-muted'}`}>{usd(sumaQueda)}</b></p>}
           {totalUsd > 0 && sumaAhora > 0 && <p className="flex justify-between"><span className="text-muted">Comisión repartida</span><b className={`font-mono ${comision < 0 ? 'text-red-400' : ''}`}>{usd(comision)} ({((totalUsd / sumaAhora - 1) * 100).toFixed(1)} %)</b></p>}
         </div>
         <div className="space-y-2">
