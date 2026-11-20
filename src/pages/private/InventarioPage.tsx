@@ -22,6 +22,7 @@ import { LibresTabs } from '../../components/layout/LibresTabs'
 import { ProductoImg } from '../../components/ui/ProductoImg'
 import { esEtapaCompra, etapaDeCompra, estadoPedidoDesdeEtapa } from '../../utils/compraEtapa'
 import { CompraLoteModal } from '../../components/inventario/CompraLoteModal'
+import { buscarEnTienda, useCatalogoTienda } from '../../hooks/useCatalogoTienda'
 import { PagarVariasModal, RepartirEnvioModal } from '../../components/inventario/VariasComprasModals'
 import { pagadoInversion, porPagarInversion, tallasDeTexto } from '../../utils/compraPago'
 import { loteDe } from '../../utils/repartoCompra'
@@ -420,13 +421,23 @@ function ProductModal({ open, item, inicial, products, onClose, onSaved }: { ope
   const [destino, setDestino] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
   const [tipoCambio, setTipoCambio] = useState(37)
   const [saving, setSaving] = useState(false)
+  // Si se escribió un código antes de que cargara el catálogo, se completa apenas llega.
+  const tienda = useCatalogoTienda(open, (lista) => setForm((f) => {
+    if (!f.codigo.trim() || f.producto.trim()) return f
+    const t = buscarEnTienda(lista, f.codigo)
+    return t ? { ...f, producto: t.nombre, marca: t.marca, precio_venta_estimado: f.precio_venta_estimado || (t.precioVenta > 0 ? String(t.precioVenta) : '') } : f
+  }))
   useEffect(() => { if (!open) return; setFile(null); setDestino({ cuentaId: null, montoCuenta: 0 }); void obtenerTipoCambio().then(setTipoCambio).catch(() => undefined); setForm(item ? { fecha: item.fecha.slice(0, 10), producto_id: item.producto_id ?? '', codigo: item.codigo ?? '', producto: item.producto, marca: item.marca ?? '', talla_color: item.talla_color ?? '', cantidad: String(item.cantidad), costo_unitario: String(item.costo_unitario), gastos_adicionales: String(item.gastos_adicionales), precio_venta_estimado: String(item.precio_venta_estimado), metodo: 'Transferencia', notas: item.notas ?? '', tracking: item.tracking ?? '', transportista: item.transportista ?? '', url_tracking: item.url_tracking ?? '', llega_aprox: item.llega_aprox ?? '', mostrar_tienda: item.mostrar_tienda !== false, preparando: false, pago: porPagar(item) ? 'pendiente' : 'antes', adelanto: '', porTalla: false, estado: item.estado } : { ...empty, ...(inicial ?? {}) }) }, [item, open, inicial])
 
   // Al escribir el código se completa todo solo (nombre, marca, precios y foto) si coincide con un producto del catálogo.
   const aplicarCodigo = (codigo: string) => {
     const buscado = codigo.trim().toLowerCase()
     const product = buscado ? products.find((entry) => entry.codigo?.trim().toLowerCase() === buscado) : undefined
-    setForm((current) => product ? { ...current, codigo, producto_id: product.id, producto: product.nombre, marca: product.marca || '', costo_unitario: String(product.precio_compra ?? ''), precio_venta_estimado: String(product.precio_venta ?? '') } : { ...current, codigo, producto_id: '' })
+    // Si no está en la lista interna, se busca en el catálogo de la tienda (productos nuevos).
+    const t = product ? null : buscarEnTienda(tienda, codigo)
+    setForm((current) => product ? { ...current, codigo, producto_id: product.id, producto: product.nombre, marca: product.marca || '', costo_unitario: String(product.precio_compra ?? ''), precio_venta_estimado: String(product.precio_venta ?? '') }
+      : t ? { ...current, codigo, producto_id: '', producto: t.nombre, marca: t.marca, precio_venta_estimado: t.precioVenta > 0 ? String(t.precioVenta) : current.precio_venta_estimado }
+      : { ...current, codigo, producto_id: '' })
   }
 
   const submit = async (event: FormEvent) => {
@@ -481,8 +492,8 @@ function ProductModal({ open, item, inicial, products, onClose, onSaved }: { ope
   const catalogImagen = useMemo(() => {
     const codigo = form.codigo.trim().toLowerCase()
     const match = products.find((product) => product.id === form.producto_id) ?? (codigo ? products.find((product) => product.codigo?.trim().toLowerCase() === codigo) : undefined)
-    return match?.imagen ?? null
-  }, [products, form.producto_id, form.codigo])
+    return match?.imagen ?? buscarEnTienda(tienda, form.codigo)?.imagen ?? null
+  }, [products, form.producto_id, form.codigo, tienda])
   const usaCatalogo = !file && !item?.imagen && Boolean(catalogImagen)
   const previewSrc = file ? null : (item?.imagen ?? catalogImagen)
 

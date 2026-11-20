@@ -6,6 +6,7 @@ import { CuentaSelect, type DestinoPago } from '../finanzas/CuentaSelect'
 import { obtenerTipoCambio, registrarCompraLibre, registrarEnvioCompras } from '../../services/comercial.service'
 import type { Inversion, Producto } from '../../types/domain'
 import { tallasDeTexto } from '../../utils/compraPago'
+import { buscarEnTienda, useCatalogoTienda } from '../../hooks/useCatalogoTienda'
 import { MODOS_REPARTO, TIPOS_PRODUCTO, nuevoLote, repartir, tipoDeProducto, type ModoReparto, type TipoProducto } from '../../utils/repartoCompra'
 
 // COMPRA EN CONJUNTO: varios productos pagados en UN solo pago (con la comisión de PayPal
@@ -45,6 +46,14 @@ export function CompraLoteModal({ open, products, onClose, onSaved }: { open: bo
   const [destinoEnvio, setDestinoEnvio] = useState<DestinoPago>({ cuentaId: null, montoCuenta: 0 })
   const [tipoCambio, setTipoCambio] = useState(37)
   const [saving, setSaving] = useState(false)
+  // Si se escribió un código antes de que cargara el catálogo, se completa apenas llega.
+  const tienda = useCatalogoTienda(open, (lista) => setLineas((ls) => ls.map((l) => {
+    if (!l.codigo.trim() || l.producto.trim()) return l
+    const t = buscarEnTienda(lista, l.codigo)
+    if (!t) return l
+    const tipoT = tipoDeProducto(t.texto)
+    return { ...l, producto: t.nombre, marca: t.marca, precioVenta: l.precioVenta || (t.precioVenta > 0 ? String(t.precioVenta) : ''), imagen: t.imagen, tipo: tipoT, lb: String(TIPOS_PRODUCTO[tipoT].lb) }
+  })))
 
   useEffect(() => {
     if (!open) return
@@ -58,7 +67,13 @@ export function CompraLoteModal({ open, products, onClose, onSaved }: { open: bo
   const aplicarCodigo = (key: string, codigo: string) => {
     const buscado = codigo.trim().toLowerCase()
     const p = buscado ? products.find((x) => x.codigo?.trim().toLowerCase() === buscado) : undefined
-    if (!p) return cambiar(key, { codigo, producto_id: '' })
+    if (!p) {
+      // No está en la lista interna: se busca en el catálogo de la tienda (productos nuevos).
+      const t = buscarEnTienda(tienda, codigo)
+      if (!t) return cambiar(key, { codigo, producto_id: '' })
+      const tipoT = tipoDeProducto(t.texto)
+      return cambiar(key, { codigo, producto_id: '', producto: t.nombre, marca: t.marca, precioVenta: t.precioVenta > 0 ? String(t.precioVenta) : '', imagen: t.imagen, tipo: tipoT, lb: String(TIPOS_PRODUCTO[tipoT].lb) })
+    }
     const tipo = tipoDeProducto(`${p.categoria ?? ''} ${p.nombre}`)
     cambiar(key, { codigo, producto_id: p.id, producto: p.nombre, marca: p.marca ?? '', precioVenta: String(p.precio_venta ?? ''), imagen: p.imagen ?? null, tipo, lb: String(TIPOS_PRODUCTO[tipo].lb) })
   }
