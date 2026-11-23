@@ -11,7 +11,7 @@ import { IngresoEnCuenta, INGRESO_VACIO, type Ingreso } from '../../components/f
 import { FacturaModal } from '../../components/pedidos/FacturaModal'
 import { ESTADOS_PEDIDO } from '../../constants/orders'
 import { DEPARTAMENTOS_NI, esManagua } from '../../constants/nicaragua'
-import { costoEnvioDepartamento, envioSugerido, type EleccionEnvio } from '../../constants/cargotrans'
+import { costoEleccion, envioSugerido, type EleccionEnvio } from '../../constants/cargotrans'
 import { SelectorEnvioDepartamento } from '../../components/pedidos/SelectorEnvioDepartamento'
 import { DEMO_CLIENTES } from '../../data/demo'
 import { isSupabaseConfigured } from '../../lib/supabase'
@@ -96,7 +96,7 @@ export function NuevoPedidoPage() {
   const clienteSel = clientes.find((c) => c.id === clienteId)
   const esDepartamento = Boolean(clienteSel && (clienteSel.departamento || clienteSel.ciudad) && !esManagua(clienteSel.departamento, clienteSel.ciudad))
   const envioSel: EleccionEnvio = eleccionEnvio && eleccionEnvio.clienteId === clienteId ? eleccionEnvio : envioSugerido(clienteSel?.ciudad, clienteSel?.departamento)
-  const envioDep = esDepartamento && clienteSel ? costoEnvioDepartamento(envioSel.metodo, envioSel.ruta, (clienteSel.ciudad || clienteSel.departamento || '').trim(), tipoCambio) : null
+  const envioDep = esDepartamento && clienteSel ? costoEleccion(envioSel, (clienteSel.ciudad || clienteSel.departamento || '').trim(), tipoCambio) : null
   const envioDepUsd = envioDep?.usd ?? 0
 
   // Cupón / descuento aplicado. El descuento se recalcula solo si cambian los productos (para

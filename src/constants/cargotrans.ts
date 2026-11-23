@@ -6,7 +6,8 @@
 
 export type RutaCargotrans = 'primaria' | 'secundaria' | 'terciaria'
 export type MetodoEnvio = 'cargotrans' | 'bus' | 'ninguno'
-export type EleccionEnvio = { metodo: MetodoEnvio; ruta: RutaCargotrans | null }
+// monto: lo que escribió el dueño (US$); null = el estimado automático.
+export type EleccionEnvio = { metodo: MetodoEnvio; ruta: RutaCargotrans | null; monto: string | null }
 
 export const CARGOTRANS_MOTORIZADO_NIO = 100
 export const BUS_NIO = 160
@@ -53,9 +54,24 @@ function buscarRuta(valor: string | null | undefined) {
   return (todos.find((x) => x.l === v) ?? todos.find((x) => ` ${v} `.includes(` ${x.l} `)))?.r.ruta ?? null
 }
 
-// Ruta según el municipio (ciudad) del cliente; si no se encuentra, según el departamento.
+// Si el municipio no está en la tabla, se ESTIMA por el departamento (cabeceras y ciudades grandes
+// del norte y centro van por la ruta principal; Río San Juan y el Caribe, por las más largas).
+// Es un estimado: el dueño corrige el monto en el pedido si sale distinto.
+const RUTA_POR_DEPARTAMENTO: Record<string, RutaCargotrans> = {
+  'masaya': 'primaria', 'carazo': 'primaria', 'granada': 'primaria', 'rivas': 'primaria', 'leon': 'primaria', 'chinandega': 'primaria',
+  'esteli': 'primaria', 'madriz': 'primaria', 'nueva segovia': 'primaria', 'matagalpa': 'primaria', 'jinotega': 'primaria', 'boaco': 'primaria', 'chontales': 'primaria',
+  'rio san juan': 'terciaria', 'raccn': 'terciaria', 'raccs': 'secundaria', 'costa caribe norte': 'terciaria', 'costa caribe sur': 'secundaria',
+}
+function rutaDeDepartamento(departamento: string | null | undefined): RutaCargotrans | null {
+  const d = norm(departamento)
+  if (!d) return null
+  const k = Object.keys(RUTA_POR_DEPARTAMENTO).sort((a, b) => b.length - a.length).find((x) => d === x || ` ${d} `.includes(` ${x} `))
+  return k ? RUTA_POR_DEPARTAMENTO[k] : null
+}
+
+// Ruta según el municipio (ciudad) del cliente; si no está en la tabla, la del departamento.
 export function rutaCargotrans(ciudad: string | null | undefined, departamento: string | null | undefined) {
-  return buscarRuta(ciudad) ?? buscarRuta(departamento)
+  return buscarRuta(ciudad) ?? buscarRuta(departamento) ?? rutaDeDepartamento(departamento) ?? rutaDeDepartamento(ciudad)
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100
@@ -69,5 +85,16 @@ export function costoEnvioDepartamento(metodo: MetodoEnvio, ruta: RutaCargotrans
   return { usd: r2(r.usd + CARGOTRANS_MOTORIZADO_NIO / tc), detalle: `Cargotrans a ${lugar} (${r.label.toLowerCase()} US$${r.usd} + C$${CARGOTRANS_MOTORIZADO_NIO} motorizado)` }
 }
 
-// Lo que se propone para un cliente de departamento: Cargotrans con la ruta de su municipio.
-export const envioSugerido = (ciudad?: string | null, departamento?: string | null): EleccionEnvio => ({ metodo: 'cargotrans', ruta: rutaCargotrans(ciudad, departamento) })
+// Lo que se propone para un cliente de departamento: Cargotrans con el costo de su dirección.
+export const envioSugerido = (ciudad?: string | null, departamento?: string | null): EleccionEnvio => ({ metodo: 'cargotrans', ruta: rutaCargotrans(ciudad, departamento), monto: null })
+
+// Costo final de la elección: el monto escrito a mano manda; si no, el estimado.
+export function costoEleccion(e: EleccionEnvio, lugar: string, tipoCambio: number) {
+  if (e.metodo === 'ninguno') return null
+  const est = costoEnvioDepartamento(e.metodo, e.ruta, lugar, tipoCambio)
+  if (e.monto != null && e.monto.trim() !== '') {
+    const usd = r2(Math.max(0, Number(e.monto.replace(',', '.')) || 0))
+    return { usd, detalle: e.metodo === 'bus' ? `Bus a ${lugar}` : `Cargotrans a ${lugar}` }
+  }
+  return est
+}
