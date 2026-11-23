@@ -1,4 +1,5 @@
 import { DEPARTAMENTOS_NI } from '../constants/nicaragua'
+import { RUTAS_CARGOTRANS } from '../constants/cargotrans'
 
 // DATOS DEL CLIENTE PARA CONFIRMAR UNA ORDEN
 // 1) mensajePedirDatos: el mensaje (de "usted") que se le manda por WhatsApp con los datos que
@@ -78,10 +79,44 @@ export function leerDatosCliente(texto: string): DatosClienteLeidos {
   if (datos.departamento) datos.departamento = departamentoDe(datos.departamento) ?? datos.departamento
   else datos.departamento = departamentoDe(String(texto))
   // Sin etiquetas: si la primera línea parece un nombre (solo letras, 2 palabras o más), es el nombre.
-  if (!datos.nombre && lineas[0] && /^[\p{L}][\p{L}' .]{2,60}$/u.test(lineas[0]) && lineas[0].trim().split(/\s+/).length >= 2 && !/:/.test(lineas[0])) datos.nombre = lineas[0]
+  // (Se saltan los saludos: "Hola buenas", "Buenas tardes", "Gracias"…)
+  const saludo = (l: string) => /^(hola|buenas|buenos|buen dia|saludos|gracias|muchas gracias|ok|listo|aqui|aca|mis datos|estos son)\b/.test(norm(l))
+  const posibleNombre = lineas.slice(0, 3).find((l) => !saludo(l) && /^[\p{L}][\p{L}' .]{2,60}$/u.test(l) && l.trim().split(/\s+/).length >= 2 && !departamentoDe(l))
+  if (!datos.nombre && posibleNombre) datos.nombre = posibleNombre
+  leerLineasSueltas(lineas, datos)
   for (const k of Object.keys(datos) as (keyof DatosClienteLeidos)[]) if (!datos[k]) delete datos[k]
   return datos
 }
 
 // Cuántos datos se encontraron (para avisar "Encontré 6 datos").
 export const cuantosDatos = (d: DatosClienteLeidos) => Object.values(d).filter(Boolean).length
+
+// Las líneas SIN etiqueta (el cliente escribió solo los datos, uno por línea):
+//   "Chinandega" (el departamento) → ya se tomó; "Chichigalpa" (línea corta) → municipio;
+//   la línea con señas ("1c al este", "frente a…", "Esc. …") → dirección; la siguiente
+//   ("Casa 2 pisos celeste") → punto de referencia; "Talla 38 EUR" → talla 38.
+const SENAS = /(\d+(\/\d+)?\s*(c|cuadras?|cdras?|vrs?|varas?|km|mts?|metros)\b|\bal (norte|sur|este|oeste|lago)\b|\b(frente|contiguo|costado|detras|detrás|enfrente|esquina|semaforos?|rotonda|iglesia|parque|escuela|esc|colegio|gasolinera|mercado|bo|barrio|bo\.|reparto|rpto|residencial|res|colonia|col|calle|avenida|ave|casa|km|carretera|comarca|villa|urbanizacion|urbanización|edificio|apto|apartamento|porton|portón|pulperia|pulpería)\b)/i
+function leerLineasSueltas(lineas: string[], datos: DatosClienteLeidos) {
+  const conEtiqueta = (l: string) => { const m = l.match(/^([^:：]{2,45})[:：]/); if (!m) return false; const e = norm(m[1]).replace(/\(.*?\)/g, '').replace(/[^a-z0-9 /-]/g, '').replace(/\s+/g, ' ').trim(); return ETIQUETAS.some(([, re]) => re.test(e)) }
+  const esDepto = (l: string) => { const d = departamentoDe(l); return d ? norm(l).replace(/[^a-z ]/g, '').trim() === norm(d.split(' (')[0]) : false }
+  let deptoVisto = false
+  const municipios = new Set(RUTAS_CARGOTRANS.flatMap((r) => r.lugares.map(norm)))
+  const esMunicipio = (l: string) => municipios.has(norm(l).replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim())
+  for (const l of lineas) {
+    if (conEtiqueta(l) || l === datos.nombre || EMAIL.test(l) || /^(hola|buenas|buenos|buen dia|saludos|gracias|muchas gracias|ok|listo)\b/.test(norm(l))) continue
+    if (/^\+?[\d\s-]{8,16}$/.test(l)) continue
+    const talla = l.match(/^(?:talla|tallas|size|n[uú]mero)\s*[:#]?\s*(\d{2}(?:[.,]5)?)/i) ?? l.match(/^(\d{2}(?:[.,]5)?)\s*(?:eur|eu)$/i)
+    if (talla) { if (!datos.talla) datos.talla = talla[1].replace(',', '.'); continue }
+    if (esDepto(l) && !deptoVisto) { deptoVisto = true; continue }
+    // "Chinandega, Chichigalpa": el departamento y el municipio en la misma línea.
+    const partes = l.split(/\s*[,/-]\s*/).filter(Boolean)
+    if (partes.length === 2 && !SENAS.test(l) && partes.some(esDepto)) { if (!datos.ciudad) datos.ciudad = partes.find((x) => !esDepto(x)) ?? partes[1]; continue }
+    const corta = /^[\p{L}][\p{L}' .]{1,40}$/u.test(l) && l.split(/\s+/).length <= 4 && !SENAS.test(l)
+    // Saludos o frases sueltas ("Hola", "Quiero estos") no son datos: el municipio va después del
+    // departamento (o es uno conocido) y la dirección lleva señas o va después del lugar.
+    if (corta && !datos.ciudad && (deptoVisto || esMunicipio(l) || esDepto(l))) { datos.ciudad = l; continue }
+    if (!datos.direccion) { if (SENAS.test(l) || deptoVisto || datos.ciudad) datos.direccion = l; continue }
+    if (!datos.referencia) { datos.referencia = l; continue }
+    datos.referencia = `${datos.referencia}. ${l}`
+  }
+}
