@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
-import { CircleDollarSign, PackagePlus, Plus, Save, Ticket, Trash2, UserPlus, UserX, X } from 'lucide-react'
+import { CircleDollarSign, FileClock, MessageCircle, PackagePlus, Plus, Save, Ticket, Trash2, UserPlus, UserX, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useFieldArray, useForm, useWatch } from 'react-hook-form'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -23,6 +23,8 @@ import { cuponActivoDeCliente, registrarUsoCupon, validarCupon } from '../../ser
 import { type FacturaData } from '../../services/factura.service'
 import { agregarEnvioPedido, crearPedido, ENVIO_RAPIDO_RECARGO } from '../../services/pedidos.service'
 import type { Cliente, Cupon, EstadoPedido, Producto } from '../../types/domain'
+import { eliminarBorrador, guardarBorrador, obtenerBorrador, type PagoBorrador } from '../../services/borradoresPedido.service'
+import { MensajePagoModal } from '../../components/pedidos/MensajePagoModal'
 
 // Descuento aplicado al pedido: un cupón validado, la sugerencia del cliente, o uno manual.
 type CuponAplicado = { id?: string; codigo: string; tipo: 'porcentaje' | 'monto'; valor: number }
@@ -79,7 +81,7 @@ export function NuevoPedidoPage() {
   // Abono inicial: la cuenta manda la moneda (córdobas o dólares). El monto en dólares (para
   // el saldo del pedido) se calcula solo y se refleja en el campo `abono` del formulario.
   const [ingresoAbono, setIngresoAbono] = useState<Ingreso>(INGRESO_VACIO)
-  const { register, control, handleSubmit, setValue, getValues, formState: { errors, isSubmitting } } = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { cliente_id: '', estado: 'pedido_confirmado', fecha_pedido: new Date().toISOString().slice(0, 10), fecha_estimada: '', abono: 0, metodo_pago: 'Transferencia', notas_internas: '', notas_publicas: '', envio_rapido: false, items: [blankItem] } })
+  const { register, control, handleSubmit, setValue, getValues, reset, formState: { errors, isSubmitting } } = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { cliente_id: '', estado: 'pedido_confirmado', fecha_pedido: new Date().toISOString().slice(0, 10), fecha_estimada: '', abono: 0, metodo_pago: 'Transferencia', notas_internas: '', notas_publicas: '', envio_rapido: false, items: [blankItem] } })
   const { fields, append, remove } = useFieldArray({ control, name: 'items' })
   const items = useWatch({ control, name: 'items' })
   const abono = useWatch({ control, name: 'abono' }) || 0
@@ -98,6 +100,15 @@ export function NuevoPedidoPage() {
   const envioSel: EleccionEnvio = eleccionEnvio && eleccionEnvio.clienteId === clienteId ? eleccionEnvio : envioSugerido(clienteSel?.ciudad, clienteSel?.departamento)
   const envioDep = esDepartamento && clienteSel ? costoEleccion(envioSel, (clienteSel.ciudad || clienteSel.departamento || '').trim(), tipoCambio) : null
   const envioDepUsd = envioDep?.usd ?? 0
+
+  // BORRADOR: el pedido armado que espera el depósito ("mañana le deposito"). Se abre con
+  // ?borrador=ID; al guardarlo como pedido nace con la fecha de HOY (el día que depositó) y el
+  // borrador se borra. Mientras tanto se le manda la cotización / "esperamos su pago".
+  const [borradorId] = useState(() => new URLSearchParams(location.search).get('borrador'))
+  const [borradorCargado, setBorradorCargado] = useState<string | null>(null)
+  const [pagoBorrador, setPagoBorrador] = useState<PagoBorrador>('50')
+  const [mensajeOpen, setMensajeOpen] = useState(false)
+  const [guardandoBorrador, setGuardandoBorrador] = useState(false)
 
   // Cupón / descuento aplicado. El descuento se recalcula solo si cambian los productos (para
   // porcentajes). Se aplica sobre el total del pedido (productos + envío) y nunca lo pasa.
@@ -196,6 +207,34 @@ export function NuevoPedidoPage() {
     } catch { toast.error('No se pudo elegir "Cliente sin nombre".') }
   }
 
+  useEffect(() => {
+    if (!borradorId) return
+    void obtenerBorrador(borradorId).then((b) => {
+      if (!b) { toast.error('Ese borrador ya no existe.'); return }
+      reset({ ...(b.valores as FormValues), cliente_id: b.clienteId, fecha_pedido: new Date().toISOString().slice(0, 10) })
+      if (b.envio) setEleccionEnvio({ ...b.envio, clienteId: b.clienteId })
+      if (b.cupon) setCuponAplicado(b.cupon)
+      setPagoBorrador(b.pago)
+      setBorradorCargado(b.clienteNombre)
+    }).catch(() => toast.error('No se pudo abrir el borrador.'))
+  }, [borradorId]) // eslint-disable-line react-hooks/exhaustive-deps
+  const lineasMensaje = (items ?? []).filter((it) => (it.producto || it.codigo_producto) && Number(it.precio_unitario) > 0).map((it) => ({
+    nombre: it.producto || it.codigo_producto, talla: (it.talla ?? '').trim() || null, cantidad: Number(it.cantidad) || 1, precio: Number(it.precio_unitario) || 0,
+    imagen: productos.find((p) => p.id === it.producto_id)?.imagen ?? null,
+  }))
+  const guardarComoBorrador = async () => {
+    const v = getValues()
+    const cli = clientes.find((c) => c.id === v.cliente_id)
+    if (!cli) return toast.error('Elegí o creá el cliente antes de guardar el borrador.')
+    if (!lineasMensaje.length) return toast.error('Agregá al menos un producto con precio.')
+    setGuardandoBorrador(true)
+    try {
+      await guardarBorrador({ id: borradorId, clienteId: cli.id, clienteNombre: cli.nombre, clienteWhatsapp: cli.whatsapp ?? null, total: totalConDescuento, pago: pagoBorrador, envio: esDepartamento ? { metodo: envioSel.metodo, ruta: envioSel.ruta, monto: envioSel.monto } : null, valores: v as unknown as Record<string, unknown>, cupon: cuponAplicado })
+      toast.success('Borrador guardado. Cuando deposite, abrilo en Pedidos → Borradores y guardalo.')
+      navigate('/pedidos')
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo guardar el borrador.') } finally { setGuardandoBorrador(false) }
+  }
+
   const submit = async (values: FormValues) => {
     try {
       const normalizedItems = values.items.map((item, index) => ({ ...item, producto: item.producto || item.codigo_producto, cantidad: 1, color: (item.color ?? '').trim(), envio_internacional: 0, costo_delivery: 0, otros_gastos: 0, notas: '', imagen: productos.find((product) => product.id === item.producto_id)?.imagen ?? (index === 0 ? prefill?.imagen ?? null : null) }))
@@ -208,7 +247,8 @@ export function NuevoPedidoPage() {
       if (envioDep && envioDep.usd > 0) { try { await agregarEnvioPedido(created.id, envioDep.usd, envioDep.detalle) } catch { toast.error('El pedido se creó, pero no se pudo agregar el envío: agrégalo desde el pedido.') } }
       // El cupón solo se "quema" si el cliente pagó (hubo abono). Si no transfirió, sigue vivo.
       if (cuponAplicado?.id && values.abono > 0) { try { await registrarUsoCupon(cuponAplicado.id) } catch { /* no crítico */ } }
-      toast.success('Pedido creado correctamente.')
+      if (borradorId) { try { await eliminarBorrador(borradorId) } catch { /* el pedido ya se creó */ } }
+      toast.success(borradorId ? 'Pedido creado con la fecha de hoy (el depósito). El borrador se quitó.' : 'Pedido creado correctamente.')
       const cliente = clientes.find((client) => client.id === values.cliente_id)
       const facturaItems = normalizedItems.map((item) => ({ producto: item.producto, detalle: [item.marca, item.talla, item.color].filter(Boolean).join(' · ') || undefined, cantidad: 1, precio: Number(item.precio_unitario || 0), codigo: item.codigo_producto || undefined, imagen: item.imagen ?? null }))
       // El envío rápido va como una línea más de la factura (mismo criterio que el pedido).
@@ -234,6 +274,7 @@ export function NuevoPedidoPage() {
     <Volver destino="/pedidos" />
     {!isSupabaseConfigured && <div className="preview-banner"><strong>Vista previa local:</strong> el formulario valida y calcula, pero no persiste hasta conectar Supabase.</div>}
     {prefill && <div className="mb-4 rounded-xl border border-accent/30 bg-accent/[.06] p-3 text-[12px] leading-5 text-accent"><strong>Apartado de compra libre:</strong> estás convirtiendo <strong>{prefill.producto}</strong> en un pedido normal (con su código, control de calidad y estados). Elegí el cliente; el abono ya viene con el 50%. El costo no se descuenta otra vez (su pago al proveedor se lleva en Compras libres); al guardar, la compra queda ligada a este pedido.</div>}
+    {borradorId && <div className="mb-4 rounded-xl border border-amber-400/40 bg-amber-400/[.07] p-3 text-[12px] leading-5"><strong>Borrador{borradorCargado ? ` de ${borradorCargado}` : ''}:</strong> cuando el cliente deposite, registrá el abono abajo y tocá <strong>Guardar pedido</strong>. El pedido queda con la fecha de hoy y el borrador se quita. Si todavía no deposita, mandale <strong>Esperamos su pago</strong>.</div>}
     <div><p className="eyebrow">Nuevo registro</p><h1 className="page-title">Registrar venta y pedido</h1><p className="page-subtitle">Guarda la venta una sola vez; el código público HS se genera automáticamente.</p></div>
     <form onSubmit={handleSubmit(submit)} className="mt-7 space-y-5">
       <section className="form-section"><SectionTitle number="01" title="Cliente y estado" /><div className="form-grid mt-5"><div className="form-field sm:col-span-2"><span>Cliente</span><div className="flex gap-2"><input type="hidden" {...register('cliente_id')} /><ClienteBuscador clientes={clientes} valor={clienteId ?? ''} onElegir={(id) => setValue('cliente_id', id, { shouldValidate: true, shouldDirty: true })} /><button type="button" className="subtle-button shrink-0 px-3" onClick={() => setQuickOpen((value) => !value)}><UserPlus size={17} /><span>Nuevo</span></button></div>{!clienteId && <button type="button" className="mt-2 inline-flex min-h-9 items-center gap-1.5 self-start rounded-lg border border-dashed border-line px-3 text-xs font-semibold text-muted hover:border-accent hover:text-accent" onClick={() => void elegirSinNombre()}><UserX size={14} /> No sé el nombre · vender así</button>}{errors.cliente_id && <small>{errors.cliente_id.message}</small>}</div>
@@ -272,10 +313,13 @@ export function NuevoPedidoPage() {
               </div>}
         </div>
 
+        <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" className="subtle-button justify-center" disabled={guardandoBorrador} onClick={() => void guardarComoBorrador()}><FileClock size={15} /> {guardandoBorrador ? 'Guardando…' : borradorId ? 'Actualizar borrador' : 'Guardar borrador'}</button><button type="button" className="subtle-button justify-center" disabled={!clienteSel || !lineasMensaje.length} onClick={() => setMensajeOpen(true)}><MessageCircle size={15} /> Esperamos su pago</button></div>
+        <p className="mt-1.5 text-[11px] leading-4 text-muted">¿Todavía no deposita? Guardalo como <b>borrador</b>: no cuenta como venta y el pedido se crea con la fecha del día que registres el depósito.</p>
         <div className="mt-3 grid gap-3 rounded-xl border border-line bg-white/[0.025] p-4 sm:grid-cols-3 lg:grid-cols-6"><Money label="Venta" value={total + envioDepUsd} /><Money label="Descuento" value={descuento} /><Money label="Costo" value={costo} /><Money label="Ganancia" value={totalConDescuento - envioDepUsd - costo} accent /><Money label="Abono" value={abono} /><Money label="Saldo" value={totalConDescuento - abono} /></div><div className="mt-3 grid gap-3 rounded-xl border border-line bg-white/[.02] p-4">{costo > 0 && !prefill && <p className="text-[11px] leading-5 text-muted">El pago al proveedor (US$ {costo.toFixed(2)}) se descuenta de la cuenta cuando pases el pedido a <strong className="text-white">En preparación</strong> — ahí eliges de qué cuenta salió. Aquí solo lo registras como costo del pedido.</p>}{prefill && <p className="text-[11px] leading-5 text-muted">El costo (US$ {costo.toFixed(2)}) ya salió de caja cuando trajiste el producto para stock; no se descuenta de nuevo.</p>}<IngresoEnCuenta tipoCambio={tipoCambio} value={ingresoAbono} onChange={setIngresoAbono} label="Abono inicial (dejá el monto en 0 si aún no ha pagado)" /></div>{envioRapido && <p className="mt-2 text-[11px] text-muted">La venta incluye US$15 de envío rápido (14–17 días).</p>}</section>
       <div className="sticky bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] z-10 flex items-center lg:bottom-3 justify-between gap-3 rounded-2xl border border-line bg-panel/95 p-3 shadow-2xl backdrop-blur-xl"><div className="hidden items-center gap-2 text-xs text-muted sm:flex"><CircleDollarSign size={17} className="text-accent" /> Total: <strong className="text-base font-semibold text-white">${totalConDescuento.toFixed(2)}</strong>{descuento > 0 && <span className="text-[10px] text-muted">(−${descuento.toFixed(2)})</span>}</div><button type="button" className="subtle-button px-5" onClick={() => navigate('/pedidos')}>Cancelar</button><button disabled={isSubmitting} className="primary-button flex-1 px-6 sm:flex-none"><Save size={17} /> {isSubmitting ? 'Guardando…' : 'Guardar pedido'}</button></div>
     </form>
     <FacturaModal factura={factura} onClose={() => { setFactura(null); navigate('/pedidos') }} />
+    {mensajeOpen && clienteSel && <MensajePagoModal open onClose={() => setMensajeOpen(false)} cliente={{ nombre: clienteSel.nombre, whatsapp: clienteSel.whatsapp }} lineas={lineasMensaje} envio={envioDep && envioDep.usd > 0 ? { usd: envioDep.usd, detalle: envioDep.detalle, lugar: (clienteSel.ciudad || clienteSel.departamento || '').trim() } : null} descuento={descuento} tipoCambio={tipoCambio} pagoInicial={pagoBorrador} onPagoCambia={setPagoBorrador} />}
   </div>
 }
 

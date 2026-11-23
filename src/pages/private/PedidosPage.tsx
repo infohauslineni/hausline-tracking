@@ -1,4 +1,4 @@
-import { ArrowUpRight, Ban, Boxes, CalendarDays, CheckCircle2, ChevronDown, CircleDollarSign, ClipboardList, Download, Package, Plus, Search, Trash2, Truck, XCircle } from 'lucide-react'
+import { ArrowUpRight, Ban, Boxes, CalendarDays, CheckCircle2, ChevronDown, CircleDollarSign, ClipboardList, Download, FileClock, Package, Plus, Search, Trash2, Truck, XCircle } from 'lucide-react'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useEstadoVista } from '../../hooks/useEstadoVista'
@@ -12,6 +12,8 @@ import { CancelarPedidoModal } from '../../components/pedidos/CancelarPedidoModa
 import { ListaCompraModal } from '../../components/pedidos/ListaCompraModal'
 import { PagoProveedorLoteModal } from '../../components/pedidos/PagoProveedorLoteModal'
 import { RepartirEnvioPedidosModal } from '../../components/pedidos/RepartirEnvioPedidosModal'
+import { BorradoresModal } from '../../components/pedidos/BorradoresModal'
+import { listarBorradores, type BorradorPedido } from '../../services/borradoresPedido.service'
 import { yaEnListaProveedor } from '../../utils/listaProveedor'
 import { useAuth } from '../../contexts/AuthContext'
 import type { EstadoPedido, Pedido } from '../../types/domain'
@@ -30,6 +32,11 @@ export function PedidosPage() {
   // Pagar al proveedor varios productos juntos (comisión de PayPal repartida por precio).
   // Desde Compras libres ("Pagar con pedidos") se llega con ?pagar=proveedor: abre la ventana directo.
   const [pagoOpen, setPagoOpen] = useState(() => new URLSearchParams(window.location.search).get('pagar') === 'proveedor')
+  // Pedidos en borrador (esperando el depósito): no son pedidos todavía, van aparte.
+  const [borradores, setBorradores] = useState<BorradorPedido[]>([])
+  const [borradoresOpen, setBorradoresOpen] = useState(false)
+  const cargarBorradores = useCallback(() => { void listarBorradores().then(setBorradores).catch(() => undefined) }, [])
+  useEffect(() => { cargarBorradores() }, [cargarBorradores])
   const [envioOpen, setEnvioOpen] = useState(false)
   const porPedir = pedidos.filter((p) => p.estado === 'pedido_confirmado' && !yaEnListaProveedor(p)).length
   useEffect(() => { if (isSupabaseConfigured) void listarPedidos(setPedidos).then(setPedidos).catch(() => toast.error('No se pudieron cargar los pedidos.')).finally(() => setLoading(false)) }, [])
@@ -95,7 +102,7 @@ export function PedidosPage() {
 
   return <div>
     {!isSupabaseConfigured && <div className="preview-banner"><strong>Vista previa local:</strong> mostrando los pedidos de demostración de Hausline.</div>}
-    <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Operaciones</p><h1 className="page-title">Pedidos</h1><p className="page-subtitle">Gestiona todos tus pedidos en un solo lugar.</p></div><div className="flex flex-wrap gap-2"><button type="button" className="subtle-button px-4" onClick={() => setListaOpen(true)}><ClipboardList size={16} /> Lista de compra{porPedir ? ` (${porPedir})` : ''}</button>{esAdmin && <button type="button" className="subtle-button px-4" onClick={() => setPagoOpen(true)}><CircleDollarSign size={16} /> Pagar al proveedor</button>}{esAdmin && <button type="button" className="subtle-button px-4" onClick={() => setEnvioOpen(true)}><Truck size={16} /> Repartir envío</button>}<button type="button" className="subtle-button px-4" onClick={() => exportarCSV(filtered)}><Download size={16} /> Exportar</button>{esAdmin && <Link to="/pedidos/nuevo" className="primary-button px-5"><Plus size={18} /> Nuevo pedido</Link>}</div></div>
+    <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Operaciones</p><h1 className="page-title">Pedidos</h1><p className="page-subtitle">Gestiona todos tus pedidos en un solo lugar.</p></div><div className="flex flex-wrap gap-2">{esAdmin && borradores.length > 0 && <button type="button" className="subtle-button px-4 text-amber-200!" onClick={() => setBorradoresOpen(true)}><FileClock size={16} /> Borradores ({borradores.length})</button>}<button type="button" className="subtle-button px-4" onClick={() => setListaOpen(true)}><ClipboardList size={16} /> Lista de compra{porPedir ? ` (${porPedir})` : ''}</button>{esAdmin && <button type="button" className="subtle-button px-4" onClick={() => setPagoOpen(true)}><CircleDollarSign size={16} /> Pagar al proveedor</button>}{esAdmin && <button type="button" className="subtle-button px-4" onClick={() => setEnvioOpen(true)}><Truck size={16} /> Repartir envío</button>}<button type="button" className="subtle-button px-4" onClick={() => exportarCSV(filtered)}><Download size={16} /> Exportar</button>{esAdmin && <Link to="/pedidos/nuevo" className="primary-button px-5"><Plus size={18} /> Nuevo pedido</Link>}</div></div>
     <section className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-4">{enPendientes ? <>
         <MiniMetric label="Pendientes" value={delMes.filter((p) => !['entregado','cancelado'].includes(p.estado)).length} icon={Boxes} tone="blue" />
         <MiniMetric label="Con saldo" value={delMes.filter((p) => !['entregado','cancelado'].includes(p.estado) && p.saldo > 0).length} icon={CircleDollarSign} tone="danger" />
@@ -114,6 +121,7 @@ export function PedidosPage() {
       <span className="mx-1 w-px shrink-0 bg-line" />
       <Pestana activa={soloSaldo} onClick={() => setSoloSaldo(!soloSaldo)} texto="Con saldo" icono />
     </div>
+    {esAdmin && <BorradoresModal open={borradoresOpen} borradores={borradores} onClose={() => setBorradoresOpen(false)} onCambio={cargarBorradores} />}
     {esAdmin && <PagoProveedorLoteModal open={pagoOpen} pedidos={pedidos} onClose={() => setPagoOpen(false)} onPagado={refrescar} />}
     {esAdmin && <RepartirEnvioPedidosModal open={envioOpen} pedidos={pedidos} onClose={() => setEnvioOpen(false)} onListo={refrescar} />}
     <ListaCompraModal open={listaOpen} pedidos={pedidos} onClose={() => setListaOpen(false)} onMarcados={(ids, notas) => setPedidos((all) => all.map((p) => ids.includes(p.id) ? { ...p, notas_internas: notas.get(p.id) ?? `[EN_LISTA_PROVEEDOR] ${p.notas_internas ?? ''}`.trim() } : p))} />
