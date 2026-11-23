@@ -2,8 +2,7 @@ import { ArrowLeft, Check, Copy, CopyPlus, Download, Eye, ExternalLink, MessageC
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Modal } from '../ui/Modal'
-import { HauslineLogo } from '../ui/HauslineLogo'
-import { descargarOCompartirCotizacion, fechaCot, NEON, notasCotizacion, SITIO, usdCot, type CotizacionData, type CotizacionLinea } from '../../services/cotizacionImagen.service'
+import { descargarOCompartirCotizacion, fechaCot, notasCotizacion, SITIO, usdCot, type CotizacionData, type CotizacionLinea } from '../../services/cotizacionImagen.service'
 import { listarClientes } from '../../services/clientes.service'
 import { obtenerTipoCambio } from '../../services/comercial.service'
 import { sugerirPrecios, tipoDeTienda, type DatosPrecio } from '../../services/preciosSugeridos.service'
@@ -358,45 +357,47 @@ export function CarritoPrivadoModal({ iniciales, todos, costos, datosPrecio, onC
 }
 
 // VISTA CLIENTE: la cotización limpia, igual a la imagen que se descarga. Sin costo, ganancia,
-// códigos internos ni "mayorista/tienda". Estilo HAUSLINE: fondo oscuro y verde neón.
+// códigos internos ni "mayorista/tienda". Mismo estilo que la tienda: crema, blanco y negro,
+// títulos con serifa (Cormorant Garamond) y texto en Jost.
+const SERIF = { fontFamily: '"Cormorant Garamond", Georgia, serif' }
 function VistaCotizacion({ d }: { d: CotizacionData }) {
   const unidades = d.lineas.filter((l) => !l.envio).reduce((s, l) => s + l.cantidad, 0)
-  return <div className="overflow-hidden rounded-2xl border border-white/10 p-5 sm:p-7" style={{ background: 'radial-gradient(circle at 90% 0%, rgba(54,251,161,.14), transparent 55%), #0a0a0a', color: '#fff' }}>
+  const hayEnvio = d.lineas.some((l) => l.envio)
+  return <div className="overflow-hidden rounded-md border p-5 sm:p-7" style={{ background: '#FAF9F7', color: '#141110', borderColor: '#E8E4DD', fontFamily: '"Jost", "Helvetica Neue", Arial, sans-serif' }}>
     <div className="flex items-start justify-between gap-4">
       <div className="flex items-center gap-3">
-        <span className="shrink-0" style={{ ['--color-accent' as string]: NEON } as React.CSSProperties}><HauslineLogo size={42} /></span>
-        <div><b className="font-display block text-xl leading-none tracking-tight sm:text-2xl">HAUSLINE</b><span className="text-xs" style={{ color: '#a3a09a' }}>King of Shoes</span></div>
+        <div><b className="block text-2xl font-bold leading-none tracking-[.08em] sm:text-3xl" style={SERIF}>HAUSLINE</b><span className="text-[11px] uppercase tracking-[.2em]" style={{ color: '#9A9387' }}>King of Shoes</span></div>
       </div>
       <div className="text-right">
-        <p className="text-[11px] font-bold tracking-[.18em]" style={{ color: NEON }}>COTIZACIÓN</p>
-        <p className="font-display whitespace-nowrap text-base font-bold sm:text-lg">N.º {d.numero}</p>
-        <p className="whitespace-nowrap text-[11px] sm:text-xs" style={{ color: '#a3a09a' }}>{fechaCot(d.fecha)}</p>
+        <p className="text-[10px] font-medium uppercase tracking-[.24em]" style={{ color: '#5F5950' }}>Cotización</p>
+        <p className="whitespace-nowrap text-lg font-bold sm:text-xl" style={SERIF}>N.º {d.numero}</p>
+        <p className="whitespace-nowrap text-[11px] sm:text-xs" style={{ color: '#9A9387' }}>{fechaCot(d.fecha)}</p>
       </div>
     </div>
-    <div className="my-5 h-[2px] rounded" style={{ background: NEON }} />
-    {d.cliente && <div className="mb-4"><p className="text-[11px] font-semibold tracking-[.14em]" style={{ color: '#a3a09a' }}>PREPARADA PARA</p><p className="text-lg font-bold">{d.cliente}</p></div>}
+    <div className="my-5 h-px" style={{ background: '#141110' }} />
+    {d.cliente && <div className="mb-4"><p className="text-[10px] font-medium uppercase tracking-[.22em]" style={{ color: '#9A9387' }}>Preparada para</p><p className="text-xl font-bold" style={SERIF}>{d.cliente}</p></div>}
     <div className="space-y-2.5">
-      {d.lineas.map((l, i) => <div key={i} className="flex gap-3 rounded-xl p-3" style={{ background: '#141414' }}>
-        {l.imagen ? <img src={resolverImagenCatalogo(l.imagen)} alt="" className="size-16 shrink-0 rounded-lg bg-white object-cover sm:size-20" /> : <span className="size-16 shrink-0 rounded-lg sm:size-20" style={{ background: '#1f1f1f' }} />}
+      {d.lineas.map((l, i) => <div key={i} className="flex gap-3 rounded border p-3" style={{ background: '#FFFFFF', borderColor: '#E8E4DD' }}>
+        {l.envio ? null : l.imagen ? <img src={resolverImagenCatalogo(l.imagen)} alt="" className="size-16 shrink-0 rounded-sm bg-white object-cover sm:size-20" /> : <span className="size-16 shrink-0 rounded-sm sm:size-20" style={{ background: '#F1EFEB' }} />}
         <div className="min-w-0 flex-1">
-          <p className="line-clamp-2 font-bold leading-tight">{l.nombre}</p>
-          {l.tallas.length > 0 && <p className="mt-1 flex flex-wrap gap-x-2.5 text-sm font-semibold" style={{ color: NEON }}>{l.tallas.map((t) => <span key={t.talla} className="whitespace-nowrap">{t.talla} × {t.cantidad}</span>)}</p>}
-          <p className="mt-1 flex flex-wrap items-baseline justify-between gap-x-3 text-xs" style={{ color: '#a3a09a' }}><span className="whitespace-nowrap">{l.envio ? 'Envío a domicilio' : `${l.cantidad} ${l.cantidad === 1 ? 'unidad' : 'unidades'} × ${usdCot(l.precio)}`}</span><b className="font-display text-base font-extrabold sm:hidden" style={{ color: '#fff' }}>{usdCot(l.subtotal)}</b></p>
+          <p className="line-clamp-2 font-medium leading-tight">{l.nombre}</p>
+          {l.tallas.length > 0 && <p className="mt-1 flex flex-wrap gap-x-2.5 text-sm font-semibold">{l.tallas.map((t) => <span key={t.talla} className="whitespace-nowrap">Talla {t.talla} × {t.cantidad}</span>)}</p>}
+          <p className="mt-1 flex flex-wrap items-baseline justify-between gap-x-3 text-xs" style={{ color: '#5F5950' }}><span className="whitespace-nowrap">{l.envio ? 'Envío a domicilio' : `${l.cantidad} ${l.cantidad === 1 ? 'unidad' : 'unidades'} × ${usdCot(l.precio)}`}</span><b className="text-lg font-bold sm:hidden" style={{ ...SERIF, color: '#141110' }}>{usdCot(l.subtotal)}</b></p>
         </div>
-        <p className="font-display hidden shrink-0 text-lg font-extrabold sm:block">{usdCot(l.subtotal)}</p>
+        <p className="hidden shrink-0 text-xl font-bold sm:block" style={SERIF}>{usdCot(l.subtotal)}</p>
       </div>)}
     </div>
-    <div className="mt-4 flex items-end justify-between gap-3 rounded-2xl px-5 py-4" style={{ background: NEON, color: '#0a0a0a' }}>
-      <div><p className="whitespace-nowrap text-xs font-bold tracking-wide">TOTAL{d.lineas.some((l) => l.envio) ? ' CON ENVÍO' : ''}</p><p className="whitespace-nowrap text-xs">{unidades} {unidades === 1 ? 'unidad' : 'unidades'} · {d.totalCs}</p></div>
-      <p className="font-display text-2xl font-extrabold leading-none sm:text-3xl">{usdCot(d.total)}</p>
+    <div className="mt-4 flex items-end justify-between gap-3 rounded px-5 py-4" style={{ background: '#141110', color: '#FAF9F7' }}>
+      <div><p className="whitespace-nowrap text-[11px] font-medium uppercase tracking-[.2em]">Total{hayEnvio ? ' con envío' : ''}</p><p className="whitespace-nowrap text-xs" style={{ color: '#CFC8BC' }}>{unidades} {unidades === 1 ? 'unidad' : 'unidades'} · {d.totalCs}</p></div>
+      <p className="text-3xl font-bold leading-none sm:text-4xl" style={SERIF}>{usdCot(d.total)}</p>
     </div>
-    <p className="mt-5 text-[11px] font-bold tracking-[.14em]" style={{ color: '#a3a09a' }}>NOTAS</p>
+    <p className="mt-5 text-[10px] font-medium uppercase tracking-[.22em]" style={{ color: '#9A9387' }}>Notas</p>
     <ul className="mt-2 space-y-1.5 text-sm">
-      {notasCotizacion(d).map((n) => <li key={n} className="flex gap-2"><span className="mt-[7px] size-2 shrink-0 rounded-full" style={{ background: NEON }} />{n}</li>)}
+      {notasCotizacion(d).map((n) => <li key={n} className="flex gap-2"><span className="mt-[8px] size-1.5 shrink-0" style={{ background: '#141110' }} />{n}</li>)}
     </ul>
-    <div className="mt-6 border-t pt-4 text-center" style={{ borderColor: '#262626' }}>
-      <p className="font-display text-lg font-extrabold" style={{ color: NEON }}>{SITIO}</p>
-      <p className="text-xs" style={{ color: '#6e6b66' }}>Gracias por preferir HAUSLINE</p>
+    <div className="mt-6 border-t pt-4 text-center" style={{ borderColor: '#E8E4DD' }}>
+      <p className="text-xl font-bold tracking-[.04em]" style={SERIF}>{SITIO}</p>
+      <p className="text-xs" style={{ color: '#9A9387' }}>Gracias por preferir HAUSLINE</p>
     </div>
   </div>
 }

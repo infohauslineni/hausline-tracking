@@ -21,15 +21,18 @@ export type CotizacionData = {
   entrega: string
 }
 
-export const NEON = '#36FBA1'
-const FONDO = '#0A0A0A', TARJETA = '#141414', LINEA = '#262626', TEXTO = '#FFFFFF', SUAVE = '#A3A09A', TENUE = '#6E6B66'
-const DISPLAY = '"Bricolage Grotesque", "Hanken Grotesk", Arial, sans-serif'
-const CUERPO = '"Hanken Grotesk", Arial, sans-serif'
+// Mismo estilo que la tienda (hauslineshopni.es): fondo crema, tarjetas blancas con borde fino,
+// letras negras, títulos con serifa (Cormorant Garamond) y texto en Jost. NEON es el color de
+// acento (antes verde neón; ahora el negro de la marca).
+export const NEON = '#141110'
+const FONDO = '#FAF9F7', TARJETA = '#FFFFFF', LINEA = '#E8E4DD', TEXTO = '#141110', SUAVE = '#5F5950', TENUE = '#9A9387'
+const DISPLAY = '"Cormorant Garamond", Georgia, "Times New Roman", serif'
+const CUERPO = '"Jost", "Helvetica Neue", Arial, sans-serif'
 export const SITIO = 'hauslineshopni.es'
 
 export const usdCot = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })}`
 export const fechaCot = (d: Date) => new Intl.DateTimeFormat('es-NI', { day: 'numeric', month: 'long', year: 'numeric' }).format(d)
-export const tallasTexto = (l: CotizacionLinea) => l.tallas.map((t) => `${t.talla} × ${t.cantidad}`).join('  ·  ')
+export const tallasTexto = (l: CotizacionLinea) => l.tallas.map((t) => `Talla ${t.talla} × ${t.cantidad}`).join('  ·  ')
 
 // Notas al cliente (de "usted"), compartidas por la vista en pantalla y la imagen.
 export function notasCotizacion(d: CotizacionData) {
@@ -84,20 +87,9 @@ function renglones(ctx: CanvasRenderingContext2D, texto: string, ancho: number, 
   return out
 }
 
-// Logo HAUSLINE: la "H" con el punto de rastreo (igual al del panel).
-function dibujarLogo(ctx: CanvasRenderingContext2D, x: number, y: number, s: number) {
-  const k = s / 48
-  ctx.fillStyle = NEON; ctx.beginPath(); ctx.roundRect(x, y, s, s, 13 * k); ctx.fill()
-  ctx.fillStyle = FONDO
-  ctx.beginPath(); ctx.roundRect(x + 12.6 * k, y + 11.5 * k, 5.4 * k, 25 * k, 2.7 * k); ctx.fill()
-  ctx.beginPath(); ctx.roundRect(x + 30 * k, y + 11.5 * k, 5.4 * k, 25 * k, 2.7 * k); ctx.fill()
-  ctx.beginPath(); ctx.roundRect(x + 15.5 * k, y + 21.3 * k, 17 * k, 5.4 * k, 2.7 * k); ctx.fill()
-  ctx.beginPath(); ctx.arc(x + 24 * k, y + 24 * k, 4.9 * k, 0, Math.PI * 2); ctx.fillStyle = '#FFFFFF'; ctx.fill()
-  ctx.lineWidth = 2.6 * k; ctx.strokeStyle = FONDO; ctx.stroke()
-}
 
 export async function crearCotizacionPng(d: CotizacionData): Promise<File> {
-  try { await Promise.all([document.fonts.load(`700 40px ${DISPLAY}`), document.fonts.load(`500 24px ${CUERPO}`), document.fonts.load(`700 24px ${CUERPO}`)]) } catch { /* sigue con la letra de respaldo */ }
+  try { await Promise.all([document.fonts.load(`700 40px ${DISPLAY}`), document.fonts.load(`600 40px ${DISPLAY}`), document.fonts.load(`500 24px ${CUERPO}`), document.fonts.load(`600 24px ${CUERPO}`), document.fonts.load(`700 24px ${CUERPO}`)]) } catch { /* sigue con la letra de respaldo */ }
   const fotos = await Promise.all(d.lineas.map((l) => cargarImagen(resolverImagenCatalogo(l.imagen))))
 
   const W = 1080, PAD = 64, FOTO = 150
@@ -108,7 +100,7 @@ export async function crearCotizacionPng(d: CotizacionData): Promise<File> {
     const n = renglones(medir, l.nombre, W - PAD * 2 - FOTO - 60 - 230, 2).length
     medir.font = `500 26px ${CUERPO}`
     const t = l.tallas.length ? renglones(medir, tallasTexto(l), W - PAD * 2 - FOTO - 60 - 230, 3).length : 0
-    return Math.max(FOTO + 48, 40 + n * 42 + (t ? 12 + t * 34 : 0) + 56)
+    return l.envio ? 150 : Math.max(FOTO + 48, 40 + n * 42 + (t ? 12 + t * 34 : 0) + 56)
   })
   medir.font = `500 26px ${CUERPO}`
   const notas = notasCotizacion(d).map((n) => renglones(medir, n, W - PAD * 2 - 60, 4))
@@ -121,22 +113,21 @@ export async function crearCotizacionPng(d: CotizacionData): Promise<File> {
   ctx.fillStyle = FONDO; ctx.fillRect(0, 0, W, H)
   // Brillo verde sutil arriba a la derecha.
   const brillo = ctx.createRadialGradient(W - 120, 60, 10, W - 120, 60, 520)
-  brillo.addColorStop(0, 'rgba(54,251,161,0.16)'); brillo.addColorStop(1, 'rgba(54,251,161,0)')
+  brillo.addColorStop(0, 'rgba(20,17,16,0)'); brillo.addColorStop(1, 'rgba(20,17,16,0)')
   ctx.fillStyle = brillo; ctx.fillRect(0, 0, W, 620)
 
   // Encabezado: logo + HAUSLINE + cotización.
   let y = PAD
-  dibujarLogo(ctx, PAD, y, 84)
-  ctx.fillStyle = TEXTO; ctx.font = `800 46px ${DISPLAY}`; ctx.textBaseline = 'alphabetic'
-  ctx.fillText('HAUSLINE', PAD + 108, y + 52)
-  ctx.fillStyle = SUAVE; ctx.font = `500 24px ${CUERPO}`; ctx.fillText('King of Shoes', PAD + 110, y + 84)
+  ctx.fillStyle = TEXTO; ctx.font = `700 50px ${DISPLAY}`; ctx.textBaseline = 'alphabetic'
+  ctx.fillText('HAUSLINE', PAD, y + 56)
+  ctx.fillStyle = TENUE; ctx.font = `500 22px ${CUERPO}`; ctx.fillText('KING OF SHOES', PAD + 2, y + 92)
   ctx.textAlign = 'right'
   ctx.fillStyle = NEON; ctx.font = `700 24px ${CUERPO}`; ctx.fillText('COTIZACIÓN', W - PAD, y + 30)
   ctx.fillStyle = TEXTO; ctx.font = `700 34px ${DISPLAY}`; ctx.fillText(`N.º ${d.numero}`, W - PAD, y + 70)
   ctx.fillStyle = SUAVE; ctx.font = `500 24px ${CUERPO}`; ctx.fillText(fechaCot(d.fecha), W - PAD, y + 104)
   ctx.textAlign = 'left'
   y += 150
-  ctx.fillStyle = NEON; ctx.fillRect(PAD, y, W - PAD * 2, 3)
+  ctx.fillStyle = NEON; ctx.fillRect(PAD, y, W - PAD * 2, 2)
   y += 60
   if (d.cliente) {
     ctx.fillStyle = SUAVE; ctx.font = `600 22px ${CUERPO}`; ctx.fillText('PREPARADA PARA', PAD, y)
@@ -150,11 +141,14 @@ export async function crearCotizacionPng(d: CotizacionData): Promise<File> {
   // Productos.
   d.lineas.forEach((l, i) => {
     const alto = altos[i]
-    ctx.fillStyle = TARJETA; ctx.beginPath(); ctx.roundRect(PAD, y, W - PAD * 2, alto - 18, 26); ctx.fill()
+    ctx.fillStyle = TARJETA; ctx.beginPath(); ctx.roundRect(PAD, y, W - PAD * 2, alto - 18, 6); ctx.fill()
+    ctx.strokeStyle = LINEA; ctx.lineWidth = 2; ctx.stroke()
     const fx = PAD + 24, fy = y + 24
-    ctx.save(); ctx.beginPath(); ctx.roundRect(fx, fy, FOTO, FOTO, 18); ctx.clip()
-    if (fotos[i]) { ctx.fillStyle = '#FFFFFF'; ctx.fillRect(fx, fy, FOTO, FOTO); dibujarCover(ctx, fotos[i]!, fx, fy, FOTO, FOTO) } else { ctx.fillStyle = '#1F1F1F'; ctx.fillRect(fx, fy, FOTO, FOTO) }
-    ctx.restore()
+    if (!l.envio) {
+      ctx.save(); ctx.beginPath(); ctx.roundRect(fx, fy, FOTO, FOTO, 4); ctx.clip()
+      if (fotos[i]) { ctx.fillStyle = '#FFFFFF'; ctx.fillRect(fx, fy, FOTO, FOTO); dibujarCover(ctx, fotos[i]!, fx, fy, FOTO, FOTO) } else { ctx.fillStyle = '#F1EFEB'; ctx.fillRect(fx, fy, FOTO, FOTO) }
+      ctx.restore()
+    }
     const tx = fx + FOTO + 30, ancho = W - PAD * 2 - FOTO - 60 - 230
     let ty = y + 62
     ctx.fillStyle = TEXTO; ctx.font = `700 34px ${CUERPO}`
@@ -167,19 +161,19 @@ export async function crearCotizacionPng(d: CotizacionData): Promise<File> {
     ctx.fillStyle = SUAVE; ctx.font = `500 25px ${CUERPO}`
     ctx.fillText(l.envio ? 'Envío a domicilio' : `${l.cantidad} ${l.cantidad === 1 ? 'unidad' : 'unidades'} × ${usdCot(l.precio)}`, tx, Math.max(ty + 10, y + alto - 50))
     ctx.textAlign = 'right'
-    ctx.fillStyle = TEXTO; ctx.font = `800 38px ${DISPLAY}`; ctx.fillText(usdCot(l.subtotal), W - PAD - 28, y + 66)
+    ctx.fillStyle = TEXTO; ctx.font = `700 42px ${DISPLAY}`; ctx.fillText(usdCot(l.subtotal), W - PAD - 28, y + 66)
     ctx.textAlign = 'left'
     y += alto
   })
 
   // Total.
   y += 22
-  ctx.fillStyle = NEON; ctx.beginPath(); ctx.roundRect(PAD, y, W - PAD * 2, 170, 28); ctx.fill()
+  ctx.fillStyle = NEON; ctx.beginPath(); ctx.roundRect(PAD, y, W - PAD * 2, 170, 6); ctx.fill()
   ctx.fillStyle = FONDO; ctx.font = `700 26px ${CUERPO}`
   const unidades = d.lineas.filter((l) => !l.envio).reduce((s, l) => s + l.cantidad, 0)
   ctx.fillText(`TOTAL${d.lineas.some((l) => l.envio) ? ' CON ENVÍO' : ''} · ${unidades} ${unidades === 1 ? 'unidad' : 'unidades'}`, PAD + 36, y + 64)
   ctx.font = `500 26px ${CUERPO}`; ctx.fillText(d.totalCs, PAD + 36, y + 112)
-  ctx.textAlign = 'right'; ctx.font = `800 76px ${DISPLAY}`; ctx.fillText(usdCot(d.total), W - PAD - 36, y + 112); ctx.textAlign = 'left'
+  ctx.textAlign = 'right'; ctx.font = `700 80px ${DISPLAY}`; ctx.fillText(usdCot(d.total), W - PAD - 36, y + 112); ctx.textAlign = 'left'
   y += 230
 
   // Notas.
@@ -197,7 +191,7 @@ export async function crearCotizacionPng(d: CotizacionData): Promise<File> {
   const pieY = H - 110
   ctx.fillStyle = LINEA; ctx.fillRect(PAD, pieY - 30, W - PAD * 2, 2)
   ctx.textAlign = 'center'
-  ctx.fillStyle = NEON; ctx.font = `800 34px ${DISPLAY}`; ctx.fillText(SITIO, W / 2, pieY + 22)
+  ctx.fillStyle = NEON; ctx.font = `700 38px ${DISPLAY}`; ctx.fillText(SITIO, W / 2, pieY + 22)
   ctx.fillStyle = TENUE; ctx.font = `500 22px ${CUERPO}`; ctx.fillText('Gracias por preferir HAUSLINE', W / 2, pieY + 60)
   ctx.textAlign = 'left'
 
