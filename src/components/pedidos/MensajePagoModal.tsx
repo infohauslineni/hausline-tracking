@@ -26,7 +26,9 @@ export function MensajePagoModal({ open, onClose, cliente, lineas, envio, descue
   pagoInicial?: '50' | 'total'
   onPagoCambia?: (p: '50' | 'total') => void
 }) {
-  const [pago, setPago] = useState<'50' | 'total'>(pagoInicial)
+  const [pago, setPago] = useState<'50' | 'total' | 'otro'>(pagoInicial)
+  // Otro monto: el cliente avisa cuánto deja (más del 50 %).
+  const [otro, setOtro] = useState('')
   const [moneda, setMoneda] = useState<Moneda>('ambas')
   const [exportando, setExportando] = useState(false)
   const [sufijoCot] = useState(() => Math.floor(Math.random() * 900) + 100)
@@ -36,7 +38,8 @@ export function MensajePagoModal({ open, onClose, cliente, lineas, envio, descue
   const productos = r2(lineas.reduce((s, l) => s + l.precio * l.cantidad, 0))
   const envioUsd = envio?.usd ?? 0
   const total = r2(Math.max(0, productos - descuento) + envioUsd)
-  const deposito = pago === '50' ? r2(total * 0.5) : total
+  const otroNum = Math.min(total, Math.max(0, Number(otro.replace(',', '.')) || 0))
+  const deposito = pago === '50' ? r2(total * 0.5) : pago === 'otro' ? r2(otroNum) : total
   const nombre1 = cliente.nombre.trim().split(/\s+/)[0] || ''
 
   const texto = [
@@ -48,8 +51,10 @@ export function MensajePagoModal({ open, onClose, cliente, lineas, envio, descue
     '',
     `💵 Total${envioUsd > 0 ? ' con envío' : ''}: *${monto(total)}*`,
     '',
-    pago === '50'
-      ? `Para confirmar su pedido esperamos su depósito del 50 %: *${monto(deposito)}*. El resto (${monto(r2(total - deposito))}) lo paga al recibir.`
+    pago === 'otro' && deposito > 0 && deposito < total
+      ? `Para confirmar su pedido esperamos su depósito de *${monto(deposito)}*. El resto (${monto(r2(total - deposito))}) lo paga al recibir.`
+      : pago === '50'
+      ? `Para confirmar su pedido esperamos su depósito del 50 %: *${monto(deposito)}*. El resto (${monto(r2(total - deposito))}) lo paga al recibir.\n${'El anticipo mínimo es el 50 %: si desea dejar más o pagar el total, avísenos y le enviamos la cotización con ese monto.'}`
       : `Para confirmar su pedido esperamos su depósito del total: *${monto(deposito)}*.`,
     '',
     'Puede depositar a cualquiera de estas cuentas:',
@@ -72,7 +77,7 @@ export function MensajePagoModal({ open, onClose, cliente, lineas, envio, descue
         ...(descuento > 0 ? [{ nombre: 'Descuento', imagen: null, tallas: [], cantidad: 1, precio: -descuento, subtotal: -descuento, nota: 'Precio especial' }] : []),
         ...(envio && envioUsd > 0 ? [{ nombre: `Envío a ${envio.lugar}`, imagen: null, tallas: [], cantidad: 1, precio: envioUsd, subtotal: envioUsd, envio: true }] : []),
       ],
-      total, totalCs: cs(total), pago, aPagar: deposito, aPagarCs: cs(deposito),
+      total, totalCs: cs(total), pago: pago === 'total' || (pago === 'otro' && deposito >= total) ? 'total' : '50', aPagar: deposito, aPagarCs: cs(deposito),
       entrega: `20 a 25 días con envío estándar (aprox. ${rango})`,
     }
   }
@@ -87,10 +92,12 @@ export function MensajePagoModal({ open, onClose, cliente, lineas, envio, descue
   return <Modal open={open} onClose={onClose} title="Esperamos su pago" description="Mandale el total y cuánto debe depositar. El pedido no se crea hasta que registres el depósito.">
     <div className="space-y-4">
       <div><p className="mb-1.5 text-xs font-semibold text-muted">¿Cuánto deposita?</p>
-        <div className="grid grid-cols-2 gap-2">
-          <button type="button" className={opcion(pago === '50')} onClick={() => { setPago('50'); onPagoCambia?.('50') }}>50 % · {usd(r2(total * 0.5))}</button>
-          <button type="button" className={opcion(pago === 'total')} onClick={() => { setPago('total'); onPagoCambia?.('total') }}>100 % · {usd(total)}</button>
+        <div className="grid grid-cols-3 gap-2">
+          <button type="button" className={opcion(pago === '50')} onClick={() => { setPago('50'); onPagoCambia?.('50') }}>50 %<span className="block text-[11px] font-normal">{usd(r2(total * 0.5))}</span></button>
+          <button type="button" className={opcion(pago === 'total')} onClick={() => { setPago('total'); onPagoCambia?.('total') }}>100 %<span className="block text-[11px] font-normal">{usd(total)}</span></button>
+          <button type="button" className={opcion(pago === 'otro')} onClick={() => setPago('otro')}>Otro<span className="block text-[11px] font-normal">monto</span></button>
         </div>
+        {pago === 'otro' && <label className="form-field mt-2"><span>¿Cuánto deja? (US$)</span><input inputMode="decimal" autoFocus value={otro} onChange={(e) => setOtro(e.target.value.replace(/[^\d.,]/g, ''))} placeholder={`Ej. ${r2(total * 0.7).toFixed(2)}`} /></label>}
       </div>
       <div><p className="mb-1.5 text-xs font-semibold text-muted">Montos en</p>
         <div className="grid grid-cols-3 gap-2">
@@ -99,7 +106,7 @@ export function MensajePagoModal({ open, onClose, cliente, lineas, envio, descue
       </div>
       <div className="rounded-xl border border-line bg-white/[.02] p-3 text-sm">
         <p className="flex justify-between"><span className="text-muted">Total{envioUsd > 0 ? ' con envío' : ''}</span><b>{usd(total)} · {cs(total)}</b></p>
-        <p className="mt-1 flex justify-between"><span className="text-muted">Deposita ahora ({pago === '50' ? '50 %' : '100 %'})</span><b className="text-emerald-400">{usd(deposito)} · {cs(deposito)}</b></p>
+        <p className="mt-1 flex justify-between"><span className="text-muted">Deposita ahora ({pago === '50' ? '50 %' : pago === 'total' ? '100 %' : total > 0 ? `${Math.round((deposito / total) * 100)} %` : '—'})</span><b className="text-emerald-400">{usd(deposito)} · {cs(deposito)}</b></p>
       </div>
       <label className="form-field"><span>Mensaje para WhatsApp</span><textarea rows={12} readOnly value={texto} className="font-sans text-[13px] leading-5" /></label>
       <div className="grid gap-2 sm:grid-cols-3">

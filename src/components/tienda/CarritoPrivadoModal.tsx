@@ -182,7 +182,7 @@ export function CarritoPrivadoModal({ iniciales, todos, costos, datosPrecio, onC
     ...(envio && envioUsd > 0 ? [`🚚 Envío a ${lugarTexto || 'su dirección'}: ${usd(envioUsd)}`] : []),
     `💵 Total${envio && envioUsd > 0 ? ' con envío' : ''}: ${usd(total)} (${cs(total)}) · ${unidades} ${unidades === 1 ? 'producto' : 'productos'}`,
     '',
-    `Para confirmarlo solo debe transferir ${pago === '50' ? 'el 50%' : 'el total'}: *${usd(ahora)}* (${cs(ahora)})${pago === '50' ? `. El resto (${usd(r2(total - ahora))}) lo paga al recibir.` : ''}`,
+    `Para confirmarlo solo debe transferir ${pago === '50' ? 'el 50%' : 'el total'}: *${usd(ahora)}* (${cs(ahora)})${pago === '50' ? `. El resto (${usd(r2(total - ahora))}) lo paga al recibir. El anticipo mínimo es el 50 %: si desea dejar más o pagar el total, avísenos y le enviamos la cotización con ese monto.` : ''}`,
     '👉 En este enlace ve su pedido, las cuentas y sube su comprobante:',
     linkPagoEncargo(cod),
     '',

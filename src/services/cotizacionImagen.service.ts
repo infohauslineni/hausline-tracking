@@ -39,7 +39,7 @@ export function notasCotizacion(d: CotizacionData) {
   return [
     `Entrega estimada: ${d.entrega}.`,
     d.pago === '50'
-      ? `Para confirmar su pedido se paga el 50 % de anticipo (${usdCot(d.aPagar)} · ${d.aPagarCs}); el resto lo paga al recibir.`
+      ? `Para confirmar su pedido se paga el 50 % de anticipo (${usdCot(d.aPagar)} · ${d.aPagarCs}); el resto lo paga al recibir. El anticipo mínimo es el 50 %: si desea dejar más o pagar el total, avísenos y le enviamos la cotización con ese monto.`
       : `Para confirmar su pedido se paga el total (${usdCot(d.aPagar)} · ${d.aPagarCs}).`,
     ...(d.lineas.some((l) => l.envio) ? ['El envío a su dirección ya está incluido en el total.'] : []),
     'Precios válidos por 48 horas. Con gusto le atendemos cualquier consulta por WhatsApp.',
