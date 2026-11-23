@@ -6,7 +6,8 @@ import { resolverImagenCatalogo } from '../utils/catalogoImagen'
 // código interno ni si el precio es "mayorista" o "de tienda".
 // Se dibuja a mano en un canvas (como la factura): es lo más fiable en iPhone y Android.
 
-export type CotizacionLinea = { nombre: string; imagen: string | null; tallas: { talla: string; cantidad: number }[]; cantidad: number; precio: number; subtotal: number }
+// envio: la línea del envío a domicilio (no lleva foto ni cuenta como unidad).
+export type CotizacionLinea = { nombre: string; imagen: string | null; tallas: { talla: string; cantidad: number }[]; cantidad: number; precio: number; subtotal: number; envio?: boolean }
 export type CotizacionData = {
   numero: string
   fecha: Date
@@ -37,6 +38,7 @@ export function notasCotizacion(d: CotizacionData) {
     d.pago === '50'
       ? `Para confirmar su pedido se paga el 50 % de anticipo (${usdCot(d.aPagar)} · ${d.aPagarCs}); el resto lo paga al recibir.`
       : `Para confirmar su pedido se paga el total (${usdCot(d.aPagar)} · ${d.aPagarCs}).`,
+    ...(d.lineas.some((l) => l.envio) ? ['El envío a su dirección ya está incluido en el total.'] : []),
     'Precios válidos por 48 horas. Con gusto le atendemos cualquier consulta por WhatsApp.',
   ]
 }
@@ -163,7 +165,7 @@ export async function crearCotizacionPng(d: CotizacionData): Promise<File> {
       for (const r of renglones(ctx, tallasTexto(l), ancho, 3)) { ctx.fillText(r, tx, ty); ty += 34 }
     }
     ctx.fillStyle = SUAVE; ctx.font = `500 25px ${CUERPO}`
-    ctx.fillText(`${l.cantidad} ${l.cantidad === 1 ? 'unidad' : 'unidades'} × ${usdCot(l.precio)}`, tx, Math.max(ty + 10, y + alto - 50))
+    ctx.fillText(l.envio ? 'Envío a domicilio' : `${l.cantidad} ${l.cantidad === 1 ? 'unidad' : 'unidades'} × ${usdCot(l.precio)}`, tx, Math.max(ty + 10, y + alto - 50))
     ctx.textAlign = 'right'
     ctx.fillStyle = TEXTO; ctx.font = `800 38px ${DISPLAY}`; ctx.fillText(usdCot(l.subtotal), W - PAD - 28, y + 66)
     ctx.textAlign = 'left'
@@ -174,8 +176,8 @@ export async function crearCotizacionPng(d: CotizacionData): Promise<File> {
   y += 22
   ctx.fillStyle = NEON; ctx.beginPath(); ctx.roundRect(PAD, y, W - PAD * 2, 170, 28); ctx.fill()
   ctx.fillStyle = FONDO; ctx.font = `700 26px ${CUERPO}`
-  const unidades = d.lineas.reduce((s, l) => s + l.cantidad, 0)
-  ctx.fillText(`TOTAL · ${unidades} ${unidades === 1 ? 'unidad' : 'unidades'}`, PAD + 36, y + 64)
+  const unidades = d.lineas.filter((l) => !l.envio).reduce((s, l) => s + l.cantidad, 0)
+  ctx.fillText(`TOTAL${d.lineas.some((l) => l.envio) ? ' CON ENVÍO' : ''} · ${unidades} ${unidades === 1 ? 'unidad' : 'unidades'}`, PAD + 36, y + 64)
   ctx.font = `500 26px ${CUERPO}`; ctx.fillText(d.totalCs, PAD + 36, y + 112)
   ctx.textAlign = 'right'; ctx.font = `800 76px ${DISPLAY}`; ctx.fillText(usdCot(d.total), W - PAD - 36, y + 112); ctx.textAlign = 'left'
   y += 230

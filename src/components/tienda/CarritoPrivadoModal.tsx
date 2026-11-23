@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Modal } from '../ui/Modal'
 import { HauslineLogo } from '../ui/HauslineLogo'
-import { descargarOCompartirCotizacion, fechaCot, NEON, notasCotizacion, SITIO, usdCot, type CotizacionData } from '../../services/cotizacionImagen.service'
+import { descargarOCompartirCotizacion, fechaCot, NEON, notasCotizacion, SITIO, usdCot, type CotizacionData, type CotizacionLinea } from '../../services/cotizacionImagen.service'
 import { listarClientes } from '../../services/clientes.service'
 import { obtenerTipoCambio } from '../../services/comercial.service'
 import { sugerirPrecios, tipoDeTienda, type DatosPrecio } from '../../services/preciosSugeridos.service'
@@ -13,6 +13,9 @@ import type { Cliente } from '../../types/domain'
 import { resolverImagenCatalogo } from '../../utils/catalogoImagen'
 import { normalizarTelefonoNicaragua, whatsappUrl } from '../../utils/whatsapp'
 import { leerDatosCliente } from '../../utils/datosCliente'
+import { DEPARTAMENTOS_NI, esManagua } from '../../constants/nicaragua'
+import { costoEleccion, envioSugerido, type EleccionEnvio } from '../../constants/cargotrans'
+import { SelectorEnvioDepartamento } from '../pedidos/SelectorEnvioDepartamento'
 
 // CARRITO PRIVADO: para el cliente que compra varios productos. Se eligen los productos, a cada
 // uno se le pone el precio de tienda, el mayorista o uno especial (se pueden mezclar), y se crea
@@ -59,10 +62,17 @@ export function CarritoPrivadoModal({ iniciales, todos, costos, datosPrecio, onC
     const d = leerDatosCliente(texto)
     const dig = String(d.whatsapp ?? '').replace(/\D/g, '').slice(-8)
     const ya = dig.length === 8 ? clientes.find((c) => String(c.whatsapp ?? '').replace(/\D/g, '').endsWith(dig)) : null
+    if (d.departamento || d.ciudad) { setLugar({ departamento: d.departamento ?? '', ciudad: d.ciudad ?? '' }); setEleccionEnvio(null) }
     if (ya) { setCliente(ya); toast.success(`Ese WhatsApp ya es de ${ya.nombre}: lo elegí.`); return }
     setNuevo((n) => ({ nombre: d.nombre ?? n.nombre, whatsapp: d.whatsapp ?? n.whatsapp, correo: d.correo ?? n.correo }))
   }
   const [pago, setPago] = useState<'50' | 'total'>('50')
+  // ENVÍO: el lugar del cliente (de su ficha o de los datos pegados). Fuera de Managua se calcula
+  // solo (Cargotrans o bus, editable); en Managua el delivery se escribe si se quiere incluir.
+  // Así el cliente recibe el TOTAL CON ENVÍO desde la cotización, antes de crear la orden.
+  const [lugar, setLugar] = useState<{ departamento: string; ciudad: string } | null>(null)
+  const [eleccionEnvio, setEleccionEnvio] = useState<EleccionEnvio | null>(null)
+  const [deliveryManagua, setDeliveryManagua] = useState('')
   const [tc, setTc] = useState(37)
   const [creando, setCreando] = useState(false)
   const [codigo, setCodigo] = useState<string | null>(null)
@@ -114,7 +124,16 @@ export function CarritoPrivadoModal({ iniciales, todos, costos, datosPrecio, onC
   }, [clientes, buscaCliente])
 
   const unidades = lineas.reduce((s, l) => s + cantidadDe(l), 0)
-  const total = r2(lineas.reduce((s, l) => s + precioDe(l) * cantidadDe(l), 0))
+  const lugarDep = lugar?.departamento ?? cliente?.departamento ?? ''
+  const lugarCiudad = lugar?.ciudad ?? cliente?.ciudad ?? ''
+  const fueraDeManagua = Boolean((lugarDep || lugarCiudad) && !esManagua(lugarDep, lugarCiudad))
+  const envioSel = eleccionEnvio ?? envioSugerido(lugarCiudad, lugarDep)
+  const lugarTexto = (lugarCiudad || lugarDep).trim()
+  const envio = fueraDeManagua ? costoEleccion(envioSel, lugarTexto, tc)
+    : Number(deliveryManagua.replace(',', '.')) > 0 ? { usd: r2(Number(deliveryManagua.replace(',', '.'))), detalle: `Delivery en ${lugarTexto || 'Managua'}` } : null
+  const envioUsd = envio?.usd ?? 0
+  const totalProductos = r2(lineas.reduce((s, l) => s + precioDe(l) * cantidadDe(l), 0))
+  const total = r2(totalProductos + envioUsd)
   const ahora = pago === '50' ? r2(total * 0.5) : total
   const ganancia = r2(lineas.reduce((s, l) => { const sug = sugeridoDe(l.p); return sug ? s + (precioDe(l) - sug.base) * cantidadDe(l) : s }, 0))
   const sinCosto = lineas.filter((l) => !sugeridoDe(l.p)).length
@@ -135,19 +154,19 @@ export function CarritoPrivadoModal({ iniciales, todos, costos, datosPrecio, onC
     // "entre el 2 y el 7 de diciembre" (o "entre el 28 de noviembre y el 3 de diciembre").
     const rango = desde.getMonth() === hasta.getMonth() ? `entre el ${desde.getDate()} y el ${hasta.getDate()} de ${mes(hasta)}` : `entre el ${desde.getDate()} de ${mes(desde)} y el ${hasta.getDate()} de ${mes(hasta)}`
     const visibles = lineas.filter((l) => precioDe(l) > 0 && cantidadDe(l) > 0)
-    const tot = r2(visibles.reduce((s, l) => s + precioDe(l) * cantidadDe(l), 0))
+    const tot = r2(visibles.reduce((s, l) => s + precioDe(l) * cantidadDe(l), 0) + (visibles.length ? envioUsd : 0))
     const aPagar = pago === '50' ? r2(tot * 0.5) : tot
     return {
       numero: numeroCot, fecha: hoy, cliente: datosCliente.nombre.length >= 2 ? datosCliente.nombre : null,
-      lineas: visibles.map((l) => ({
+      lineas: visibles.map((l): CotizacionLinea => ({
         nombre: l.p.datos.nombre, imagen: l.p.datos.imagen || null,
         tallas: conTallas(l) ? elegidas(l).filter((x) => x.cantidad > 0) : l.talla.trim() ? [{ talla: l.talla.trim(), cantidad: l.cantidad }] : [],
         cantidad: cantidadDe(l), precio: precioDe(l), subtotal: r2(precioDe(l) * cantidadDe(l)),
-      })),
+      })).concat(visibles.length && envio && envioUsd > 0 ? [{ nombre: `Envío a ${lugarTexto || 'su dirección'}`, imagen: null, tallas: [], cantidad: 1, precio: envioUsd, subtotal: envioUsd, envio: true }] : []),
       total: tot, totalCs: cs(tot), pago, aPagar, aPagarCs: cs(aPagar),
       entrega: `20 a 25 días con envío estándar (aprox. ${rango})`,
     }
-  }, [lineas, pago, numeroCot, datosCliente.nombre, tc]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lineas, pago, numeroCot, datosCliente.nombre, tc, envioUsd, lugarTexto]) // eslint-disable-line react-hooks/exhaustive-deps
   const descargarImagen = async () => {
     setExportando(true)
     try {
@@ -161,7 +180,8 @@ export function CarritoPrivadoModal({ iniciales, todos, costos, datosPrecio, onC
     '',
     ...lineas.map((l) => { const c = cantidadDe(l); return `🛍️ ${l.p.datos.nombre}${[tallasLinea(l), c > 1 && `${c} unidades`].filter(Boolean).map((x) => ` · ${x}`).join('')} — ${usd(precioDe(l))}${c > 1 ? ` c/u = ${usd(r2(precioDe(l) * c))}` : ''}` }),
     '',
-    `💵 Total: ${usd(total)} (${cs(total)}) · ${unidades} ${unidades === 1 ? 'producto' : 'productos'}`,
+    ...(envio && envioUsd > 0 ? [`🚚 Envío a ${lugarTexto || 'su dirección'}: ${usd(envioUsd)}`] : []),
+    `💵 Total${envio && envioUsd > 0 ? ' con envío' : ''}: ${usd(total)} (${cs(total)}) · ${unidades} ${unidades === 1 ? 'producto' : 'productos'}`,
     '',
     `Para confirmarlo solo debe transferir ${pago === '50' ? 'el 50%' : 'el total'}: *${usd(ahora)}* (${cs(ahora)})${pago === '50' ? `. El resto (${usd(r2(total - ahora))}) lo paga al recibir.` : ''}`,
     '👉 En este enlace ve su pedido, las cuentas y sube su comprobante:',
@@ -176,12 +196,12 @@ export function CarritoPrivadoModal({ iniciales, todos, costos, datosPrecio, onC
     try {
       const cod = await crearCarritoPanel({
         nombre: datosCliente.nombre, whatsapp: datosCliente.whatsapp, correo: datosCliente.correo,
-        ciudad: cliente?.departamento || cliente?.ciudad || null, direccion: cliente?.direccion || null, pago, clienteId: cliente?.id ?? null,
+        ciudad: [lugarCiudad, lugarDep].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).join(', ') || null, direccion: cliente?.direccion || null, pago, clienteId: cliente?.id ?? null,
         // Una línea del carrito por cada talla (así cada talla lleva su cantidad).
         items: lineas.flatMap((l) => {
           const base = { producto: l.p.datos.nombre, productoCodigo: l.p.codigo, marca: l.p.datos.marca || null, precioUnitario: precioDe(l), imagen: l.p.datos.imagen || null }
           return conTallas(l) ? elegidas(l).filter((x) => x.cantidad > 0).map((x) => ({ ...base, talla: x.talla, cantidad: x.cantidad })) : [{ ...base, talla: l.talla.trim() || null, cantidad: l.cantidad }]
-        }),
+        }).concat(envio && envioUsd > 0 ? [{ producto: 'Envío / delivery', productoCodigo: '', marca: null, precioUnitario: envioUsd, imagen: null, talla: envio.detalle.slice(0, 80), cantidad: 1 }] : []),
       })
       setCodigo(cod); setMensaje(armarMensaje(cod))
       toast.success(`Carrito ${cod} creado.`)
@@ -298,6 +318,18 @@ export function CarritoPrivadoModal({ iniciales, todos, costos, datosPrecio, onC
         </>}
       </section>
 
+      {/* Envío: el total que se le pasa al cliente ya lo incluye. */}
+      <section>
+        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">Envío</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          <select className="simple-input" aria-label="Departamento del cliente" value={lugarDep} onChange={(e) => { setLugar({ departamento: e.target.value, ciudad: lugarCiudad }); setEleccionEnvio(null) }}><option value="">Departamento…</option>{DEPARTAMENTOS_NI.map((d) => <option key={d} value={d}>{d}</option>)}</select>
+          <input className="simple-input" placeholder="Municipio" value={lugarCiudad} onChange={(e) => { setLugar({ departamento: lugarDep, ciudad: e.target.value }); setEleccionEnvio(null) }} />
+        </div>
+        {fueraDeManagua && <div className="mt-2"><SelectorEnvioDepartamento ciudad={lugarCiudad} departamento={lugarDep} tipoCambio={tc} valor={envioSel} onChange={setEleccionEnvio} /></div>}
+        {!fueraDeManagua && (lugarDep || lugarCiudad) && <label className="form-field mt-2"><span>Delivery en Managua (US$, opcional)</span><input inputMode="decimal" value={deliveryManagua} onChange={(e) => setDeliveryManagua(e.target.value.replace(/[^\d.,]/g, ''))} placeholder="Ej. 3" /></label>}
+        {!lugarDep && !lugarCiudad && <p className="mt-1.5 text-[11px] text-muted">Elegí el departamento (o pegá los datos del cliente) para sumar el envío al total.</p>}
+      </section>
+
       {/* 3. Pago */}
       <section>
         <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">Paga ahora</p>
@@ -308,7 +340,9 @@ export function CarritoPrivadoModal({ iniciales, todos, costos, datosPrecio, onC
 
       {/* Resumen */}
       <div className="rounded-xl border border-line bg-white/[.02] p-3">
-        <div className="flex justify-between text-xs text-muted"><span>{unidades} {unidades === 1 ? 'producto' : 'productos'} · envío estándar</span><span>Total {usd(total)} · {cs(total)}</span></div>
+        <div className="flex justify-between text-xs text-muted"><span>{unidades} {unidades === 1 ? 'producto' : 'productos'}</span><span>{usd(totalProductos)}</span></div>
+        {envioUsd > 0 && <div className="flex justify-between text-xs text-muted"><span>Envío a {lugarTexto}</span><span>{usd(envioUsd)}</span></div>}
+        <div className="mt-1 flex justify-between text-sm"><span className="font-semibold">Total{envioUsd > 0 ? ' con envío' : ''}</span><span className="font-semibold">{usd(total)} · {cs(total)}</span></div>
         <div className="mt-1.5 flex items-baseline justify-between"><span className="font-semibold">Transfiere ahora</span><span className="text-lg font-bold text-accent">{usd(ahora)} <span className="text-xs font-normal text-muted">{cs(ahora)}</span></span></div>
         {lineas.length > 0 && <p className="mt-1.5 text-xs text-muted">Tu ganancia estimada: <b className={ganancia < 0 ? 'text-red-300' : 'text-emerald-300'}>{usd(ganancia)}</b>{sinCosto ? ` (sin contar ${sinCosto} sin costo)` : ''} · solo la ves vos</p>}
       </div>
@@ -326,7 +360,7 @@ export function CarritoPrivadoModal({ iniciales, todos, costos, datosPrecio, onC
 // VISTA CLIENTE: la cotización limpia, igual a la imagen que se descarga. Sin costo, ganancia,
 // códigos internos ni "mayorista/tienda". Estilo HAUSLINE: fondo oscuro y verde neón.
 function VistaCotizacion({ d }: { d: CotizacionData }) {
-  const unidades = d.lineas.reduce((s, l) => s + l.cantidad, 0)
+  const unidades = d.lineas.filter((l) => !l.envio).reduce((s, l) => s + l.cantidad, 0)
   return <div className="overflow-hidden rounded-2xl border border-white/10 p-5 sm:p-7" style={{ background: 'radial-gradient(circle at 90% 0%, rgba(54,251,161,.14), transparent 55%), #0a0a0a', color: '#fff' }}>
     <div className="flex items-start justify-between gap-4">
       <div className="flex items-center gap-3">
@@ -347,13 +381,13 @@ function VistaCotizacion({ d }: { d: CotizacionData }) {
         <div className="min-w-0 flex-1">
           <p className="line-clamp-2 font-bold leading-tight">{l.nombre}</p>
           {l.tallas.length > 0 && <p className="mt-1 flex flex-wrap gap-x-2.5 text-sm font-semibold" style={{ color: NEON }}>{l.tallas.map((t) => <span key={t.talla} className="whitespace-nowrap">{t.talla} × {t.cantidad}</span>)}</p>}
-          <p className="mt-1 flex flex-wrap items-baseline justify-between gap-x-3 text-xs" style={{ color: '#a3a09a' }}><span className="whitespace-nowrap">{l.cantidad} {l.cantidad === 1 ? 'unidad' : 'unidades'} × {usdCot(l.precio)}</span><b className="font-display text-base font-extrabold sm:hidden" style={{ color: '#fff' }}>{usdCot(l.subtotal)}</b></p>
+          <p className="mt-1 flex flex-wrap items-baseline justify-between gap-x-3 text-xs" style={{ color: '#a3a09a' }}><span className="whitespace-nowrap">{l.envio ? 'Envío a domicilio' : `${l.cantidad} ${l.cantidad === 1 ? 'unidad' : 'unidades'} × ${usdCot(l.precio)}`}</span><b className="font-display text-base font-extrabold sm:hidden" style={{ color: '#fff' }}>{usdCot(l.subtotal)}</b></p>
         </div>
         <p className="font-display hidden shrink-0 text-lg font-extrabold sm:block">{usdCot(l.subtotal)}</p>
       </div>)}
     </div>
     <div className="mt-4 flex items-end justify-between gap-3 rounded-2xl px-5 py-4" style={{ background: NEON, color: '#0a0a0a' }}>
-      <div><p className="whitespace-nowrap text-xs font-bold tracking-wide">TOTAL</p><p className="whitespace-nowrap text-xs">{unidades} {unidades === 1 ? 'unidad' : 'unidades'} · {d.totalCs}</p></div>
+      <div><p className="whitespace-nowrap text-xs font-bold tracking-wide">TOTAL{d.lineas.some((l) => l.envio) ? ' CON ENVÍO' : ''}</p><p className="whitespace-nowrap text-xs">{unidades} {unidades === 1 ? 'unidad' : 'unidades'} · {d.totalCs}</p></div>
       <p className="font-display text-2xl font-extrabold leading-none sm:text-3xl">{usdCot(d.total)}</p>
     </div>
     <p className="mt-5 text-[11px] font-bold tracking-[.14em]" style={{ color: '#a3a09a' }}>NOTAS</p>
